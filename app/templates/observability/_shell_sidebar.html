@@ -1,0 +1,17 @@
+{# Observability sidebar for SATOM's pages under /observability/. The list is
+   app/observability_nav.py — the SAME list the app's own pages draw — so the
+   menu is identical whichever half rendered the page. An entry of the app is
+   a full page load (data-turbo="false": it is another application). #}
+<aside id="obs-sidebar" class="obs-sidebar" aria-label="{{ _('Main menu') }}">
+  <nav class="obs-nav">
+    {% for sec in obs_nav %}
+    <div class="obs-nav-section">{{ _(sec.title) }}</div>
+    {% for it in sec['items'] %}
+    <a class="obs-nav-item {{ 'active' if it.active }}" href="{{ it.href }}" title="{{ _(it.label) }}"
+       {% if it.kind == 'lab' %}data-turbo="false"{% endif %}
+       {{ 'aria-current="page"'|safe if it.active }}><i class="bi bi-{{ it.icon }}" aria-hidden="true"></i><span>{{ _(it.label) }}</span></a>
+    {% endfor %}
+    {% endfor %}
+  </nav>
+  <div class="obs-sb-foot"><i class="bi bi-info-circle" aria-hidden="true"></i><span>SATOM v{{ app_version }}</span></div>
+</aside>

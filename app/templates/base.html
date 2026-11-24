@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="{{ ui_lang or 'en' }}"{% if obs_shell %} data-bs-theme="dark" class="obs-shell"{% endif %}>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  {# Turbo Drive reads this and re-stamps the CURRENT document's nonce onto
+     inline scripts arriving in a fetched body — without it, every inline
+     script would be CSP-blocked after the first Turbo navigation. #}
+  <meta name="csp-nonce" content="{{ csp_nonce }}">
+  {# Inside SATOM's own stacked panel (a device-layout dialog the "Edit entry"
+     pencil opened, objedit_drawer.js openFrame) the page draws the dialog
+     alone: no top bar, sidebar, bookmarks or breadcrumb (fortiweb.css). On
+     <html> so it survives Turbo body swaps inside the frame. #}
+  <script nonce="{{ csp_nonce }}">if (window.self !== window.top) document.documentElement.classList.add('fw-framed');</script>
+  {# Per-tab ADOM: the effective product THIS response was rendered in.
+     turbo-boot.js mirrors it into sessionStorage (per browser tab) and sends
+     it back as X-ADOM on every request, so each tab keeps its own ADOM. #}
+  <meta name="current-product" content="{{ product.key if product else '' }}">
+  {# The device this page draws (jobs.js redraws it when a job wrote there). #}
+  <meta name="page-appliance" content="{{ (request.view_args or {}).get('appliance_id', '') }}">
+  <title>{% block title %}{{ product.title if product else 'SATOM' }}{% endblock %}</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
+
+  <!-- Bootstrap 5.3 (vendored locally) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <!-- Bootstrap Icons 1.11.3 (vendored locally) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+  <!-- FortiWeb CSS -->
+  <link rel="stylesheet" href="{{ asset('css/fortiweb.css') }}" data-turbo-track="reload">
+
+  {# Active UI theme (Settings -> Appearance). Overrides only — a theme stores
+     just the design tokens it changes, so stylesheet updates keep reaching it.
+     Nonced because style-src-elem is nonce-gated; values are allowlisted per
+     token kind in theme_service before they ever get here. #}
+  {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
+  {% if obs_shell %}
+  {# Observability shell (2026-11-17): a SATOM page under /observability/ —
+     the Monitoring views — wears the Observability app's theme, layout and
+     motion: its own stylesheets, AFTER fortiweb.css so their tokens win, then
+     the bridge for what fortiweb.css hard-codes (css/obs_shell.css). #}
+  <link rel="stylesheet" href="{{ obs_asset('css/theme.css') }}">
+  <link rel="stylesheet" href="{{ obs_asset('css/observability.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/obs_shell.css') }}">
+  <meta name="color-scheme" content="dark">
+  <script nonce="{{ csp_nonce }}">try{if(localStorage.getItem('obs.sb')==='1')document.documentElement.classList.add('obs-sb-collapsed')}catch(e){}</script>
+  {% endif %}
+
+  <!-- ============================================================
+       Turbo Drive — client-side navigation so background jobs (firmware
+       uploads) survive page changes. Loaded in <head> so Turbo, the libraries
+       and jobs.js run ONCE and PERSIST across visits (Turbo re-executes <body>
+       scripts on every visit, which would reset jobs.js's upload state and
+       double-register Bootstrap's delegated handlers). turbo-boot.js installs a
+       DOMContentLoaded→turbo:load shim before any body script runs. Page-level
+       scripts (api/main/release_notes) stay at the end of <body> on purpose.
+       ============================================================ -->
+  <meta name="turbo-cache-control" content="no-cache">
+  {# Turbo 8 prefetches links on hover; several GET routes mutate the
+     session (product.enter ADOM jump, use_device). A hover must never
+     switch the ADOM/device, so prefetch is off app-wide. #}
+  <meta name="turbo-prefetch" content="false">
+  <script src="{{ url_for('static', filename='js/turbo.min.js') }}"></script>
+  <script src="{{ asset('js/turbo-boot.js') }}" data-turbo-track="reload"></script>
+  <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  {# Chart.js is served from the app, NOT a CDN. This product ships offline
+     installers for air-gapped management networks; a chart that only renders
+     with public internet is a chart that does not render where it matters.
+     The vendored copy (4.4.4) was already in static/vendor and unused. #}
+  <script src="/static/vendor/chart/chart.umd.min.js"></script>
+  {% if obs_shell %}<script src="{{ asset('js/obs_shell.js') }}"></script>{% endif %}
+  {# The "?" beside a control. In <head> so its Turbo listeners register ONCE
+     (the body block re-executes every visit); after bootstrap.bundle, which
+     it upgrades the native title= tooltip with. #}
+  <script src="{{ asset('js/fw_hints.js') }}"></script>
+  {# Buttons that reveal a pane from OUTSIDE the tab list. Same reason as
+     above for living in <head>: one delegated listener, registered once. #}
+  <script src="{{ asset('js/fw_pane_link.js') }}"></script>
+  <script src="{{ asset('js/jobs.js') }}"></script>
+  <script src="{{ asset('js/objedit_drawer.js') }}"></script>
+  <script src="{{ asset('js/nig_cli.js') }}"></script>
+
+  {% block head %}{% endblock %}
+</head>
+<body{% if obs_shell %} class="obs-shell-body" data-turbo="false"{% endif %}>
+
+<!-- ============================================================
+     TOP BAR
+     ============================================================ -->
+{% if obs_shell %}{% include 'observability/_shell_topbar.html' %}{% else %}
+<nav class="fw-topbar" style="background: {{ banner_bg or 'var(--fw-topbar-bg)' }};">
+  <button id="fw-sidebar-toggle" class="fw-sidebar-toggle" type="button" aria-label="{{ _('Toggle sidebar') }}">
+    <i class="bi bi-list"></i>
+  </button>
+
+  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else (url_for('product.placeholder_home') if product.placeholder else url_for('workspace.index'))) }}"
+     class="fw-topbar-brand">
+    {# Brand slot = the PRODUCT's identity, never the ADOM's. Falling back to
+       product.mark put the ADOM icon here on any theme without an uploaded
+       logo asset - the same globe the "ADOM:" pill draws to its right,
+       with the SATOM emblem nowhere on the page. The ADOM keeps its pill, its
+       sidebar caption, its switcher entries and the chooser page. #}
+    <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="{{ _('SATOM') }}"
+         style="width:28px;height:28px;flex-shrink:0;object-fit:contain;">
+    <span>{{ product.title }}</span>
+  </a>
+
+  {# Active ADOM indicator — always visible so an ADOM jump is never silent #}
+  {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981', 'fortiauthenticator': '#7c3aed', 'fortianalyzer': '#d97706', 'fortigate': '#0d9488'}.get(product.key, '#3b82f6') %}
+  <span class="fw-adom-badge" title="{{ _('Active administrative domain') }}"
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
+    <i class="bi {{ 'bi-globe2' if product.key == 'global' else 'bi-hdd-rack' }}" style="color:{{ _adom_c }};"></i>
+    <span class="fw-adom-prefix">ADOM:</span> <span class="fw-adom-name">{{ product.name }}</span>
+  </span>
+
+  {# Environment badge (PROD/DEV) — replicated setting from the admin console #}
+  {% set _is_prod = env_mode == 'production' %}
+  {% set _env_c = '#ef4444' if _is_prod else '#f59e0b' %}
+  <span class="fw-env-badge" title="{{ _('Deployment environment (Settings → General → Environment)') }}"
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#fff;background:{{ _env_c }}26;border:1px solid {{ _env_c }};">
+    <i class="bi {{ 'bi-broadcast-pin' if _is_prod else 'bi-cone-striped' }}" style="color:{{ _env_c }};"></i>
+    {{ 'PRODUCTION' if _is_prod else 'DEVELOPMENT' }}
+  </span>
+
+  {# HA node role (Primary/Standby)  only meaningful in HA mode #}
+  {% if ha_mode == 'ha' %}
+  {% set _is_primary = node_role == 'primary' %}
+  {% set _is_standby = node_role == 'standby' %}
+  {% set _ha_c = '#10b981' if _is_primary else ('#3b82f6' if _is_standby else '#64748b') %}
+  <span class="fw-harole-badge"
+        title="HA node {{ node_name }}  {{ 'read-write primary' if _is_primary else ('read-only standby' if _is_standby else 'role unknown') }}"
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _ha_c }}26;border:1px solid {{ _ha_c }};">
+    <i class="bi {{ 'bi-star-fill' if _is_primary else ('bi-hdd-stack' if _is_standby else 'bi-question-circle') }}" style="color:{{ _ha_c }};"></i>
+    {{ 'PRIMARY' if _is_primary else ('STANDBY' if _is_standby else 'NODE ?') }}
+  </span>
+  {% endif %}
+
+  <div class="fw-topbar-spacer"></div>
+
+  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator', 'fortigate') %}
+  <!-- Device context (zone/line/dept/host) — centered in the header -->
+  <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
+          title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Service Diagram / switch device"
+          data-bs-toggle="modal" data-bs-target="#deviceSwitchModal">
+    <i class="bi bi-hdd-network"></i>
+    {% if current_appliance %}
+    <span class="fw-dev-meta d-inline-flex">
+      {% if current_appliance.zone %}<span class="fw-dev-seg"><i class="fw-dev-k">{{ _('Zone') }}</i>{{ current_appliance.zone }}</span>{% endif %}
+      {% if current_appliance.line %}<span class="fw-dev-seg"><i class="fw-dev-k">{{ _('Line') }}</i>{{ current_appliance.line }}</span>{% endif %}
+      {% if current_appliance.department %}<span class="fw-dev-seg"><i class="fw-dev-k">{{ _('Dept') }}</i>{{ current_appliance.department }}</span>{% endif %}
+      <span class="fw-dev-seg fw-dev-host"><i class="fw-dev-k">{{ _('Host') }}</i>{{ current_appliance.name }}</span>
+    </span>
+    {% endif %}
+  </button>
+  {% endif %}
+
+  <div class="fw-topbar-spacer"></div>
+
+  <div class="fw-topbar-actions">
+
+    <!-- Switch Product (mini product logo + switch icon) -->
+    <a href="{{ url_for('product.switch') }}"
+       class="fw-topbar-btn fw-switch-product" title="{{ _('Switch Product') }}">
+      <img src="{{ url_for('static', filename=product.mark) }}" alt="" class="fw-switch-mark">
+      <i class="bi bi-arrow-left-right"></i>
+    </a>
+
+    <!-- Help menu (Regex calculator, cheat sheet, docs) -->
+    <div class="dropdown">
+      <a class="fw-topbar-btn" href="#" role="button" title="{{ _('Tools') }}"
+         data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-tools"></i>
+      </a>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header"><i class="bi bi-life-preserver me-1"></i>{{ _('Tools') }}</h6></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="test">
+          <i class="bi bi-braces-asterisk me-2"></i>{{ _('Regex calculator') }}</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="cheat">
+          <i class="bi bi-card-list me-2"></i>{{ _('Regex cheat sheet') }}</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="library">
+          <i class="bi bi-collection me-2"></i>{{ _('Pattern library') }}</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="#" data-fw-netcalc-open>
+          <i class="bi bi-calculator me-2"></i>{{ _('Network calculator') }}</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="#" data-fw-certinspect-open="">
+          <i class="bi bi-patch-check me-2"></i>{{ _('Certificate inspector') }}</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-fptriage-open="">
+          <i class="bi bi-shield-exclamation me-2"></i>{{ _('False-positive explainer') }}</a></li>
+        {# Support group — moved here from the user menu (2026-09-14). The
+           per-profile gates travel WITH the items: Release Notes stays
+           product-scoped and Bug Reports stays behind user_manage. #}
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#bugReportModal">
+            <i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}
+          </a>
+        </li>
+        {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer', 'fortigate') %}
+        <li>
+          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
+            <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
+          </a>
+        </li>
+        {% endif %}
+        {% if current_user and current_user.can('user_manage') %}
+        <li>
+          <a class="dropdown-item" href="{{ url_for('reports.inbox') }}">
+            <i class="bi bi-bug me-2"></i>Bug Reports
+            {% if open_report_count|default(0) %}
+            <span class="badge rounded-pill bg-danger ms-1">{{ open_report_count }}</span>
+            {% endif %}
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+
+    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortigate', 'fortianalyzer', 'global') and may_open('search.index') %}
+    <!-- ADOM search shortcut (sits just left of the bell) -->
+    <a href="{{ url_for('search.index') }}" id="fwTopbarSearch"
+       class="fw-topbar-btn" title="{{ _('Search (/)') }}">
+      <i class="bi bi-search"></i>
+    </a>
+    {% endif %}
+    <!-- Notifications — bell dropdown: preview + Clear (dismiss, kept on page) -->
+    {% set _notif_count = unread_notification_count|default(0) %}
+    <div class="dropdown fw-notif-menu">
+      <a class="fw-topbar-btn position-relative" id="fwNotifBell"
+         href="{{ url_for('notifications.index') }}"
+         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+         title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
+        <i class="bi bi-bell{% if _notif_count %}-fill{% endif %}"></i>
+        {% if _notif_count %}
+        <span class="fw-notif-badge">{{ _notif_count }}</span>
+        {% endif %}
+      </a>
+      <div class="dropdown-menu dropdown-menu-end shadow-sm fw-notif-dd p-0">
+        <div class="fw-notif-dd-head">
+          <span><i class="bi bi-bell me-1"></i>{{ _('Notifications') }}</span>
+          {% if notification_preview %}
+          <form method="POST" action="{{ url_for('notifications.dismiss') }}" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="fw-notif-dd-clear"
+                    title="{{ _('Clear the bell — the notifications stay on the Notifications page') }}">
+              <i class="bi bi-check2-all me-1"></i>{{ _('Clear') }}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        <div class="fw-notif-dd-list">
+          {% for n in notification_preview %}
+          <a class="fw-notif-dd-item{% if not n.read %} unread{% endif %}"
+             href="{{ n.link or url_for('notifications.index', q='#' ~ n.id, open=n.id) }}">
+            <span class="fw-notif-dd-ic" style="color:{{ n.color }};"><i class="bi {{ n.icon }}"></i></span>
+            <span class="fw-notif-dd-main">
+              <span class="fw-notif-dd-title">{{ n.title }}</span>
+              <span class="fw-notif-dd-time">{{ n.created_at | localtime }}</span>
+            </span>
+          </a>
+          {% else %}
+          <div class="fw-notif-dd-empty"><i class="bi bi-bell-slash me-1"></i>{{ _('You\'re all caught up.') }}</div>
+          {% endfor %}
+        </div>
+        <a class="fw-notif-dd-foot" href="{{ url_for('notifications.index') }}">View all notifications &rsaquo;</a>
+      </div>
+    </div>
+
+    <!-- User dropdown -->
+    <div class="dropdown fw-user-menu">
+      <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <div class="fw-avatar">
+          {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
+        </div>
+        <span class="d-none d-md-inline ms-1">
+          {{ current_user.username if current_user else 'User' }}
+        </span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header">
+          {{ current_user.username if current_user else 'User' }}
+          <br><small class="text-muted fw-normal">
+            {{ current_user.role if current_user else '' }}
+          </small>
+        </h6></li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="{{ url_for('auth.profile') }}">
+            <i class="bi bi-person me-2"></i>{{ _('Profile') }}
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{{ url_for('auth.profile') }}#language">
+            <i class="bi bi-translate me-2"></i>{{ _('Language') }}
+            <span class="text-muted ms-1">{{ user_lang|upper if user_lang else 'not set' }}</span>
+          </a>
+        </li>
+        {# This node's Documentation Center (/manual/), public site only if the
+           node has no copy — same resolver as the login page's link. #}
+        <li>
+          <a class="dropdown-item" href="{{ docs_url() }}" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-book me-2"></i>{{ _('Documentation') }}
+          </a>
+        </li>
+        {# Report a problem / Release Notes / Bug Reports live in the Tools
+           menu (bi-tools) since 2026-09-14 — do not re-add them here. #}
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">
+            <i class="bi bi-box-arrow-right me-2"></i>{{ _('Sign Out') }}
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+{% endif %}
+
+<!-- ============================================================
+     BODY (sidebar + content)
+     ============================================================ -->
+<div class="fw-body">
+
+  <!-- SIDEBAR -->
+  {% if obs_shell %}{% include 'observability/_shell_sidebar.html' %}{% else %}
+  <aside id="fw-sidebar" class="fw-sidebar">
+    {# The section holding the active item is opened by the filter, from this
+       markup — NOT by the per-group blueprint lists below, which cannot be
+       kept in sync by hand and had already drifted. See app/nav_state.py.
+       The same filter first takes out what the administrator hid in
+       Settings › Appearance › Sidebar menu (app/nav_hide.py), which renders
+       the sidebar_menu block on its own, per ADOM, to list what can be hidden. #}
+    {% filter nav_autoopen %}{% block sidebar_menu %}
+    <nav class="fw-nav">
+      <div class="fw-nav-top">
+
+      {% if product.key == 'fortiadc' %}
+      <!-- ===== FortiADC — the appliance's own left menu: its measured GUI pages
+           (partials/nav_fortiadc.html, included by nav_product_api.html). Since
+           2026-10-11 the hand-made adc_menu groups are not drawn; /adc/m/<item>
+           redirects to the measured page (services.gui_classic). ===== -->
+
+      {# ADOM back-link — ALWAYS the first entry (same format as FortiWeb) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
+      {% include 'partials/nav_product_api.html' %}
+
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
+
+      {% elif product.key == 'global' %}
+      <!-- ===== GLOBAL ADOM — fleet-wide, spans FortiWeb + FortiADC ===== -->
+      <div class="fw-nav-context" data-nav-context="Global">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Global') }}</span></div>
+        <div class="fw-nav-group-body">
+          {# Scout: top level, right above Wiki (operator, 2026-10-31). #}
+          {% include 'partials/nav_advisor.html' %}
+          {# Sentinel: right below Scout (operator, 2026-11-09). #}
+          {% include 'partials/nav_sentinel.html' %}
+          {% include 'partials/nav_wiki.html' %}
+          {# Global › Automation and Plugins are drawn by nav_fleet.html, above Jobs. #}
+          {% include 'partials/nav_fleet.html' %}
+        </div>
+      </div>
+
+      <!-- ADOMs -->
+      <div class="fw-nav-group open" data-nav-group="ADOMs">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-grid-1x2 fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('ADOMs') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {# ADOM list is DB-driven (branding registry) — every active non-global ADOM shows here automatically. #}
+          {% for _k, _p in adom_registry.items() if _k != 'global' %}
+          {# every ADOM home needs a view key; a profile without one has nowhere to land #}
+          {% if may_open('product.enter') and current_user.can('view') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key=_k) }}">
+            <img src="{{ url_for('static', filename=_p.mark) }}" alt="" class="fw-nav-icon"><span>{{ _p.name }}</span></a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Automation is a subgroup of the Global block since 2026-10-14
+         (partials/nav_fleet.html), as it is of Operations in a device ADOM. #}
+
+
+      {% elif product.key == 'fortianalyzer' %}
+      <!-- ===== FortiAnalyzer — the FAZ ADOM left menu: its measured GUI pages,
+           else the curated faz_menu groups (partials/nav_fortianalyzer.html) ===== -->
+
+      {# ADOM back-link — ALWAYS first (same format as FortiWeb/FortiADC) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {# The unit's own menu from its measured GUI layouts; the curated
+         faz_menu groups while no layout exists for its build. #}
+      {% include 'partials/nav_fortianalyzer.html' %}
+
+      {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
+      {% include 'partials/nav_product_api.html' %}
+
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
+
+
+
+      {% elif product.key == 'fortiauthenticator' %}
+      <!-- ===== FortiAuthenticator — the FAC ADOM left menu (device menu: partials/nav_gx.html) ===== -->
+
+      {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {# The unit's own menu, drawn from its measured GUI layouts; the old
+         fac_menu groups are gone (operator request 2026-10-11). #}
+      {% include 'partials/nav_gx.html' %}
+
+      {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
+      {% include 'partials/nav_product_api.html' %}
+
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
+
+
+      {% elif product.key == 'fortigate' %}
+      <!-- ===== FortiGate — the FGT ADOM left menu (device menu: partials/nav_gx.html) ===== -->
+
+      {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {# The unit's own menu, drawn from its measured GUI layouts; the old
+         fgt_menu groups are gone (operator request 2026-10-11). #}
+      {% include 'partials/nav_gx.html' %}
+
+      {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
+      {% include 'partials/nav_product_api.html' %}
+
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
+
+
+      {% elif product.placeholder %}
+      <!-- ===== Placeholder ADOM (a future ADOM added in Settings → ADOMs; FortiAnalyzer, FortiAuthenticator and FortiGate have their own menus above).
+           Since 2026-11-06 (operator: "every ADOM added was to have the common
+           menu; adding Linux does not show it") it draws the same shared groups
+           as a device ADOM: Operations, Plugin Studio, Administrator. Only the
+           entries that need a device of the ADOM's own kind are left out. ===== -->
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="fw-nav-context" data-nav-context="{{ product.name }}">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ product.name }}</span></div>
+        <div class="fw-nav-group-body">
+          {% if may_open('product.placeholder_home') %}
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'product.placeholder_home' else '' }}" href="{{ url_for('product.placeholder_home') }}">
+            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+          {% endif %}
+          {% include 'partials/nav_wsm.html' %}
+        </div>
+      </div>
+
+      {# OPERATIONS — the same group as a device ADOM (Scout, Wiki, the Fleet
+         entries, Automation, Plugins with this ADOM's apps, Jobs). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {% else %}
+      <!-- ===== FortiWeb ===== -->
+
+      <!-- ADOM back-link — ALWAYS the first entry (same format as FortiADC) -->
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
+
+      {# FORTIWEB MENU — FortiWeb's own menu tree, every page SATOM has a measured
+         GUI layout for (services.gui_pages; layouts come with the knowledge packs).
+         Server Policy opens its hand-tuned view; every other leaf the generic one. #}
+      {% set _fwg_nav = fwgui_nav_for(current_appliance) if current_appliance and current_appliance.kind == 'fortiweb' else [] %}
+      {% if _fwg_nav and may_open('workspace.index') %}
+      {% set _fwg_page = (request.view_args or {}).get('page') if request.endpoint and request.endpoint.startswith('workspace.fwgui') else ('server-policy' if request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] else None) %}
+      {% macro _fwg_node(n, depth, cur) %}
+        {% if n.entry is defined %}
+          {% set e = n.entry %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if e.page == cur }}" style="padding-left:{{ 14 + depth * 12 }}px"
+             href="{{ url_for(e.special, appliance_id=current_appliance.id) if e.special else url_for('workspace.fwgui_list', appliance_id=current_appliance.id, page=e.page) }}"><span>{{ n.label }}</span></a>
+        {% else %}
+          <details class="fw-so-parent" {{ 'open' if fwgui_contains(n, cur) }}>
+            <summary class="fw-nav-item fw-so-parent-head" style="padding-left:{{ 14 + depth * 12 }}px"><span>{{ n.label }}</span><i class="bi bi-chevron-down fw-so-nav-caret"></i></summary>
+            <div class="fw-so-parent-body"><div class="fw-so-nav">{% for c in n.children %}{{ _fwg_node(c, depth + 1, cur) }}{% endfor %}</div></div>
+          </details>
+        {% endif %}
+      {% endmacro %}
+      <div class="fw-nav-group fw-nav-device{{ ' open' if _fwg_page or nav_device_open('FortiWeb') }}" data-nav-group="FortiWeb">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=current_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>
+          {% for n in _fwg_nav %}{{ _fwg_node(n, 0, _fwg_page) }}{% endfor %}
+        </div>
+      </div>
+      {% elif may_open('workspace.index') %}
+      {# No device picked, or no measured layout for it yet (no knowledge pack
+         imported): Server Policy, the hand-tuned view, stays reachable -- the
+         device's layout view, else the device picker. #}
+      {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
+      <div class="fw-nav-group fw-nav-device{{ ' open' if _sp_gui or nav_device_open('FortiWeb') }}" data-nav-group="FortiWeb">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _sp_gui }}" href="{{ url_for('workspace.gui_list', appliance_id=current_appliance.id) if current_appliance and current_appliance.kind == 'fortiweb' else url_for('workspace.index') }}"><span>{{ _('Server Policy') }}</span></a>
+        </div>
+      </div>
+      {% endif %}
+      {# The old SATOM menus (Loadbalancer, WAF, Configuration) are gone: the
+         FortiWeb group above is the only device menu (operator request
+         2026-10-11). Their pages stay reachable by address (?classic=1), but
+         nothing in the sidebar links to them. #}
+
+      {# API fallback — the same partial, in the same place, as the other device ADOMs #}
+      {% include 'partials/nav_product_api.html' %}
+
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
+
+      {% endif %}
+
+      </div><!-- /.fw-nav-top -->
+
+      <div class="fw-nav-spacer"></div>
+
+      {# ADMINISTRATOR — the last group of the main menu, in every ADOM, below
+         the spacer so it sits at the foot of the sidebar, just above the
+         Settings block but not inside it (operator, 2026-10-14). Placeholder
+         ADOMs draw it too since 2026-11-06 (operator); nav_admin.html leaves
+         out the entries that need a device of the ADOM's kind. #}
+      {# PLUGIN STUDIO — a first-level entry of its own, in every ADOM, just
+         above Administrator (operator, 2026-10-23: "take Plugin Studio out of
+         Studio, put it on the first level and remove Studio"). Report Studio
+         and Lua Studio live in Plugins (partials/nav_plugins.html in a device
+         ADOM, partials/nav_global_studios.html in Global). #}
+      {% include 'partials/nav_plugin_studio.html' %}
+      {# DIAGRAMS — first level, every ADOM, right after Plugin Studio
+         (2026-11-17): Diagram Studio and the published diagrams of the
+         scope as a folder tree (partials/nav_diagrams.html). #}
+      {% include 'partials/nav_diagrams.html' %}
+      {% include 'partials/nav_admin.html' %}
+
+      <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
+      <div class="fw-nav-bottom">
+        {% if current_user and current_user.can('users.view') and not current_user.can('user_manage') %}
+        {# Read-only user list for users.view holders; managers reach it from the Administrator group. #}
+        {% if may_open('users.index') %}
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+          <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
+        {% endif %}
+        {% endif %}
+        <div class="fw-nav-divider"></div>
+        {# Admin-only since My Account moved to the Profile: for anybody else
+           /settings/ is only a redirect to the Profile, which the user menu
+           already offers. #}
+        {% if may_open('settings.index') and current_user and current_user.can('user_manage') %}
+        {# Pages filed under Settings (its menu's `ep` entries) light it too. #}
+        <a class="fw-nav-item {{ 'active' if request.endpoint and (request.endpoint.startswith('settings.') or request.blueprint in ('integrations', 'self_update', 'ha', 'scheduled_actions', 'system_backup')) else '' }}"
+           href="{{ url_for('settings.index') }}">
+          <i class="bi bi-gear fw-nav-icon"></i>
+          <span>{{ _('Settings') }}</span>
+        </a>
+        {% endif %}
+      </div>
+
+    </nav>
+    {% endblock %}{% endfilter %}
+  </aside>
+  {% endif %}
+
+  <!-- MAIN CONTENT -->
+  <main id="fw-main" class="fw-main{{ ' obs-main' if obs_shell }}"{% if obs_shell %} tabindex="-1"{% endif %}>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=True) %}
+      {% if messages %}
+        <div class="fw-flash-messages mb-3">
+          {% for category, message in messages %}
+            <div class="fw-alert fw-alert-{{ category if category in ['success','danger','warning','info'] else 'info' }} fw-auto-dismiss d-flex align-items-center gap-2">
+              {% if category == 'success' %}<i class="bi bi-check-circle-fill"></i>
+              {% elif category == 'danger' %}<i class="bi bi-exclamation-triangle-fill"></i>
+              {% elif category == 'warning' %}<i class="bi bi-exclamation-circle-fill"></i>
+              {% else %}<i class="bi bi-info-circle-fill"></i>{% endif %}
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Breadcrumb -->
+    {% block breadcrumb %}{% endblock %}
+
+    <!-- Page content -->
+    {% block content %}{% endblock %}
+
+  </main>
+</div>
+
+{% if current_user and current_user.is_authenticated %}
+{#
+  Bookmarks rail. `data-turbo-permanent` keeps the element (and its scroll and
+  open/closed state) across Turbo navigations, so the panel is fetched once per
+  page load rather than re-rendered on every click through the console.
+#}
+<aside id="fw-bookmarks" class="bm-rail" data-turbo-permanent
+       data-bm-url="{{ url_for('bookmarks.panel') }}"
+       data-bm-devices="{{ url_for('bookmarks.devices') }}"
+       data-bm-prefs="{{ url_for('bookmarks.prefs') }}"
+       data-bm-create="{{ url_for('bookmarks.create') }}"
+       data-bm-adopt-url="{{ url_for('bookmarks.adopt') }}"
+       data-bm-menu-fav-url="{{ url_for('bookmarks.menu_favorite') }}"
+       data-bm-csrf="{{ csrf_token() }}">
+  <button type="button" class="bm-tab" id="bm-tab" title="{{ _('Bookmarks') }}">
+    <i class="bi bi-bookmark-star"></i>
+    <span class="bm-tab-badge" id="bm-tab-badge" hidden>0</span>
+  </button>
+  <div class="bm-panel" id="bm-panel">
+    <div class="bm-loading"><span class="spinner-border spinner-border-sm"></span></div>
+  </div>
+</aside>
+
+<div class="modal fade" id="bmAddModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-bookmark-plus me-2"></i>{{ _('Add bookmark') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">{{ _('Type') }}</label>
+          <select class="form-select form-select-sm" id="bmAddKind">
+            <option value="appliance">{{ _('Device') }}</option>
+            <option value="link">{{ _('Link') }}</option>
+          </select>
+        </div>
+        <div class="mb-3" id="bmAddDeviceWrap">
+          <label class="form-label">{{ _('Device') }}</label>
+          <select class="form-select form-select-sm" id="bmAddDevice"></select>
+        </div>
+        <div class="mb-3 d-none" id="bmAddUrlWrap">
+          <label class="form-label">{{ _('URL') }}</label>
+          <input type="text" class="form-control form-control-sm" id="bmAddUrl"
+                 placeholder="https://…">
+        </div>
+        <div class="mb-0">
+          <label class="form-label">{{ _('Label') }} <span class="text-muted small">({{ _('optional') }})</span></label>
+          <input type="text" class="form-control form-control-sm" id="bmAddLabel" maxlength="160"
+                 placeholder="{{ _('leave empty to follow the live device name') }}">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="bmAddSave">{{ _('Add') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var rail = document.getElementById('fw-bookmarks');
+  if (!rail || rail.dataset.bmWired) return;
+  rail.dataset.bmWired = '1';
+
+  var panel = document.getElementById('bm-panel');
+  var tab   = document.getElementById('bm-tab');
+  var badge = document.getElementById('bm-tab-badge');
+  var CSRF  = rail.dataset.bmCsrf;
+  var OPEN_KEY = 'satom.bookmarks.rail';
+  var query = '';
+  var timer = null;
+
+  // The rail is `data-turbo-permanent`, so the CSRF token minted with the
+  // FIRST page load is the only one it would ever hold — and the token has a
+  // one-hour life. Every panel answer carries a fresh one and the rail adopts
+  // it, so a long session stops walking into an expiry it cannot see.
+  function adoptToken(r) {
+    var t = r.headers.get('X-CSRF-Token');
+    if (t) { CSRF = t; rail.dataset.bmCsrf = t; }
+    return r;
+  }
+
+  // A 200 is not consent to paint. The CSRF handler answers a non-XHR POST
+  // with a 302 to the referring page, fetch FOLLOWS it, and the rail used to
+  // paste a whole console page into a 300px column — killing every control in
+  // it, on every page, until a full reload, because the element is permanent.
+  // The panel says it is the panel; nothing else may be rendered as one.
+  function isPanel(r) { return r.headers.get('X-SATOM-Panel') === 'bookmarks'; }
+
+  var EXPIRED = 'Your session expired — reload the page to use bookmarks.';
+
+  // A non-panel answer is not automatically an expiry. Until 2026-08-30 the
+  // product gate redirected /bookmarks/panel to the ADOM home in the ADC, FAZ
+  // and FAC consoles, and the rail reported that as a dead session — which
+  // sends the reader to re-authenticate over a routing bug that
+  // re-authenticating cannot touch. Only an answer that actually came from
+  // the login page is an expiry; anything else names its own status, because
+  // "it did not work" is what made that report cost a browser session to
+  // diagnose. One authority: load() and post() both ask this function.
+  function whyNotPanel(r) {
+    var where = (r.url || '').replace(location.origin, '');
+    if (where.indexOf('/auth/login') !== -1) return EXPIRED;
+    return 'Bookmarks did not load — the server answered HTTP ' + r.status +
+           ' from ' + (where || '?') + '. Reload the page; if it repeats, ' +
+           'report that line.';
+  }
+
+  function post(url, data) {
+    var body = new URLSearchParams(data || {});
+    body.set('csrf_token', CSRF);
+    // Every mutation answers with the tree the operator is LOOKING at. Replying
+    // with the unfiltered one would silently drop them out of their own search.
+    if (!body.has('q')) body.set('q', query);
+    return fetch(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                // Without this the CSRF handler REDIRECTS instead of refusing,
+                // and a followed redirect is indistinguishable from success.
+                'X-Requested-With': 'XMLHttpRequest'},
+      body: body.toString()
+    }).then(adoptToken).then(function (r) {
+      if (r.status === 400) {
+        // Never a bare "not allowed": the reason is what tells the operator
+        // how to satisfy the rule instead of routing around it. A 400 that is
+        // not JSON still has to speak — parsing it is not the message.
+        return r.json().then(function (j) { return j.error || j.reason; },
+                             function () { return null; })
+          .then(function (msg) { alert(msg || 'refused (HTTP 400)'); return null; });
+      }
+      if (!r.ok) { alert('HTTP ' + r.status); return null; }
+      if (!isPanel(r)) { alert(whyNotPanel(r)); return null; }
+      return r.text();
+    }).then(function (html) { if (html !== null) render(html); });
+  }
+
+  function render(html, keepFocus) {
+    panel.innerHTML = html;
+    wire();
+    var mf = panel.querySelector('[data-bm-menu-favs]');
+    if (mf) {
+      try { menuFavs = JSON.parse(mf.getAttribute('data-bm-menu-favs') || '[]'); }
+      catch (e) { menuFavs = []; }
+      decorateMenu();
+    }
+    var b = panel.querySelector('[data-bm-node="r:shared"] .fw-badge-primary');
+    var n = b ? parseInt((b.textContent || '0').trim(), 10) : 0;
+    if (n > 0) { badge.textContent = n; badge.hidden = false; }
+    else { badge.hidden = true; }
+    if (keepFocus) {
+      var s = panel.querySelector('[data-bm-search]');
+      if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    }
+  }
+
+  function load(keepFocus) {
+    var url = rail.dataset.bmUrl + (query ? '?q=' + encodeURIComponent(query) : '');
+    fetch(url, {credentials: 'same-origin',
+                headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(adoptToken)
+      .then(function (r) {
+        // Whatever went wrong is said WHERE THE TREE WOULD HAVE BEEN, which
+        // beats pasting a login form into a 300px column and leaving the
+        // reader to work out why. textContent, not innerHTML: the message
+        // carries a URL the server chose.
+        if (isPanel(r)) return r.text().then(function (h) { render(h, keepFocus); });
+        var msg = whyNotPanel(r);
+        panel.innerHTML = '<p class="bm-empty"></p>';
+        panel.firstChild.textContent = msg;
+      });
+  }
+
+  function openNodes() {
+    var out = [];
+    panel.querySelectorAll('[data-bm-kids]').forEach(function (box) {
+      if (!box.hidden) out.push(box.dataset.bmKids);
+    });
+    return out;
+  }
+
+  function persistOpen() {
+    // A search forces every matching branch open. Persisting THAT would
+    // overwrite the operator's collapsed tree with the shape of one query.
+    if (query) return;
+    post(rail.dataset.bmPrefs, {open: JSON.stringify(openNodes())});
+  }
+
+  function wire() {
+    panel.querySelectorAll('[data-bm-node]').forEach(function (head) {
+      head.addEventListener('click', function (ev) {
+        if (ev.target.closest('[data-bm-delete]')) return;
+        var box = head.nextElementSibling;
+        if (!box || !box.classList.contains('bm-kids')) return;
+        box.hidden = !box.hidden;
+        var caret = head.querySelector('.bm-caret');
+        if (caret) caret.className = 'bi bi-caret-' + (box.hidden ? 'right' : 'down') +
+                                     '-fill bm-caret';
+        persistOpen();
+      });
+    });
+
+    var search = panel.querySelector('[data-bm-search]');
+    if (search) search.addEventListener('input', function () {
+      query = search.value.trim();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { load(true); }, 220);
+    });
+    var clear = panel.querySelector('[data-bm-clear]');
+    if (clear) clear.addEventListener('click', function () { query = ''; load(true); });
+
+    panel.querySelectorAll('[data-bm-fav]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/bookmarks/' + b.dataset.bmFav + '/favorite', {favorite: b.dataset.bmOn});
+      });
+    });
+    // A device shown by an inventory lens has no bookmark row until somebody
+    // wants one. Starring it mints exactly one, idempotently.
+    panel.querySelectorAll('[data-bm-adopt]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post(rail.dataset.bmAdoptUrl,
+             {appliance_id: b.dataset.bmAdopt, favorite: '1'});
+      });
+    });
+    panel.querySelectorAll('[data-bm-hide]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/bookmarks/' + b.dataset.bmHide + '/hidden', {hidden: b.dataset.bmOn});
+      });
+    });
+    panel.querySelectorAll('[data-bm-share]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!confirm('Share this bookmark with the whole team? It leaves your private list.')) return;
+        post('/bookmarks/' + b.dataset.bmShare + '/share', {});
+      });
+    });
+    panel.querySelectorAll('[data-bm-delete]').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (!confirm('Delete this bookmark?')) return;
+        post('/bookmarks/' + b.dataset.bmDelete + '/delete', {});
+      });
+    });
+    var sh = panel.querySelector('[data-bm-showhidden]');
+    if (sh) sh.addEventListener('change', function () {
+      post(rail.dataset.bmPrefs, {showhidden: sh.checked ? '1' : '0'});
+    });
+    var close = panel.querySelector('[data-bm-close]');
+    if (close) close.addEventListener('click', function () { setOpen(false); });
+    var nf = panel.querySelector('[data-bm-new-folder]');
+    if (nf) nf.addEventListener('click', function () {
+      var name = prompt('Folder name');
+      if (name) post(rail.dataset.bmCreate, {kind: 'folder', label: name});
+    });
+    var add = panel.querySelector('[data-bm-add]');
+    if (add) add.addEventListener('click', openAdd);
+
+    // Drag and drop. Three kinds of target, and only these:
+    //  * a heading that takes rows INTO it -- a folder, the Folders root,
+    //    Favourites ([data-bm-drop]): the row goes to the END of that list;
+    //  * a row of a HAND-ORDERED list -- Favourites, a folder, the Folders root
+    //    ([data-bm-container]): the upper half drops above it, the lower half
+    //    below it (drag-to-reorder, 2026-11-08);
+    //  * a folder heading that is also a row of a list: its top and bottom
+    //    quarters reorder, the middle drops into it.
+    // The inventory lens and the Shared tray are recomputed on every render,
+    // so they take no drop: the row would snap back with no explanation.
+    // Marking the valid targets (and only them) is that explanation.
+    function dragTok(el) {
+      return el.dataset.bmId ? 'b' + el.dataset.bmId : 'a' + el.dataset.bmAppliance;
+    }
+    panel.querySelectorAll('[draggable="true"]').forEach(function (el) {
+      el.addEventListener('dragstart', function (ev) {
+        ev.stopPropagation();
+        ev.dataTransfer.setData('text/plain', dragTok(el));
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+    });
+    function dropZone(row, ev) {
+      var r = row.getBoundingClientRect();
+      var y = (ev.clientY - r.top) / (r.height || 1);
+      var into = row.hasAttribute('data-bm-drop');
+      var sorts = row.hasAttribute('data-bm-container');
+      if (into && sorts) return y < 0.25 ? 'before' : (y > 0.75 ? 'after' : 'into');
+      if (sorts) return y < 0.5 ? 'before' : 'after';
+      return 'into';
+    }
+    function clearMarks(row) {
+      row.classList.remove('bm-dragover', 'bm-drop-before', 'bm-drop-after');
+    }
+    function adoptInto(tok, list) {
+      // A device of the lens has no bookmark yet: adopt it into that list.
+      var d = {appliance_id: tok.slice(1)};
+      if (list === 'fav') d.favorite = '1';
+      else if (list && list !== '0') d.parent_id = list;
+      post(rail.dataset.bmAdoptUrl, d);
+    }
+    function dropOn(tok, where, row) {
+      if (where === 'into') {
+        var list = row.dataset.bmDrop;
+        if (tok.charAt(0) === 'a') return adoptInto(tok, list);
+        if (list === 'fav') {
+          return post('/bookmarks/' + tok.slice(1) + '/move', {container: 'fav'});
+        }
+        return post('/bookmarks/' + tok.slice(1) + '/place',
+                    (list === '0' || !list) ? {} : {parent_id: list});
+      }
+      if (tok.charAt(0) === 'a') return adoptInto(tok, row.dataset.bmContainer);
+      if (tok === 'b' + row.dataset.bmId) return;   // dropped on itself
+      var data = {container: row.dataset.bmContainer};
+      data[where] = row.dataset.bmId;
+      post('/bookmarks/' + tok.slice(1) + '/move', data);
+    }
+    panel.querySelectorAll('[data-bm-drop], [data-bm-container]').forEach(function (row) {
+      row.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+        var w = dropZone(row, ev);
+        clearMarks(row);
+        row.classList.add(w === 'into' ? 'bm-dragover' : 'bm-drop-' + w);
+      });
+      row.addEventListener('dragleave', function () { clearMarks(row); });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        var w = dropZone(row, ev);
+        clearMarks(row);
+        var tok = ev.dataTransfer.getData('text/plain');
+        if (tok) dropOn(tok, w, row);
+      });
+    });
+  }
+
+  // ---- Stars on the left menu ---------------------------------------------
+  // A starred entry is a personal LINK bookmark with a star, so it lands in
+  // the panel's Favourites root and nothing new has to be stored. The list
+  // of starred pages comes from the panel itself; until the panel has
+  // answered it is null and NO star is drawn -- an empty outline would claim
+  // "not starred" about a page that might be.
+  var menuFavs = null;
+
+  function menuUrl(a) { return a.pathname + a.search; }
+
+  // "Fleet › Scout", not "Scout": the same word heads entries in several
+  // groups ("Overview", "Settings"), and the Favourites list shows no menu.
+  // The NEAREST heading names the entry: a sub-menu ("Monitoring ›") first,
+  // then the section, then the Global block, which has a label, not a toggle.
+  function menuLabel(a) {
+    var own = a.querySelector(':scope > span:not(.fw-nav-star)');
+    own = ((own || a).textContent || '').replace(/\s+/g, ' ').trim();
+    var grp = a.closest('.fw-nav-subgroup, .fw-nav-group, .fw-nav-context');
+    var head = grp && grp.querySelector(
+      ':scope > .fw-nav-subtoggle span, :scope > .fw-nav-section span');
+    var g = head ? (head.textContent || '').trim() : '';
+    return (g && g !== own ? g + ' › ' + own : own).slice(0, 160);
+  }
+
+  function decorateMenu() {
+    var side = document.getElementById('fw-sidebar');
+    if (!side || menuFavs === null) return;
+    side.querySelectorAll('a.fw-nav-item[href]').forEach(function (a) {
+      // Pages of this console only: the panel refuses anything else, and a
+      // star that can only fail is worse than no star.
+      var href = a.getAttribute('href') || '';
+      if (href.charAt(0) !== '/' || href.charAt(1) === '/' ||
+          a.origin !== location.origin) return;
+      var star = a.querySelector(':scope > .fw-nav-star');
+      if (!star) {
+        star = document.createElement('span');
+        star.className = 'fw-nav-star';
+        star.setAttribute('role', 'button');
+        star.tabIndex = 0;
+        star.appendChild(document.createElement('i'));
+        a.appendChild(star);
+      }
+      var on = menuFavs.indexOf(menuUrl(a)) !== -1;
+      star.classList.toggle('on', on);
+      star.firstChild.className = 'bi bi-star' + (on ? '-fill' : '');
+      star.title = on ? 'Remove from favourites' : 'Add to favourites';
+      star.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function toggleStar(star) {
+    var a = star.closest('a.fw-nav-item');
+    if (!a || star.classList.contains('busy')) return;
+    star.classList.add('busy');
+    post(rail.dataset.bmMenuFavUrl, {
+      url: menuUrl(a), label: menuLabel(a),
+      favorite: star.classList.contains('on') ? '0' : '1'
+    }).then(function () { star.classList.remove('busy'); },
+            function () { star.classList.remove('busy'); });
+  }
+
+  // Capture phase on `document`, which Turbo never replaces: the star sits
+  // INSIDE the menu link, so the click has to be stopped before the link --
+  // or Turbo's own listener -- turns it into a navigation.
+  document.addEventListener('click', function (ev) {
+    var star = ev.target.closest && ev.target.closest('#fw-sidebar .fw-nav-star');
+    if (!star) return;
+    ev.preventDefault(); ev.stopPropagation();
+    toggleStar(star);
+  }, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var star = ev.target.closest && ev.target.closest('#fw-sidebar .fw-nav-star');
+    if (!star) return;
+    ev.preventDefault(); ev.stopPropagation();
+    toggleStar(star);
+  }, true);
+  // Every visit brings a new sidebar; the list of starred pages survives in
+  // the permanent rail and is re-applied to it.
+  document.addEventListener('turbo:load', decorateMenu);
+  document.addEventListener('turbo:render', decorateMenu);
+
+  function openAdd() {
+    var kind = document.getElementById('bmAddKind');
+    var devWrap = document.getElementById('bmAddDeviceWrap');
+    var urlWrap = document.getElementById('bmAddUrlWrap');
+    var sel = document.getElementById('bmAddDevice');
+    sel.innerHTML = '<option>…</option>';
+    fetch(rail.dataset.bmDevices, {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        sel.innerHTML = '';
+        (j.devices || []).forEach(function (d) {
+          var o = document.createElement('option');
+          o.value = d.id; o.textContent = d.name + '  ·  ' + d.host;
+          sel.appendChild(o);
+        });
+        if (!sel.options.length) sel.innerHTML = '<option value="">(no devices)</option>';
+      });
+    kind.onchange = function () {
+      var isDev = kind.value === 'appliance';
+      devWrap.classList.toggle('d-none', !isDev);
+      urlWrap.classList.toggle('d-none', isDev);
+    };
+    document.getElementById('bmAddSave').onclick = function () {
+      var data = {kind: kind.value, label: document.getElementById('bmAddLabel').value};
+      if (kind.value === 'appliance') data.appliance_id = sel.value;
+      else data.url = document.getElementById('bmAddUrl').value;
+      post(rail.dataset.bmCreate, data).then(function () {
+        var m = bootstrap.Modal.getInstance(document.getElementById('bmAddModal'));
+        if (m) m.hide();
+      });
+    };
+    new bootstrap.Modal(document.getElementById('bmAddModal')).show();
+  }
+
+  function isOpen() {
+    try { return localStorage.getItem(OPEN_KEY) === '1'; } catch (e) { return false; }
+  }
+  // Open/closed is a class on <body>, and Turbo replaces <body> on EVERY
+  // visit while the rail itself lives through it — that is what
+  // `data-turbo-permanent` buys, and it is also why the restore below never
+  // ran a second time: the wiring guard above returns early on the element
+  // that survived. The rail therefore shut itself on every navigation, which
+  // is every click on a bookmark. The class has to be re-applied to whatever
+  // body is current, and only where the rail is actually on the page.
+  function applyOpen() {
+    var live = document.getElementById('fw-bookmarks');
+    document.body.classList.toggle('bm-open', !!live && isOpen());
+  }
+  function setOpen(on) {
+    try { localStorage.setItem(OPEN_KEY, on ? '1' : '0'); } catch (e) {}
+    document.body.classList.toggle('bm-open', on);
+  }
+  tab.addEventListener('click', function () {
+    setOpen(!document.body.classList.contains('bm-open'));
+  });
+  // Default CLOSED. On a hundred-device fleet an open-by-default rail is a
+  // wall of text over the page the operator actually came for.
+  applyOpen();
+  // On `document`, which Turbo does NOT replace. A listener on the body would
+  // be swapped away with the very body it exists to fix.
+  document.addEventListener('turbo:render', applyOpen);
+  document.addEventListener('turbo:load', applyOpen);
+  load();
+})();
+</script>
+{% endif %}
+
+{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator', 'fortigate') %}
+{% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer', 'fortigate') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
+<div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background:var(--fw-surface);color:var(--fw-text-primary);border:1px solid var(--fw-border);border-radius:14px;box-shadow:0 24px 60px rgba(16,32,52,.18);">
+      <div class="modal-header" style="background:var(--fw-surface-alt);border-bottom:1px solid var(--fw-border);">
+        <h5 class="modal-title" style="font-size:15px;font-weight:700;color:var(--fw-text-primary);"><i class="bi bi-hdd-network me-2" style="color:var(--fw-accent);"></i>{{ _('Switch device') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="deviceSwitchBody" style="background:var(--fw-surface);">
+        <div style="color:var(--fw-text-secondary);" class="py-5 text-center"><div class="spinner-border spinner-border-sm me-2" role="status"></div>{{ _('Loading fleet…') }}</div>
+      </div>
+      <div class="modal-footer" style="background:var(--fw-surface-alt);border-top:1px solid var(--fw-border);">
+        <span style="color:var(--fw-text-secondary);font-size:12px;" class="me-auto">{{ _('Pick a device to make it the active context.') }}</span>
+        {% if product.key == 'fortiweb' %}<a href="{{ url_for('architecture.index') }}" class="btn btn-sm btn-fw-secondary"><i class="bi bi-map me-1"></i>{{ _('Open full map') }}</a>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var el=document.getElementById('deviceSwitchModal'); if(!el) return;
+  el.addEventListener('show.bs.modal', function(){
+    var body=document.getElementById('deviceSwitchBody');
+    // X-ADOM pins the picker to THIS tab's ADOM (per-tab product, 2026-07-07)
+    // so the fleet it lists is scoped to this product's own devices only.
+    fetch('{{ url_for("architecture.picker") }}', {headers:{'X-ADOM':'{{ product.key }}'}}).then(function(r){return r.text();})
+      .then(function(html){ body.innerHTML=html;
+        body.querySelectorAll('script').forEach(function(os){var ns=document.createElement('script');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
+        body.querySelectorAll('style').forEach(function(os){var ns=document.createElement('style');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
+      }).catch(function(){ body.innerHTML='<div class="text-danger">Failed to load devices.</div>'; });
+  });
+  // Pick a device: animate the modal closed, flag the next page to cross-fade
+  // in (native POST to /architecture/select never rides Turbo), THEN submit.
+  el.addEventListener('submit', function(ev){
+    var form = ev.target.closest ? ev.target.closest('form.dp-form') : null;
+    if(!form) return;
+    ev.preventDefault();
+    try { sessionStorage.setItem('fmDeviceEnter','1'); } catch(e){}
+    var inst = (window.bootstrap && bootstrap.Modal) ? bootstrap.Modal.getOrCreateInstance(el) : null;
+    if(inst){
+      el.addEventListener('hidden.bs.modal', function once(){ el.removeEventListener('hidden.bs.modal', once); form.submit(); }, { once:true });
+      inst.hide();
+    } else { form.submit(); }
+  });
+})();
+</script>
+{% endif %}
+
+<!-- FOOTER -->
+<footer id="fw-footer" class="fw-footer">
+  {{ product.title }} v{{ app_version }} &nbsp;&mdash;&nbsp;
+  &copy; {{ now.year if now else '2026' }} &nbsp;
+  <span class="text-muted">{{ product.tagline }}</span>
+  {%- if current_user and current_user.is_authenticated %}
+  &nbsp;&middot;&nbsp;
+  <a href="{{ url_for('concept_map.index') }}" class="fw-footer-link">
+    <i class="bi bi-diagram-2"></i> {{ _('Concept Map') }}</a>
+  {%- endif %}
+</footer>
+
+<!-- FortiWeb page-level JS — re-run on every Turbo visit (Turbo Drive, the
+     Bootstrap/Chart libraries and jobs.js are in <head> so they persist). -->
+<script src="{{ asset('js/api.js') }}"></script>
+<script src="{{ asset('js/main.js') }}"></script>
+<script src="{{ asset('js/regex_lab.js') }}"></script>
+<script src="{{ asset('js/net_calc.js') }}"></script>
+<script src="{{ asset('js/cert_inspect.js') }}"></script>
+<script src="{{ asset('js/fp_triage.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  document.body.dataset.product = '{{ product.key }}';
+  document.addEventListener('click', function(e){
+    var nc = e.target.closest('[data-fw-netcalc-open]');
+    if (nc && window.FWNetCalc) { e.preventDefault(); FWNetCalc.open(); return; }
+    var t = e.target.closest('[data-fw-regex-open]');
+    if (!t || !window.FWRegexLab) return;
+    e.preventDefault();
+    FWRegexLab.open(null, '', '{{ product.key }}', t.getAttribute('data-fw-regex-open'));
+  });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  // "/" opens Search from any page that shows the top-bar search button (its
+  // title advertises the key). On the Search page itself the page's own
+  // handler focuses the query box instead.
+  if (window.__fwSlashSearch) return;
+  window.__fwSlashSearch = true;
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(t.tagName) >= 0)) return;
+    if (document.getElementById('queryInput')) return;
+    var link = document.getElementById('fwTopbarSearch');
+    if (!link) return;
+    e.preventDefault();
+    window.location.href = link.getAttribute('href');
+  });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  if (window.__fwBellPoll) return;
+  if (!document.getElementById('fwNotifBell')) return;
+  window.__fwBellPoll = true;
+  function updateBell(count){
+    var bell = document.getElementById('fwNotifBell');
+    if (!bell) return;
+    var icon = bell.querySelector('i.bi');
+    if (icon) icon.className = 'bi bi-bell' + (count > 0 ? '-fill' : '');
+    var badge = bell.querySelector('.fw-notif-badge');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'fw-notif-badge';
+        bell.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+    bell.setAttribute('title', count > 0 ? (count + ' unread notification(s)') : 'Notifications');
+  }
+  function poll(){
+    fetch('/notifications/unread', {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d && typeof d.count === 'number') updateBell(d.count); })
+      .catch(function(){});
+  }
+  window.FW = window.FW || {};
+  window.FW.refreshBell = poll;
+  setInterval(poll, 30000);
+})();
+</script>
+<script src="{{ asset('js/release_notes.js') }}"></script>
+
+<!-- Bug report modal -->
+<div class="modal fade" id="bugReportModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('reports.submit') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="page_url" id="bugPageUrl">
+        <input type="hidden" name="user_agent" id="bugUserAgent">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">{{ _('Tell the administrators what isn\'t working. The current page and your browser are captured automatically.') }}</p>
+          <div class="mb-3">
+            <label class="form-label">{{ _('Title') }}</label>
+            <input type="text" name="title" class="form-control" maxlength="200" required
+                   placeholder="{{ _('Short summary (e.g. \'Save button does nothing\')') }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">{{ _('Description') }}</label>
+            <textarea name="body" class="form-control" rows="4"
+                      placeholder="What did you do, what did you expect, what happened?"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-primary">{{ _('Send report') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var modal = document.getElementById('bugReportModal');
+  if (!modal) return;
+  modal.addEventListener('show.bs.modal', function () {
+    var u = document.getElementById('bugPageUrl');
+    var a = document.getElementById('bugUserAgent');
+    if (u) u.value = window.location.href;
+    if (a) a.value = navigator.userAgent;
+  });
+})();
+</script>
+
+{% if obs_shell and not obs_confined %}
+{# The Observability top bar: live/health pills, notifications and search,
+   fed by the app's own shell API (an ADOM-confined account is refused by it,
+   so those widgets are simply not drawn for one). #}
+<script src="{{ obs_asset('js/shell.js') }}" data-shell-url="{{ request.script_root }}/observability/api/v1/shell"></script>
+{% elif obs_shell %}
+<script src="{{ obs_asset('js/shell.js') }}"></script>
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

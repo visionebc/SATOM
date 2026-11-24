@@ -1,0 +1,1035 @@
+"""Local, versioned source-of-truth store for device configurations.
+
+Replaces the git-backed ``reports/`` history (retired 2026-08-05). The flat
+``reports/<slug>/_config.json`` files remain as the *latest* human-readable
+view — every existing consumer keeps working — but versioning, history, diff
+and off-box copies now go through this store instead of git commits.
+
+Layout::
+
+    data/sot/objects/<aa>/<sha256>.json.gz     # content-addressed blobs
+    (index)  Postgres table sot_version        # models_sot.SotVersion
+
+Design rules:
+
+* **The hash is the identity.** ``record()`` canonicalises the snapshot
+  (sorted keys, volatile fields stripped) and hashes it; an unchanged config
+  writes zero bytes and mints no version row — it only advances
+  ``last_seen_at``. At fleet scale ~95% of cycles are unchanged, so the store
+  grows with *change*, not with *time*.
+* **Volatile fields are excluded from the identity.** ``generated_at`` and the
+  per-sweep ``errors`` list differ every harvest even when the device config
+  is byte-identical; hashing them would defeat the dedup entirely and quietly
+  reintroduce the unbounded growth this store exists to stop. The same is true
+  of fields NESTED inside ``sections`` -- the appliance's own clock, its
+  internal object handles, its reverse-reference projections and the echo
+  of the last sub-table edit -- which is what :func:`normalise` strips. The
+  blob IS the canonical body (it is what the hash is taken over), so a
+  stripped field is absent from history and diff as well: that is the point,
+  a field the appliance moves on its own is not configuration.
+* **A new identity rule is not a configuration change.** Adding a rule moves
+  the hash of every snapshot it touches; without care the next harvest of an
+  unchanged device minted a version and raised a drift alert per device.
+  :func:`record` re-hashes the newest stored body under the current rules
+  and, when it matches, moves that row onto the new identity instead.
+* **Blobs live under ``data/``** so the existing ``satom-ha-datasync`` rsync
+  replicates them to the standby and the system-backup bundles include them.
+  No new replication mechanism.
+* **Two lifetimes, never one.** The INDEX (``sot_version`` rows) is the change
+  log; the PAYLOAD (blobs) is what it points at. ``evacuate()`` moves payload
+  off-box and leaves every row; ``archive_log()`` writes whole past months of
+  ROWS to the backup server as JSONL and only then deletes them. Both obey the
+  same order: confirm the server holds it, then delete locally — a listing
+  that fails reads as "nothing is off-box", never as permission to delete.
+  Payload retention runs inside ``record()`` (same pattern as the monitor
+  rollups): a fresh install has no seeded ScheduledAction rows, so a function
+  that only works when the operator creates one does not exist there.
+"""
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from ..extensions import db
+
+# Snapshot keys that change every sweep without the device config changing.
+# ``shapes`` (what each table answered: list or object) describes the API, not
+# the configuration; hashing it would mint a version of every unchanged
+# FortiAnalyzer/FortiAuthenticator the first sync after it was added.
+# ``answered`` (which tables answered this sweep) is the same kind of fact, and
+# it also moves with a transient per-table error.
+VOLATILE_KEYS = ("generated_at", "errors", "shapes", "answered", "_library")
+
+# --- Nested volatility -----------------------------------------------------
+# VOLATILE_KEYS is top-level only, and that was not enough: the fields that
+# actually churn live INSIDE ``sections``, so they were hashed and every hourly
+# harvest minted a new version of an unchanged device. Measured against the
+# store on a1 (2026-08-11) over all 206 consecutive version pairs: 194 of them
+# -- 94% -- differed ONLY in the appliance's own wall clock, and those pairs
+# are ~640 of the last week's "config drift" alerts. The dedup this store
+# exists to provide was switched off for FortiADC entirely, and a real drift
+# would have been buried under the noise.
+#
+# Every rule below strips a field the APPLIANCE moves on its own. A field an
+# operator can set is never stripped: ``tz``, ``ntpsync``, ``dst`` and
+# ``syncinterval`` sit in the SAME object as the clock and are deliberately
+# kept -- the goal is to stop reporting the clock, not to stop reporting time
+# configuration.
+#
+# The blob is the canonical body the hash is taken over, so a stripped field
+# is absent from the stored version too -- history and diff show configuration,
+# not the appliance's own churn. (This comment used to claim the snapshot was
+# stored whole; it never was: ``record()`` writes ``canonical_bytes``.)
+
+#: Wall-clock readings. Dropped only inside an object that carries
+#: ``CLOCK_MARKER``, so a configuration field that happens to be named
+#: ``hour``/``month`` elsewhere in the tree keeps being hashed.
+CLOCK_MARKER = "system_dateTime"
+CLOCK_FIELDS = frozenset({
+    "hour", "minute", "second", "mday", "month", "year",
+    "system_date", "system_dateTime",
+})
+
+#: Reverse-reference projections: ``q_ref`` counts the objects pointing at this
+#: one and ``q_ref_string`` lists them, newline separated and in an unstable
+#: order. Sorted, NOT dropped -- a genuine reference change is still a change,
+#: and dropping it would hide the consequence of an object being deleted.
+REF_LIST_KEYS = frozenset({"q_ref_string"})
+
+#: Windows the appliance re-bases forward by itself. FortiWeb cookie security
+#: advances ``allow-time`` with no operator involvement.
+ROLLING_KEYS = frozenset({"allow-time"})
+
+#: Suffix of an internal numeric handle (``signature-rule_val`` next to
+#: ``signature-rule``). The appliance renumbers handles when proxyd restarts --
+#: that alone accounted for 109 differing leaves across a fortiweb08 reboot --
+#: while the sibling NAME the handle resolves to does not move. Stripped only
+#: when that sibling is present, so a standalone ``*_val`` field stays hashed.
+HANDLE_SUFFIX = "_val"
+
+#: FortiWeb's last sub-table EDIT -- which sub-table, which row, add/edit/
+#: delete -- echoed on the parent row. Absent from ``show full-configuration``;
+#: opening a signature profile in the GUI flips ``sub_table_type`` Table ->
+#: Main with no configuration change. Measured on a1 (2026-10-12): 7 of the 63
+#: consecutive FortiWeb version pairs differed in nothing else, each one a
+#: drift alert. Every other reader in this product already treats
+#: ``sub_table*`` as noise (field schema, workspace, write ops, factory
+#: catalog). Dropped at any depth: the names exist on no other product.
+EDIT_OP_KEYS = frozenset({"sub_table_type", "sub_table_type_val", "sub_table_id",
+                          "sub_table_id_val", "sub_table_action", "sub_table_action_val"})
+
+#: Live state FortiADC computes and returns inside configuration rows. A
+#: virtual server's ``availability`` flips HEALTHY <-> DEAD with its backends
+#: and a local certificate's ``status`` turns OK -> Expired with the calendar;
+#: neither is in ``show full-configuration`` and no operator sets either.
+#: Measured on a1 (2026-10-13): every fortiadc10 version since 2026-10-12 --
+#: four versions and 20 "Config drift" alerts -- differed in nothing else, and
+#: the device swung back to an earlier identity when the VS recovered.
+#: Keyed by TABLE, never by field name alone: ``status`` is configuration
+#: (enable/disable/maintain) in dozens of other FortiADC tables, and FortiGate
+#: and FortiAnalyzer carry an admin ``status`` in their own ``system_interface``.
+#: The configured state survives next to each stripped field (``status`` on the
+#: VS, ``validfrom``/``validto`` on the certificate), so a real change -- a VS
+#: disabled, a certificate replaced -- is still a new version.
+RUNTIME_ROW_FIELDS = {
+    "load_balance_virtual_server": frozenset({"availability"}),
+    "load_balance_pool": frozenset({"availability"}),
+    "system_interface": frozenset({"availability"}),
+    "system_certificate_local": frozenset({"status"}),
+    "system_certificate_ca": frozenset({"status"}),
+    "system_certificate_intermediate_ca": frozenset({"status"}),
+}
+#: A certificate's computed ``status`` is stripped only in a row that carries
+#: the validity it is computed from; a row without it keeps the field hashed.
+RUNTIME_REQUIRES = {"status": "validto"}
+
+#: FortiAnalyzer JSON-RPC answers every secret as ``["ENC", "<blob>"]`` and
+#: RE-SALTS the blob on every read. Measured on a1 (2026-10-13): an unchanged
+#: faz02 minted a version -- and a "Config drift" alert -- every hourly sync,
+#: 15 in a row, until the sweep scrubbed them (``device_sync.snapshot_from_faz``
+#: uses the FortiAnalyzer adapter's ``scrub``). That scrub is the primary
+#: guard; this is the store's own. Any path that hands ``record()`` a body
+#: still carrying the pair -- a ``_config.json`` written before the scrub and
+#: re-published from System Backup, a future JSON-RPC product -- would
+#: otherwise reintroduce the hourly churn. The key is DROPPED, not masked, as
+#: the scrub drops it, so a body whose secrets are all in this form hashes
+#: like the scrubbed sweep and :func:`_reidentify` can move an old pre-scrub
+#: row onto it. Only the two-element list form
+#: is matched: the ``"ENC <ciphertext>"`` STRING FortiWeb and FortiADC store
+#: is stable between reads (measured on a1, 2026-10-13: 0 of 371 changed
+#: between consecutive versions of 16 devices) and so still reports a
+#: password that was really changed.
+RPC_SECRET_TAG = "ENC"
+
+
+def _is_rpc_secret(value) -> bool:
+    return (isinstance(value, list) and len(value) == 2
+            and value[0] == RPC_SECRET_TAG and isinstance(value[1], str))
+
+
+def _strip_runtime(table: str, rows):
+    fields = RUNTIME_ROW_FIELDS[table]
+
+    def one(row):
+        if not isinstance(row, dict):
+            return row
+        return {k: v for k, v in row.items()
+                if not (k in fields and RUNTIME_REQUIRES.get(k, k) in row)}
+
+    return [one(r) for r in rows] if isinstance(rows, list) else one(rows)
+
+
+def normalise(value):
+    """Strip appliance-side churn so the identity tracks CONFIGURATION.
+
+    Recursive and total: returns a structure of the same shape with the
+    volatile leaves removed or canonicalised. Pure -- no I/O, no ORM -- so the
+    rules can be tested against a literal snapshot.
+    """
+    if isinstance(value, list):
+        return [normalise(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    has_clock = CLOCK_MARKER in value
+    out = {}
+    for key, val in value.items():
+        if has_clock and key in CLOCK_FIELDS:
+            continue
+        if key.endswith(HANDLE_SUFFIX) and key[:-len(HANDLE_SUFFIX)] in value:
+            continue
+        if key in ROLLING_KEYS or key in EDIT_OP_KEYS or _is_rpc_secret(val):
+            continue
+        if key in RUNTIME_ROW_FIELDS:
+            val = _strip_runtime(key, val)
+        if key in REF_LIST_KEYS and isinstance(val, str):
+            out[key] = "\n".join(sorted(p for p in val.split("\n") if p))
+            continue
+        out[key] = normalise(val)
+    return out
+
+# ── Retention: the INDEX and the PAYLOAD have different lifetimes ───────────
+#
+# The change log is permanent. ``prune()`` used to delete ``sot_version`` ROWS,
+# and the row IS the log — the list an operator walks back through to find what
+# a parameter used to be set to. With a one-day local policy that made the
+# whole history disappear inside a day even though every byte was already
+# safe on the backup server, because ``load()`` and ``diff()`` only ever
+# opened the local file. There is deliberately NO knob to shorten the index:
+# a setting whose only possible effect is to destroy the record this store
+# exists to keep is not a policy, it is a footgun with a label.
+#
+# The payload is what costs disk, so the payload is what leaves. A version
+# whose blob has been confirmed on the backup server is marked evacuated and
+# its local file removed; :func:`load` fetches it back on demand.
+
+#: Newest N blobs per device kept on local disk regardless of age. Two, not
+#: one: a diff needs a version AND the one before it, and the overwhelmingly
+#: common diff is "what changed in the last harvest". At one, the single most
+#: used operation on this store would hit the network every time.
+DEFAULT_LOCAL_VERSIONS = 2
+#: …plus anything younger than this many days. One, as specified.
+DEFAULT_LOCAL_DAYS = 1
+
+# Kept as names because the on-disk store and its tests refer to them; they no
+# longer govern row deletion, only how much payload stays local.
+DEFAULT_KEEP_VERSIONS = DEFAULT_LOCAL_VERSIONS
+DEFAULT_KEEP_DAYS = DEFAULT_LOCAL_DAYS
+
+#: How long the change log stays in this node's database before whole past
+#: months of it are written to the backup server and removed here.
+#:
+#: A year, and deliberately long. The log is not what fills a node: a row plus
+#: its indexes costs ~875 B against ~62 KB for the gzipped snapshot it points
+#: at, so a hundred devices changing daily add ~32 MB of rows a year against
+#: ~2 GB of payload. Shortening this buys almost no disk and costs the one
+#: thing the store exists for — being able to open a device's history in the
+#: UI without going to the network. The knob exists so the table is bounded
+#: and the log is provably off-box, not as a space measure.
+#:
+#: 0 disables trimming entirely: the log then stays here forever, which is
+#: what this product did before the setting existed.
+DEFAULT_LOG_KEEP_DAYS = 365
+
+#: Folder under the backup server's ``system_path`` that holds the archive.
+LOG_ARCHIVE_SUBDIR = "sot-log"
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def store_dir() -> Path:
+    d = Path(os.environ.get("SATOM_SOT_DIR")
+             or (_repo_root() / "data" / "sot"))
+    (d / "objects").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _blob_path(sha: str) -> Path:
+    return store_dir() / "objects" / sha[:2] / f"{sha}.json.gz"
+
+
+def canonical_bytes(snapshot: dict) -> bytes:
+    """Deterministic JSON bytes of the snapshot minus volatile fields."""
+    body = {k: v for k, v in snapshot.items() if k not in VOLATILE_KEYS}
+    return json.dumps(normalise(body), sort_keys=True, default=str,
+                      separators=(",", ":")).encode("utf-8")
+
+
+def _write_blob(sha: str, raw: bytes) -> Path:
+    """Write ``raw`` under its content address (atomic rename); idempotent."""
+    blob = _blob_path(sha)
+    if not blob.exists():
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        tmp = blob.with_suffix(".tmp")
+        with gzip.open(tmp, "wb", compresslevel=6) as fh:
+            fh.write(raw)
+        os.replace(tmp, blob)
+    return blob
+
+
+def _reidentify(row, raw: bytes, sha: str) -> bool:
+    """Move ``row`` onto identity ``sha`` if it holds the same configuration.
+
+    The stored body was canonicalised under the rules of the day it was
+    written. When a rule is added (the nested rules on 2026-08-11, the
+    sub-table echo on 2026-10-12) the newest row keeps its old hash, and the
+    next harvest of an UNCHANGED device hashes differently. Re-hash the stored
+    body under today's rules; if it matches, write the new blob and repoint the
+    row -- no version, no drift alert. The old blob becomes an orphan that
+    :func:`prune` collects. Anything unreadable answers False, so a version is
+    minted: the safe direction.
+    """
+    try:
+        old = _blob_path(row.sha256)
+        if not old.exists() and not fetch_blob(row.sha256):
+            return False
+        with gzip.open(old, "rb") as fh:
+            body = json.loads(fh.read().decode("utf-8"))
+        if hashlib.sha256(canonical_bytes(body)).hexdigest() != sha:
+            return False
+        blob = _write_blob(sha, raw)
+    except Exception:  # noqa: BLE001 -- fall back to minting, never sink a harvest
+        return False
+    row.sha256 = sha
+    row.size_raw = len(raw)
+    row.size_gz = blob.stat().st_size
+    row.evacuated_at = None
+    return True
+
+
+def _retention(product: str = "") -> tuple[int, int]:
+    """The configured (local versions, local days) FOR ONE ADOM.
+
+    Reads ``settings_store.sot_local_policy`` — the accessor that owns the
+    keys. The call before that one was to ``settings_store.get``, a function
+    this product has never defined: every harvest raised ``AttributeError``
+    here, the blanket except swallowed it, and the operator's configured
+    policy was discarded on every single run. The except stays (retention must
+    never sink a harvest) but it is no longer the normal path.
+
+    Per ADOM because the families are not comparable: a FortiAnalyzer snapshot
+    measures 6 MB raw against a FortiWeb's 0.5 MB, so one number that suits
+    both is a number that suits neither.
+    """
+    try:
+        from . import settings_store
+        cfg = settings_store.sot_local_policy(product)
+        return (int(cfg["versions"]), int(cfg["days"]))
+    except Exception:  # noqa: BLE001 — retention must never sink a harvest
+        return (DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS)
+
+
+def _log_retention(product: str = "") -> int:
+    """Days of change log this node keeps, FOR ONE ADOM.
+
+    Same three-deep resolution and same fail-safe as :func:`_retention`: any
+    failure returns the product default rather than a number that would delete
+    more. Zero is a real answer here (never trim) and is passed through.
+    """
+    try:
+        from . import settings_store
+        return int(settings_store.sot_local_policy(product)["log_days"])
+    except Exception:  # noqa: BLE001 — retention must never sink a harvest
+        return DEFAULT_LOG_KEEP_DAYS
+
+
+def product_for_device(device: str) -> str:
+    """Which ADOM a SoT device name belongs to.
+
+    Live appliance first — a registered device is authoritative about its own
+    family — then the identity record, which is the only thing that still
+    knows for a device that has been de-registered. Never a guess from the
+    name: ``fw7`` and ``fortiweb11`` are the same kind of box and neither
+    name says so.
+    """
+    try:
+        from ..models import Appliance
+        from .device_sync import slugify
+        for row in Appliance.query.all():
+            if slugify(row.name or "") == device:
+                return row.kind or ""
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from . import device_identity
+        return device_identity.product_for_slug(device)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def record(device: str, snapshot: dict, *, source: str = "harvest") -> dict:
+    """Record one harvested snapshot. Returns
+    ``{changed: bool, version_id: int|None, sha256: str}``.
+
+    Unchanged config → no new row, no new blob, newest row's ``last_seen_at``
+    advances. Changed config → gzip blob written (atomic rename) + new index
+    row. Prune runs after a change only (an unchanged cycle cannot create
+    anything to prune).
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    raw = canonical_bytes(snapshot)
+    sha = hashlib.sha256(raw).hexdigest()
+    now = datetime.utcnow()
+
+    latest = (SotVersion.query.filter_by(device=device)
+              .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
+              .first())
+    if latest and (latest.sha256 == sha or _reidentify(latest, raw, sha)):
+        latest.last_seen_at = now
+        db.session.commit()
+        return {"changed": False, "version_id": latest.id, "sha256": sha}
+
+    blob = _blob_path(sha)
+    if not blob.exists():
+        _write_blob(sha, raw)
+        # A device that reverts to an older configuration re-writes a blob
+        # that was evacuated. Every row on that sha is local again, and a row
+        # still flagged evacuated would send the next read to the network for
+        # a file lying on this disk.
+        SotVersion.query.filter_by(sha256=sha).update({"evacuated_at": None})
+
+    row = SotVersion(device=device, sha256=sha, size_raw=len(raw),
+                     size_gz=blob.stat().st_size,
+                     total_objects=int(snapshot.get("total_objects") or 0),
+                     section_count=int(snapshot.get("section_count") or 0),
+                     product=product_for_device(device),
+                     source=source, taken_at=now, last_seen_at=now)
+    db.session.add(row)
+    db.session.commit()
+    try:
+        prune(device)
+    except Exception:  # noqa: BLE001 — retention must never sink a harvest
+        pass
+    return {"changed": True, "version_id": row.id, "sha256": sha}
+
+
+def fetch_blob(sha: str) -> bool:
+    """Bring one evacuated blob back from the backup server. Never raises.
+
+    Written to a temp file and renamed, exactly like :func:`record`: a
+    half-downloaded blob under its content-addressed name would be indexed as
+    present by every other function here and would then fail a hash it can no
+    longer be checked against.
+    """
+    if not sha or len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha):
+        return False
+    blob = _blob_path(sha)
+    if blob.exists():
+        return True
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return False
+        remote_dir = (cfg.get("system_path") or "/system").rstrip("/") + "/sot"
+        data = _bk.fetch_file(remote_dir, f"{sha}.json.gz")
+    except Exception:  # noqa: BLE001 — a missing off-box copy is not a crash
+        return False
+    if not data:
+        return False
+    # The name is the hash: verify before adopting it. A server that returned
+    # the wrong bytes would otherwise poison the content-addressed store for
+    # every version that shares this sha.
+    try:
+        if hashlib.sha256(gzip.decompress(data)).hexdigest() != sha:
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    tmp = blob.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, blob)
+    return True
+
+
+def load(version_id: int) -> dict | None:
+    """Load one version's snapshot body (config sections, no volatile keys).
+
+    A payload that has been evacuated is fetched back from the backup server
+    on demand and re-cached locally. Without this the local retention policy
+    would silently amputate history: the row would still list the version, the
+    page would still offer to open it, and the answer would be nothing.
+    """
+    row = db_get(version_id)
+    if row is None:
+        return None
+    blob = _blob_path(row.sha256)
+    if not blob.exists():
+        if not fetch_blob(row.sha256):
+            return None
+    with gzip.open(blob, "rb") as fh:
+        return json.loads(fh.read().decode("utf-8"))
+
+
+def db_get(version_id: int):
+    from ..models_sot import SotVersion
+    try:
+        return db.session.get(SotVersion, int(version_id))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def history(device: str = "", limit: int = 30) -> list[dict]:
+    """Version rows, newest first; all devices when *device* is empty."""
+    from ..models_sot import SotVersion
+    q = SotVersion.query
+    if device:
+        q = q.filter_by(device=device)
+    rows = (q.order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
+            .limit(int(limit)).all())
+    return [r.to_dict() for r in rows]
+
+
+def devices_summary() -> list[dict]:
+    """Per-device: version count, latest change, latest confirmation."""
+    from ..models import db
+    from ..models_sot import SotVersion
+    rows = (db.session.query(
+                SotVersion.device,
+                db.func.count(SotVersion.id),
+                db.func.max(SotVersion.taken_at),
+                db.func.max(SotVersion.last_seen_at))
+            .group_by(SotVersion.device)
+            .order_by(SotVersion.device).all())
+    out = []
+    for device, n, changed, seen in rows:
+        out.append({"device": device, "versions": int(n),
+                    "last_change": changed.isoformat(timespec="seconds") if changed else "",
+                    "last_seen": seen.isoformat(timespec="seconds") if seen else ""})
+    return out
+
+
+def _flatten(snapshot: dict) -> dict[str, str]:
+    """section/endpoint/object-key → stable JSON string, for diffing."""
+    flat: dict[str, str] = {}
+    sections = (snapshot or {}).get("sections") or {}
+    for sec, endpoints in sections.items():
+        if not isinstance(endpoints, dict):
+            continue
+        for ep, rows in endpoints.items():
+            if not isinstance(rows, list):
+                continue
+            for i, obj in enumerate(rows):
+                if not isinstance(obj, dict):
+                    continue
+                key = str(obj.get("name") or obj.get("id")
+                          or obj.get("mkey") or i)
+                flat[f"{sec}/{ep}/{key}"] = json.dumps(
+                    obj, sort_keys=True, default=str)
+    return flat
+
+
+def diff(id_a: int, id_b: int, *, max_entries: int = 400) -> dict:
+    """Structural diff between two versions: added / removed / changed object
+    paths, plus a capped unified-style detail for changed entries."""
+    a_row, b_row = db_get(id_a), db_get(id_b)
+    if not a_row or not b_row:
+        return {"ok": False, "error": "unknown version"}
+    a, b = load(id_a), load(id_b)
+    if a is None or b is None:
+        return {"ok": False, "error": "blob missing (pruned?)"}
+    fa, fb = _flatten(a), _flatten(b)
+    added = sorted(set(fb) - set(fa))
+    removed = sorted(set(fa) - set(fb))
+    changed = sorted(k for k in (set(fa) & set(fb)) if fa[k] != fb[k])
+    detail = []
+    for k in changed[:40]:
+        try:
+            oa = json.loads(fa[k]); ob = json.loads(fb[k])
+            keys = sorted({*oa, *ob})
+            fields = [{"field": f, "a": oa.get(f), "b": ob.get(f)}
+                      for f in keys if oa.get(f) != ob.get(f)]
+        except Exception:  # noqa: BLE001
+            fields = []
+        detail.append({"path": k, "fields": fields[:24]})
+    trunc = (len(added) > max_entries or len(removed) > max_entries
+             or len(changed) > max_entries)
+    return {"ok": True,
+            "a": a_row.to_dict(), "b": b_row.to_dict(),
+            "added": added[:max_entries], "removed": removed[:max_entries],
+            "changed": changed[:max_entries], "changed_detail": detail,
+            "n_added": len(added), "n_removed": len(removed),
+            "n_changed": len(changed),
+            "identical": not (added or removed or changed),
+            "truncated": trunc}
+
+
+def remote_blob_names() -> set:
+    """Blob filenames the backup server currently holds. Empty set on any
+    failure — which is the whole point: an unreachable server must read as
+    "nothing is off-box", so evacuation refuses to delete anything."""
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return set()
+        remote_dir = (cfg.get("system_path") or "/system").rstrip("/") + "/sot"
+        inv = _bk.dir_inventory(remote_dir)
+        if not inv.get("reachable"):
+            return set()
+        return {str(f.get("name") or "") for f in (inv.get("files") or [])}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def evacuate(device: str = "", *, dry_run: bool = False) -> dict:
+    """Move payload off this node, keeping the index whole.
+
+    Per device: the newest N blobs and anything younger than D days stay; every
+    other version's blob is deleted locally **only after it has been seen on
+    the backup server** and its row is stamped ``evacuated_at``. Rows are never
+    deleted here — see the module notes on why the index has no retention knob.
+
+    Confirm-then-delete, never delete-then-hope: an SFTP listing that fails
+    yields an empty set, so an unreachable server evacuates nothing instead of
+    quietly turning a retention policy into data loss. This ordering is the
+    single line the whole feature rests on.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    devices = ([device] if device else
+               [d["device"] for d in devices_summary()])
+
+    # ONE authority for "this payload must stay local", derived once and then
+    # used both to select candidates and to protect shared blobs. It was two
+    # independent re-derivations of the same rule, and that redundancy meant
+    # breaking either one changed nothing observable — so no test could tell
+    # the difference between one intact layer and two. A rule with two authors
+    # is the shape this codebase keeps retiring.
+    #
+    # It is computed across EVERY device, not only the ones being evacuated: a
+    # sha can be shared by several devices (the same config recorded under a
+    # chassis and its ADOM rows), and it may only leave when NO retained row
+    # anywhere still wants it on disk.
+    pinned: set = set()
+    candidates: dict[str, list] = {}
+    all_devices = [d["device"] for d in devices_summary()]
+    now = datetime.utcnow()
+    for dev in all_devices:
+        keep_v, keep_d = _retention(product_for_device(dev))
+        cutoff = now - timedelta(days=keep_d)
+        rows = (SotVersion.query.filter_by(device=dev)
+                .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
+                .all())
+        for i, row in enumerate(rows):
+            if i < keep_v or (row.taken_at and row.taken_at >= cutoff):
+                pinned.add(row.sha256)
+            elif dev in devices:
+                if not _blob_path(row.sha256).exists():
+                    # Already gone: stamp the row so the UI stops implying the
+                    # payload is here. Costs no network and fixes rows
+                    # evacuated by an older build.
+                    if row.evacuated_at is None and not dry_run:
+                        row.evacuated_at = now
+                    continue
+                candidates.setdefault(row.sha256, []).append(row)
+    if not dry_run:
+        db.session.commit()
+
+    off_box = remote_blob_names()
+    moved = skipped = 0
+    freed = 0
+    now = datetime.utcnow()
+    for sha, rows in candidates.items():
+        if sha in pinned:
+            skipped += 1
+            continue
+        if f"{sha}.json.gz" not in off_box:
+            skipped += 1
+            continue
+        blob = _blob_path(sha)
+        size = blob.stat().st_size if blob.exists() else 0
+        if not dry_run:
+            blob.unlink(missing_ok=True)
+            for row in SotVersion.query.filter_by(sha256=sha).all():
+                row.evacuated_at = row.evacuated_at or now
+        moved += 1
+        freed += size
+    if not dry_run:
+        db.session.commit()
+    return {"evacuated": moved, "kept": skipped, "bytes_freed": freed,
+            "off_box_known": len(off_box), "dry_run": dry_run}
+
+
+def _slug(device: str) -> str:
+    """A device name that is safe as one path component of an archive file.
+
+    Separators and dots are collapsed, not escaped: the archive lands in one
+    flat folder on the backup server, so a device called ``../x`` must not be
+    able to name a file outside it.
+    """
+    keep = [c if (c.isalnum() or c in "-_") else "_" for c in (device or "")]
+    return ("".join(keep).strip("_") or "device")[:80]
+
+
+def _month_bounds(when: datetime) -> tuple:
+    """First instant of *when*'s calendar month and of the month after it."""
+    start = datetime(when.year, when.month, 1)
+    end = (datetime(when.year + 1, 1, 1) if when.month == 12
+           else datetime(when.year, when.month + 1, 1))
+    return start, end
+
+
+def remote_log_archive() -> dict:
+    """``{filename: size}`` of the change-log archive files the backup server
+    holds. Empty on ANY failure, for the same reason
+    :func:`remote_blob_names` is: an unreachable server must read as "nothing
+    is archived", so a failed listing archives and deletes nothing."""
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return {}
+        remote = ((cfg.get("system_path") or "/system").rstrip("/")
+                  + "/" + LOG_ARCHIVE_SUBDIR)
+        inv = _bk.dir_inventory(remote)
+        if not inv.get("reachable"):
+            return {}
+        return {str(f.get("name") or ""): int(f.get("size") or 0)
+                for f in (inv.get("files") or [])}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _archive_payload(rows: list) -> bytes:
+    """The bytes of one archive file: one JSON object per row, oldest first.
+
+    Deterministic on purpose — same rows in, same bytes out — because the
+    delete step compares the size of what it would upload against the size of
+    what the server already holds. A payload that varied between runs would
+    make that comparison meaningless.
+    """
+    lines = [json.dumps(r.to_dict(), sort_keys=True, separators=(",", ":"))
+             for r in sorted(rows, key=lambda r: (r.taken_at or datetime.min,
+                                                  r.id))]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def archive_log(device: str = "", *, dry_run: bool = False) -> dict:
+    """Write whole past months of the change log off-box, then delete those
+    rows from this node.
+
+    Three rules, and each one is load-bearing:
+
+    * **Whole calendar months only.** A month is archived once it lies
+      ENTIRELY beyond the retention window. Archiving the old half of a month
+      would mean writing that month's file a second time later — with fewer
+      rows in it — and the second write would replace a complete archive with
+      a truncated one.
+    * **The payload must already be off-box.** Deleting a row whose blob is
+      still local-only orphans that blob, and the orphan sweep in
+      :func:`prune` then deletes it: the archive would point at bytes that no
+      longer exist anywhere. A month holding any such row is held whole.
+    * **Confirm, then delete.** The file is uploaded, the folder is listed
+      back, and the rows go only when the server reports the file at exactly
+      the size that was written. A size that disagrees holds the month and
+      says so rather than overwriting.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    now = datetime.utcnow()
+    devices = ([device] if device else
+               [d["device"] for d in devices_summary()])
+
+    off_box = remote_blob_names()
+    plan: dict = {}
+    held_recent = 0
+    held_local_payload = set()
+    for dev in devices:
+        keep_days = _log_retention(product_for_device(dev))
+        if keep_days <= 0:
+            continue
+        cutoff = now - timedelta(days=keep_days)
+        rows = SotVersion.query.filter_by(device=dev).all()
+        for row in rows:
+            taken = row.taken_at or now
+            _, month_end = _month_bounds(taken)
+            if month_end > cutoff:
+                held_recent += 1
+                continue
+            key = (dev, taken.strftime("%Y-%m"))
+            plan.setdefault(key, []).append(row)
+            if row.evacuated_at is None and f"{row.sha256}.json.gz" not in off_box:
+                held_local_payload.add(key)
+
+    have = remote_log_archive()
+    tmp_dir = store_dir() / "log-archive-out"
+    to_push = []
+    staged = {}
+    frozen_mismatch = 0
+    for key, rows in sorted(plan.items()):
+        if key in held_local_payload:
+            continue
+        dev, month = key
+        name = f"{_slug(dev)}-{month}.jsonl"
+        data = _archive_payload(rows)
+        if name in have:
+            # Already off-box. Same size means the same rows: proceed to the
+            # delete without re-uploading a frozen file. A DIFFERENT size is
+            # not a no-op to pass over in silence — the server holds a file
+            # for this month that is not what these rows would produce, so
+            # the month is held AND said out loud. Dropping it quietly is how
+            # a held month would read as an archived one.
+            if have[name] == len(data):
+                staged[key] = (name, rows, len(data))
+            else:
+                frozen_mismatch += 1
+            continue
+        if dry_run:
+            staged[key] = (name, rows, len(data))
+            continue
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        path = tmp_dir / name
+        path.write_bytes(data)
+        to_push.append(str(path))
+        staged[key] = (name, rows, len(data))
+
+    push = {"ok": True, "pushed": 0, "skipped": 0, "detail": "nothing to push"}
+    if to_push and not dry_run:
+        try:
+            from . import backup_server as _bk
+            push = _bk.push_log_archive(to_push)
+        except Exception as exc:  # noqa: BLE001
+            push = {"ok": False, "detail": str(exc)}
+        for f in to_push:
+            Path(f).unlink(missing_ok=True)
+        if not push.get("ok"):
+            return {"ok": False, "archived_rows": 0, "files": 0,
+                    "held_months": len(held_local_payload),
+                    "held_rows": held_recent, "mismatched": 0,
+                    "detail": "archive upload failed, nothing deleted: "
+                              + str(push.get("detail", ""))[:160]}
+
+    # Re-list AFTER the upload: the delete is authorised by what the server
+    # reports holding, never by the upload call returning without an error.
+    confirmed = have if dry_run else remote_log_archive()
+    deleted = files = 0
+    mismatched = frozen_mismatch
+    for key, (name, rows, size) in sorted(staged.items()):
+        if dry_run:
+            files += 1
+            deleted += len(rows)
+            continue
+        if confirmed.get(name) != size:
+            mismatched += 1
+            continue
+        for row in rows:
+            db.session.delete(row)
+        deleted += len(rows)
+        files += 1
+    if not dry_run:
+        db.session.commit()
+
+    detail = (f"change log: {deleted} row(s) in {files} monthly file(s) "
+              f"archived off-box and removed locally")
+    if mismatched:
+        detail += f"; {mismatched} month(s) HELD (off-box size disagrees)"
+    if held_local_payload:
+        detail += (f"; {len(held_local_payload)} month(s) held "
+                   f"(snapshot not off-box yet)")
+    res = {"ok": True, "archived_rows": deleted, "files": files,
+           "held_months": len(held_local_payload), "held_rows": held_recent,
+           "mismatched": mismatched, "dry_run": dry_run, "detail": detail}
+    if not dry_run:
+        try:
+            from . import settings_store as _store
+            _store.set_str(_store.K_SOT_LOG_ARCHIVE_LAST, json.dumps({
+                "at": now.isoformat(timespec="seconds"),
+                "rows": deleted, "files": files,
+                "held": len(held_local_payload), "mismatched": mismatched}))
+        except Exception:  # noqa: BLE001 — reporting must not sink the sweep
+            pass
+    return res
+
+
+def prune(device: str = "") -> dict:
+    """Apply the local payload policy, then collect orphan blobs.
+
+    Kept under its old name because ``record()`` and the CLI call it, but it no
+    longer deletes a single index row: what it prunes is bytes on this node.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    ev = evacuate(device)
+
+    removed_blobs = 0
+    live = {sha for (sha,) in db.session.query(SotVersion.sha256).distinct()}
+    objects = store_dir() / "objects"
+    for sub in objects.iterdir() if objects.exists() else []:
+        if not sub.is_dir():
+            continue
+        for f in sub.glob("*.json.gz"):
+            if f.name[:-8] not in live:
+                f.unlink(missing_ok=True)
+                removed_blobs += 1
+    # ``rows`` stays in the return shape and is always 0: callers (the CLI,
+    # the System Backup page) print it, and dropping the key would 500 them
+    # while printing a number would be a lie. Zero is the truth now.
+    return {"rows": 0, "blobs": removed_blobs, "evacuated": ev["evacuated"],
+            "bytes_freed": ev["bytes_freed"]}
+
+
+def stats() -> dict:
+    """Store totals for the System Backup page and the CLI."""
+    from ..models import db
+    from ..models_sot import SotVersion
+    n_versions = db.session.query(db.func.count(SotVersion.id)).scalar() or 0
+    n_devices = (db.session.query(
+        db.func.count(db.func.distinct(SotVersion.device))).scalar() or 0)
+    size = 0
+    n_blobs = 0
+    objects = store_dir() / "objects"
+    if objects.exists():
+        for sub in objects.iterdir():
+            if sub.is_dir():
+                for f in sub.glob("*.json.gz"):
+                    size += f.stat().st_size
+                    n_blobs += 1
+    n_evac = (db.session.query(db.func.count(SotVersion.id))
+              .filter(SotVersion.evacuated_at.isnot(None)).scalar() or 0)
+    return {"versions": int(n_versions), "devices": int(n_devices),
+            "blobs": n_blobs, "bytes": size,
+            # How much of the permanent change log is retrievable only over
+            # the network. A page that shows "1200 versions" and nothing else
+            # hides the fact that most of them now depend on the backup
+            # server being up.
+            "evacuated": int(n_evac),
+            "local": int(n_versions) - int(n_evac)}
+
+
+def devices_detail(product: str = "") -> list[dict]:
+    """Per-device SoT rollup for the ADOM pages: counts, local vs evacuated,
+    first and last change. Empty *product* means every device."""
+    from ..models import db
+    from ..models_sot import SotVersion
+    q = db.session.query(
+        SotVersion.device,
+        db.func.count(SotVersion.id),
+        db.func.sum(db.case((SotVersion.evacuated_at.isnot(None), 1), else_=0)),
+        db.func.min(SotVersion.taken_at),
+        db.func.max(SotVersion.taken_at),
+        db.func.max(SotVersion.last_seen_at),
+        db.func.sum(SotVersion.size_gz))
+    if product:
+        q = q.filter(SotVersion.product == product)
+    rows = q.group_by(SotVersion.device).order_by(SotVersion.device).all()
+    out = []
+    for dev, n, evac, first, last, seen, size in rows:
+        out.append({
+            "device": dev, "versions": int(n or 0),
+            "evacuated": int(evac or 0), "local": int(n or 0) - int(evac or 0),
+            "bytes_gz": int(size or 0),
+            "first_change": first.isoformat(timespec="seconds") if first else "",
+            "last_change": last.isoformat(timespec="seconds") if last else "",
+            "last_seen": seen.isoformat(timespec="seconds") if seen else "",
+        })
+    return out
+
+
+def backfill_products() -> dict:
+    """Stamp ``product`` on rows recorded before the column existed.
+
+    Runs off the same resolver as ``record()``, so a row and a fresh harvest
+    of the same device can never disagree. Idempotent: only rows with an empty
+    product are touched, so a device that genuinely cannot be identified is
+    re-examined next time instead of being frozen wrong.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+    devices = [d for (d,) in db.session.query(SotVersion.device)
+               .filter(db.or_(SotVersion.product == "",
+                              SotVersion.product.is_(None)))
+               .distinct()]
+    stamped = unresolved = 0
+    for dev in devices:
+        product = product_for_device(dev)
+        if not product:
+            unresolved += 1
+            continue
+        stamped += (SotVersion.query
+                    .filter(SotVersion.device == dev)
+                    .filter(db.or_(SotVersion.product == "",
+                                   SotVersion.product.is_(None)))
+                    .update({"product": product}, synchronize_session=False))
+    db.session.commit()
+    return {"stamped": stamped, "unresolved": unresolved,
+            "devices": len(devices)}
+
+
+def push_to_backup_server() -> dict:
+    """Upload blobs the external backup server does not have yet (SFTP, same
+    channel as the system bundles). Content-addressed names make this
+    trivially idempotent and incremental. Best-effort by contract: the caller
+    records the outcome, a failure never sinks the harvest."""
+    try:
+        from . import backup_server as _bk
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": f"backup_server unavailable: {exc}"}
+    objects = store_dir() / "objects"
+    paths = sorted(str(p) for p in objects.glob("*/*.json.gz")) \
+        if objects.exists() else []
+    if not paths:
+        return {"ok": True, "detail": "nothing to push", "pushed": 0}
+    if not hasattr(_bk, "push_sot_blobs"):
+        return {"ok": False, "detail": "backup server push not available"}
+    return _bk.push_sot_blobs(paths)
+
+
+def offload(device: str = "") -> dict:
+    """Push new blobs off-box, THEN apply the local payload policy.
+
+    One call because the two halves are one decision and the order between
+    them is not free: evacuating first would delete a blob the server has not
+    been offered yet, and running them on separate schedules leaves the node
+    holding a day of payload it has already uploaded. ``evacuate`` still makes
+    its own independent check against the server listing — this ordering is a
+    convenience, never the thing that makes the delete safe.
+    """
+    push = push_to_backup_server()
+    if not push.get("ok"):
+        return {"ok": False, "push": push, "evacuate": None,
+                "detail": "push failed, nothing evacuated: "
+                          + str(push.get("detail", ""))[:160]}
+    ev = evacuate(device)
+    # The change log leaves LAST, and it has to: a month may only be deleted
+    # once its snapshots are off-box, and this run is what puts them there.
+    # Archiving first would hold exactly the months this call is about to make
+    # eligible, so the trim would always lag a full cycle behind the policy.
+    log = archive_log(device)
+    return {"ok": True, "push": push, "evacuate": ev, "log": log,
+            "detail": f"{push.get('detail', '')}; "
+                      f"evacuated {ev['evacuated']} blob(s), "
+                      f"{ev['bytes_freed'] // 1024} KB freed; "
+                      f"{log.get('detail', '')}"}

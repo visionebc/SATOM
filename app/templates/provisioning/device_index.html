@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+
+{% block title %}Device Provisioning — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Device Provisioning') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>{{ _('Device Provisioning') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Build an appliance machine from nothing: create the virtual machine, give it an address and a DNS name, bring it up, register it, and hand it to System Provisioning for its configuration. Scoped to the') }} <strong>{{ adom }}</strong> {{ _('ADOM.') }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.index') }}">
+      <i class="bi bi-sliders me-1"></i>{{ _('System Provisioning') }}</a>
+    {% if current_user.can('config_write') %}
+    <button class="btn btn-fw-primary" id="dp-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('New machine') }}</button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not has_hypervisor %}
+<div class="alert alert-warning">
+  <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('No hypervisor is registered') }}</div>
+  <p class="mb-1 small">
+    {{ _('SATOM cannot create virtual machines until a Proxmox or ESXi endpoint is registered in') }}
+    <a href="{{ url_for('settings.index') }}#tab-hypervisors">Settings &rsaquo; Hypervisors</a>{{ _('. The machine-building modes are therefore not offered below — rather than shown as buttons that would fail partway through.') }}
+  </p>
+  <p class="mb-0 small">
+    <strong>{{ _('Config only') }}</strong> {{ _('still works: point it at a machine you built by hand and SATOM will reserve the address, create the DNS record, register the appliance and apply the profile.') }}
+  </p>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span><i class="bi bi-signpost-split me-1"></i>{{ _('How far SATOM can take it — pick a mode') }}</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted small">
+      {{ _('A factory Fortinet appliance boots into a first-boot dialog:') }} <em>{{ _('admin') }}</em> with an empty
+      password and a forced change. Nothing can reach its API until that dialog is completed, so
+      &ldquo;fully automatic&rdquo; depends entirely on whether the hypervisor exposes a
+      <strong>{{ _('scriptable serial console') }}</strong>{{ _('. Proxmox does; a standalone ESXi does not, at any licence tier. That single fact is what the modes are about.') }}
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr>
+          <th style="width:13%">{{ _('Mode') }}</th><th style="width:29%">{{ _('What it does') }}</th>
+          <th style="width:29%">{{ _('Advantages') }}</th><th style="width:29%">{{ _('Disadvantages') }}</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="fw-badge fw-badge-success">{{ _('Full') }}</span></td>
+            <td>{{ _('Address, DNS, machine and boot, then waits for the appliance to answer on the reserved address, registers it and applies the profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself (for example from a pre-configured image).') }}</td>
+            <td>{{ _('No human step. Repeatable and auditable end to end; every action lands in the run log.') }}</td>
+            <td><strong>{{ _('Proxmox only.') }}</strong> {{ _('Preflight requires an API serial console. Most moving parts, so the widest surface for a mid-run failure — which is why rollback exists.') }}</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-primary">{{ _('Semi') }}</span></td>
+            <td>{{ _('Builds and boots the machine, then') }} <em>{{ _('stops') }}</em>{{ _('. You complete the first-boot dialog on the hypervisor console and press Resume.') }}</td>
+            <td>{{ _('Works on') }} <strong>{{ _('every') }}</strong> {{ _('backend, including a free-licensed ESXi. The manual step is the one a human is genuinely needed for; everything else is automated.') }}</td>
+            <td>{{ _('Not unattended — a run sits waiting until somebody acts on it.') }}</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-primary">DHCP</span></td>
+            <td>{{ _('Builds and boots without reserving an address; the appliance takes a DHCP lease. SATOM then probes the management address entered on the run, registers the appliance and applies the profile. It does not discover the lease.') }}</td>
+            <td>{{ _('Unattended without a serial console. Good on a build VLAN that runs DHCP with a reservation for the machine.') }}</td>
+            <td>{{ _('You must know the address the appliance will take (a DHCP reservation) and enter it on the run; without one the run stops at the reachability step. Not every appliance takes a lease on its factory config.') }}</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-secondary">{{ _('VM only') }}</span></td>
+            <td>{{ _('Creates and powers on the machine. Stops there, by design.') }}</td>
+            <td>{{ _('Smallest blast radius. Useful when the appliance is configured by another team or a different tool.') }}</td>
+            <td>{{ _('No address, no DNS, no registration — none of the rest of SATOM knows the machine exists until you onboard it.') }}</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-secondary">{{ _('Config only') }}</span></td>
+            <td>{{ _('Skips machine creation entirely: reserves the address, writes DNS, registers the appliance and applies the profile against a machine that already exists.') }}</td>
+            <td>{{ _('Needs') }} <strong>{{ _('no hypervisor at all') }}</strong>{{ _('. The path for physical appliances and for anything built outside SATOM.') }}</td>
+            <td>{{ _('You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail.') }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="small text-body-secondary">
+      <i class="bi bi-shield-check me-1"></i>
+      {{ _('Every mode is preflighted before it changes anything: SATOM asks the hypervisor what it can actually do and refuses a run it cannot finish, rather than discovering the limit after an address and a DNS record have already been committed.') }}
+    </div>
+  </div>
+</div>
+
+<div class="fw-card mb-3" id="dp-form-card" style="display:none;">
+  <div class="fw-card-header"><span><i class="bi bi-plus-circle me-1"></i>{{ _('New machine') }}</span></div>
+  <div class="fw-card-body">
+    <form id="dp-form" class="row g-3" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Machine name') }}</label>
+        <input class="form-control form-control-sm" name="name" required placeholder="{{ _('fortiweb11') }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Mode') }}</label>
+        <select class="form-select form-select-sm" name="mode" id="dp-mode">
+          {% for k, label in modes.items() %}
+          <option value="{{ k }}"{% if k == 'semi' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Hypervisor') }}</label>
+        <select class="form-select form-select-sm" name="target_id" id="dp-target">
+          <option value="">{{ _('— none (config only) —') }}</option>
+          {% for t in targets %}
+          <option value="{{ t.id }}">{{ t.name }} ({{ t.backend }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Install image') }}</label>
+        <select class="form-select form-select-sm" name="firmware_id">
+          <option value="">{{ _('— none —') }}</option>
+          {% for f in install_images %}
+          <option value="{{ f.id }}">{{ f.version }} {{ f.filename }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">{{ _('Install media only — upgrade images are a different list.') }}</div>
+      </div>
+
+      {% if adom == 'global' %}
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Product') }}</label>
+        <select class="form-select form-select-sm" name="product" required>
+          <option value="">{{ _('— pick one —') }}</option>
+          {# Derived from the ADOM registry: a hardcoded roster here is how
+             a shipped product becomes unofferable with nothing raising. #}
+          {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+        <div class="form-text">{{ _('Decides what kind of appliance is registered.') }}</div>
+      </div>
+      {% endif %}
+
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Hostname (DNS)') }}</label>
+        <input class="form-control form-control-sm" name="hostname" placeholder="{{ _('fortiweb11.example.com') }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Management address') }}</label>
+        <input class="form-control form-control-sm" name="mgmt_ip" placeholder="192.0.2.20">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Netmask') }}</label>
+        <input class="form-control form-control-sm" name="netmask" placeholder="255.255.255.0">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Gateway') }}</label>
+        <input class="form-control form-control-sm" name="gateway" placeholder="192.0.2.1">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('vCPU') }}</label>
+        <input class="form-control form-control-sm" name="cpus" value="4">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('Memory (MB)') }}</label>
+        <input class="form-control form-control-sm" name="memory_mb" value="4096">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('Disk (GB)') }}</label>
+        <input class="form-control form-control-sm" name="disk_gb" value="0">
+        <div class="form-text">{{ _('0 = from image') }}</div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('Node') }}</label>
+        <input class="form-control form-control-sm" name="node">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('Datastore') }}</label>
+        <input class="form-control form-control-sm" name="datastore">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">{{ _('Network') }}</label>
+        <input class="form-control form-control-sm" name="network">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Admin user') }}</label>
+        <input class="form-control form-control-sm" name="admin_user" value="admin">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Admin password to set') }}</label>
+        <input class="form-control form-control-sm" type="password" name="admin_password">
+      </div>
+      <div class="col-md-6 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="use_ipam" id="dp-ipam" value="1">
+          <label class="form-check-label small" for="dp-ipam">
+            {{ _('Take the address from IPAM') }}
+            <span class="text-muted">{{ _('— only then is it released on rollback; a typed address is never handed back to a pool') }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="col-12"><hr class="my-1">
+        <div class="small text-muted">{{ _('Baseline: the machine is registered with this classification, and at the profile_applied step SATOM shows every template of every combo it falls into. Nothing is written until you review the dry-run and confirm.') }}</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Zone') }}</label>
+        <select class="form-select form-select-sm" name="zone">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.zones or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Line') }}</label>
+        <select class="form-select form-select-sm" name="line">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.lines or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Department') }}</label>
+        <select class="form-select form-select-sm" name="department">
+          <option value="">{{ _('(none)') }}</option>
+          {% for v in (classification.departments or []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Baseline') }}</label>
+        <select class="form-select form-select-sm" name="baseline_id">
+          <option value="">{{ _('From the classification') }}</option>
+          {% for b in baselines %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12 text-end">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="dp-cancel">{{ _('Cancel') }}</button>
+        <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Create run') }}</button>
+      </div>
+    </form>
+    <div id="dp-form-msg" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><span><i class="bi bi-list-task me-1"></i>{{ _('Runs') }}</span></div>
+  <div class="fw-card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr>
+          <th>{{ _('Name') }}</th><th>{{ _('Mode') }}</th><th>{{ _('Step') }}</th><th>{{ _('Progress') }}</th>
+          <th>{{ _('Address') }}</th><th>{{ _('Status') }}</th><th class="text-end">{{ _('Actions') }}</th>
+        </tr></thead>
+        <tbody id="dp-rows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.querySelector('.fw-page-header').parentNode;
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  function tok() { return document.querySelector('#dp-form [name=csrf_token]').value; }
+  // Preflight / Run / Roll back need config_write; a read-only viewer gets
+  // the list without the verbs instead of buttons that answer 403.
+  var CAN_WRITE = {{ 'true' if current_user.can('config_write') else 'false' }};
+  function post(url, body) {
+    return fetch(url, {method: 'POST', headers: {'X-CSRFToken': tok()}, body: body})
+      .then(function (r) {
+        // A refusal (403, 409, 500...) must never read as an answer: a body
+        // that is not JSON, or JSON without "ok", becomes an explicit failure.
+        return r.json().then(function (d) {
+          if (!r.ok) { d.ok = false; d.error = d.error || ('HTTP ' + r.status); }
+          return d;
+        }, function () { return {ok: false, error: 'HTTP ' + r.status + ' (unexpected response)'}; });
+      });
+  }
+  function statusBadge(s) {
+    var m = {done: 'success', running: 'primary', paused: 'warning',
+             failed: 'danger', aborted: 'secondary', draft: 'secondary'};
+    return '<span class="fw-badge fw-badge-' + (m[s] || 'secondary') + '">' + esc(s) + '</span>';
+  }
+  function render(runs) {
+    var tb = document.getElementById('dp-rows');
+    if (!runs.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="text-muted">No runs in this ADOM yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = runs.map(function (r) {
+      return '<tr>' +
+        '<td><a href="/device-provisioning/' + r.id + '">' + esc(r.name) + '</a></td>' +
+        '<td>' + esc(r.mode) + '</td>' +
+        '<td><code>' + esc(r.step) + '</code></td>' +
+        '<td style="min-width:120px;"><div class="progress" style="height:6px;">' +
+          '<div class="progress-bar" style="width:' + r.progress + '%"></div></div></td>' +
+        '<td>' + esc(r.mgmt_ip || '—') + '</td>' +
+        '<td>' + statusBadge(r.status) +
+          (r.error ? '<div class="small text-muted">' + esc(r.error.slice(0, 120)) + '</div>' : '') + '</td>' +
+        '<td class="text-end">' + (!CAN_WRITE ? '<span class="text-muted small">read-only</span>' :
+          '<button class="btn btn-sm btn-outline-secondary" data-dp-pre="' + r.id + '">Preflight</button> ' +
+          (r.status === 'done' || r.status === 'aborted' ? '' :
+            '<button class="btn btn-sm btn-outline-primary" data-dp-run="' + r.id + '">' +
+            (r.status === 'paused' ? 'Resume' : 'Run') + '</button> ') +
+          (r.status === 'aborted' ? '' :
+            '<button class="btn btn-sm btn-outline-danger" data-dp-rb="' + r.id + '">Roll back</button>')) +
+        '</td></tr>';
+    }).join('');
+  }
+  function load() {
+    return fetch('/device-provisioning/data').then(function (r) { return r.json(); })
+      .then(function (d) { render(d.runs || []); });
+  }
+  function msg(html, kind) {
+    document.getElementById('dp-form-msg').innerHTML =
+      '<div class="alert alert-' + (kind || 'info') + ' small mb-0">' + html + '</div>';
+  }
+
+  var newBtn = document.getElementById('dp-new-btn');
+  if (newBtn) newBtn.addEventListener('click', function () {
+    var c = document.getElementById('dp-form-card');
+    c.style.display = (c.style.display === 'none') ? '' : 'none';
+  });
+  document.getElementById('dp-cancel').addEventListener('click', function () {
+    document.getElementById('dp-form-card').style.display = 'none';
+  });
+  document.getElementById('dp-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    post('/device-provisioning/new', new FormData(ev.target)).then(function (d) {
+      if (!d.ok) {
+        msg('<strong>' + esc(d.error) + '</strong>' +
+            (d.detail ? '<div>' + esc(d.detail) + '</div>' : ''), 'danger');
+        return;
+      }
+      msg('Run created. Press <strong>Preflight</strong> to see what it will be able to do ' +
+          'before anything changes.', 'success');
+      ev.target.reset();
+      load();
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-dp-pre],[data-dp-run],[data-dp-rb]');
+    if (!el) { return; }
+    ev.preventDefault();
+    var id;
+    if ((id = el.getAttribute('data-dp-pre'))) {
+      post('/device-provisioning/' + id + '/preflight').then(function (d) {
+        if (!d.ok || !d.preflight) {
+          document.getElementById('dp-form-card').style.display = '';
+          msg('<strong>Preflight did not run:</strong> ' + esc(d.error || 'no answer'), 'danger');
+          return;
+        }
+        var p = d.preflight;
+        var body = '<div class="fw-semibold mb-1">Plan: ' +
+          (p.plan || []).map(esc).join(' &rarr; ') + '</div>';
+        if ((p.blockers || []).length) {
+          body += '<div class="mb-1"><strong>Blocked:</strong><ul class="mb-0">' +
+            p.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul></div>';
+        }
+        if ((p.warnings || []).length) {
+          body += '<div><strong>Warnings:</strong><ul class="mb-0">' +
+            p.warnings.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul></div>';
+        }
+        if (!(p.blockers || []).length && !(p.warnings || []).length) {
+          body += '<div>Nothing blocks this run.</div>';
+        }
+        document.getElementById('dp-form-card').style.display = '';
+        msg(body, (p.blockers || []).length ? 'warning' : 'success');
+      });
+    } else if ((id = el.getAttribute('data-dp-run'))) {
+      el.disabled = true;
+      post('/device-provisioning/' + id + '/advance').then(function (d) {
+        el.disabled = false;
+        if (!d.ok) {
+          document.getElementById('dp-form-card').style.display = '';
+          msg('<strong>' + esc(d.error) + '</strong>' +
+              ((d.blockers || []).length ? '<ul class="mb-0">' +
+                d.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' : ''),
+              'warning');
+        }
+        load();
+      });
+    } else if ((id = el.getAttribute('data-dp-rb'))) {
+      if (el.getAttribute('data-armed') !== '1') {
+        el.setAttribute('data-armed', '1');
+        el.textContent = 'Confirm roll back';
+        setTimeout(function () {
+          el.removeAttribute('data-armed'); el.textContent = 'Roll back';
+        }, 4000);
+        return;
+      }
+      post('/device-provisioning/' + id + '/rollback').then(load);
+    }
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,357 @@
+"""``line_plan`` — the ONLY place "what does this line get?" is answered.
+
+Everything that needs the answer (the new-policy wizard, the provisioning
+form, a future report) calls this. That is not tidiness: three consumers each
+string-matching ``segments[].line`` is precisely the shape that produced §127,
+where three sites re-derived one verdict under a comment promising they were
+identical, and drifted.
+
+**Two sources, never confused.** A plan carries ``source``:
+
+``declared``
+    A :class:`~app.models_lineprofile.LineProfile` exists. Its segment names
+    are resolved against the live segment list, and a name that resolves to
+    nothing becomes a **problem**, not a shorter list. The whole point of
+    declaring the relationship is that breaking it is visible.
+
+``inferred``
+    No profile exists, so the old string match is used — and SAID SO. Callers
+    that are about to change the world (create a policy, reserve an address)
+    must treat an inferred plan as a question, not an answer. It exists so the
+    feature works on day one against catalogs nobody has declared yet; it is
+    not a fallback that quietly does the same job.
+
+There is no third state where a plan is partly declared. A profile that names
+zero resolvable segments is a declared plan with zero segments and a problem
+explaining why — never an inferred one. Falling back to the guess when the
+declaration fails would hide the failure behind an answer that looks fine.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from . import settings_store as store
+
+#: Problem codes a plan can carry. Codes rather than prose so a caller can
+#: decide (block vs warn) without matching on a sentence that may be reworded.
+P_MISSING_SEGMENT = "missing_segment"
+P_NO_SEGMENTS = "no_segments"
+P_NO_CERT_CLASS = "no_cert_class"
+P_NO_WPP = "no_wpp"
+P_WPP_GONE = "wpp_gone"
+P_WPP_NOT_APPROVED = "wpp_not_approved"
+P_WPP_WRONG_PRODUCT = "wpp_wrong_product"
+P_SEGMENT_NO_CIDR = "segment_no_cidr"
+P_DUPLICATE_SEGMENT = "duplicate_segment"
+
+#: Problems that must STOP an action that changes the world. The rest are
+#: things the operator can be asked about. Membership is data so a caller
+#: cannot invent its own idea of "serious".
+BLOCKING = frozenset({P_MISSING_SEGMENT, P_NO_SEGMENTS, P_WPP_GONE,
+                      P_WPP_NOT_APPROVED, P_WPP_WRONG_PRODUCT,
+                      P_DUPLICATE_SEGMENT})
+
+
+@dataclass
+class Problem:
+    code: str
+    detail: str
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "detail": self.detail,
+                "blocking": self.code in BLOCKING}
+
+
+@dataclass
+class LinePlan:
+    line: str
+    product: str
+    source: str                                   # 'declared' | 'inferred'
+    segments: list[dict] = field(default_factory=list)
+    cert_class: str = ""
+    wpp_template_id: int | None = None
+    wpp_template_name: str = ""
+    #: The build the template was written for and the builds its approval
+    #: covers (services.template_compat). Shown, never decided on, here: which
+    #: build matters depends on the device a policy is built on.
+    wpp_source_firmware: str = ""
+    wpp_validated_builds: list[str] = field(default_factory=list)
+    ipam_pool: str = ""
+    problems: list[Problem] = field(default_factory=list)
+
+    @property
+    def declared(self) -> bool:
+        return self.source == "declared"
+
+    @property
+    def blocked(self) -> bool:
+        return any(p.code in BLOCKING for p in self.problems)
+
+    def problem_codes(self) -> list[str]:
+        return [p.code for p in self.problems]
+
+    def as_dict(self) -> dict:
+        return {
+            "line": self.line, "product": self.product, "source": self.source,
+            "declared": self.declared, "segments": self.segments,
+            "cert_class": self.cert_class,
+            "wpp_template_id": self.wpp_template_id,
+            "wpp_template_name": self.wpp_template_name,
+            "wpp_source_firmware": self.wpp_source_firmware,
+            "wpp_validated_builds": list(self.wpp_validated_builds),
+            "ipam_pool": self.ipam_pool, "blocked": self.blocked,
+            "problems": [p.as_dict() for p in self.problems],
+        }
+
+
+def index_by_name(segs) -> dict[str, dict]:
+    """The ONLY place a segment list is turned into a name -> row map.
+
+    Every consumer that needs "the row called X" calls this: the declared-plan
+    resolver below, :func:`pool_for`, and the new-policy wizard. They used to
+    index the list three separate ways and DISAGREED about which row a
+    duplicated name meant -- ``setdefault`` here kept the first, a dict
+    comprehension in the wizard kept the last, and ``pool_for`` looped and
+    kept the first. A plan could therefore describe one row's network while
+    allocating from another row's CIDR, silently, whenever two rows shared a
+    name.
+
+    First row wins, and that choice is only ever reached for data written
+    before ``save_segments`` refused duplicates -- which is why
+    :func:`line_plan` REFUSES such a plan rather than relying on it.
+
+    Exact strings, not case-folded: a profile naming ``DMZ`` does not resolve
+    a segment called ``dmz``, and pretending otherwise reports a link the rest
+    of the system will never make (the same reasoning as
+    ``classification_ops.usage``).
+    """
+    out: dict[str, dict] = {}
+    for seg in segs:
+        name = (seg.get("name") or "").strip()
+        if name:
+            out.setdefault(name, seg)
+    return out
+
+
+def _segments_by_name() -> dict[str, dict]:
+    return index_by_name(store.segments())
+
+
+def profile_for(line: str, product: str = "fortiweb"):
+    """The stored profile for a line, or None. Never raises on a missing table."""
+    from ..models_lineprofile import LineProfile
+    line = (line or "").strip()
+    if not line:
+        return None
+    return (LineProfile.query
+            .filter(LineProfile.product == product, LineProfile.line == line)
+            .first())
+
+
+def adopt_global_profiles() -> int:
+    """Re-file profiles saved under the Global ADOM as FortiWeb profiles.
+
+    The page used to store rows under the session ADOM, so a profile saved
+    from the Global menu landed under ``product='global'`` — a product no
+    device has, so the line wizard never read it. A row is moved only when
+    FortiWeb has no profile for that line yet; a clash is left in place
+    rather than overwriting a declaration. Idempotent. Returns rows moved.
+    """
+    from ..extensions import db
+    from ..models_lineprofile import LineProfile
+    moved = 0
+    for row in LineProfile.query.filter(LineProfile.product == "global").all():
+        if profile_for(row.line, "fortiweb") is None:
+            row.product = "fortiweb"
+            moved += 1
+    if moved:
+        db.session.commit()
+    return moved
+
+
+def _resolve_wpp(plan: LinePlan, template_id: int | None) -> None:
+    """Attach the WPP template, and say exactly why it cannot be used.
+
+    Checked HERE and not stored on the profile because approval moves after
+    the profile is written: a template approved on Monday and rejected on
+    Tuesday must stop being instantiable on Tuesday.
+    """
+    if not template_id:
+        plan.problems.append(Problem(
+            P_NO_WPP, "this line does not name a Web Protection Profile "
+                      "template to start from"))
+        return
+    from ..models import Template
+    tpl = db_get(Template, template_id)
+    if tpl is None:
+        plan.problems.append(Problem(
+            P_WPP_GONE, f"the Web Protection Profile template #{template_id} "
+                        "this line names no longer exists"))
+        return
+    plan.wpp_template_id = tpl.id
+    plan.wpp_template_name = tpl.name
+    plan.wpp_source_firmware = getattr(tpl, "source_firmware", "") or ""
+    plan.wpp_validated_builds = sorted(getattr(tpl, "validated_builds_dict", {}) or {})
+    if (tpl.product or "") != plan.product:
+        plan.problems.append(Problem(
+            P_WPP_WRONG_PRODUCT,
+            f"template {tpl.name!r} belongs to {tpl.product!r}, not "
+            f"{plan.product!r}"))
+    if tpl.status != Template.STATUS_APPROVED:
+        plan.problems.append(Problem(
+            P_WPP_NOT_APPROVED,
+            f"template {tpl.name!r} is {tpl.status!r}; only an approved "
+            "template may be instantiated onto a device"))
+
+
+def db_get(model, pk):
+    """``Session.get`` without dragging SQLAlchemy version differences into
+    every call site."""
+    from ..extensions import db
+    return db.session.get(model, pk)
+
+
+def line_plan(line: str, product: str = "fortiweb") -> LinePlan:
+    """What ``line`` receives — declared if anyone said so, inferred if not."""
+    line = (line or "").strip()
+    plan = LinePlan(line=line, product=product, source="inferred")
+    if not line:
+        plan.problems.append(Problem(P_NO_SEGMENTS, "no line was given"))
+        return plan
+
+    by_name = _segments_by_name()
+    prof = profile_for(line, product)
+
+    if prof is not None:
+        plan.source = "declared"
+        plan.cert_class = prof.cert_class or ""
+        plan.ipam_pool = prof.ipam_pool or ""
+        for name in prof.segments():
+            seg = by_name.get(name)
+            if seg is None:
+                # NOT a shorter list. A declaration that stopped resolving is
+                # the failure this table exists to make visible.
+                plan.problems.append(Problem(
+                    P_MISSING_SEGMENT,
+                    f"segment {name!r} is named by this line but no longer "
+                    "exists in Network segments"))
+                continue
+            plan.segments.append(dict(seg))
+        _resolve_wpp(plan, prof.wpp_template_id)
+    else:
+        # The historical behaviour, kept ONLY as a labelled inference.
+        plan.segments = [dict(seg) for seg in store.segments()
+                         if (seg.get("line") or "").strip() == line]
+        plan.problems.append(Problem(
+            P_NO_CERT_CLASS,
+            "no line profile exists, so the certificate class is undecided"))
+        plan.problems.append(Problem(
+            P_NO_WPP,
+            "no line profile exists, so no Web Protection Profile template "
+            "is named"))
+
+    if not plan.segments and P_MISSING_SEGMENT not in plan.problem_codes():
+        plan.problems.append(Problem(
+            P_NO_SEGMENTS,
+            f"no network segment is assigned to line {line!r}"))
+    if plan.declared and not plan.cert_class:
+        plan.problems.append(Problem(
+            P_NO_CERT_CLASS,
+            "this line does not declare a certificate class"))
+    for seg in plan.segments:
+        if not segment_cidrs(seg):
+            plan.problems.append(Problem(
+                P_SEGMENT_NO_CIDR,
+                f"segment {seg.get('name')!r} has no CIDR, so no address can "
+                "be allocated from it"))
+    # A name carried by two rows is ambiguous, and the ambiguity is invisible:
+    # every resolver answers confidently, just not with the same row. BLOCKING
+    # rather than a warning because the wrong answer here is "the policy was
+    # built on a network this line was never given", which nothing downstream
+    # can notice. save_segments makes new duplicates impossible; this catches
+    # a blob written before that guard, or by hand.
+    dupes = set(store.duplicate_segment_names())
+    if dupes:
+        for name in dict.fromkeys((seg.get("name") or "").strip()
+                                  for seg in plan.segments):
+            if name in dupes:
+                plan.problems.append(Problem(
+                    P_DUPLICATE_SEGMENT,
+                    f"more than one network segment is called {name!r}, so "
+                    "which network this line means cannot be decided — give "
+                    "them distinct names in Network segments"))
+    return plan
+
+
+def segment_networks(seg: dict | None) -> list[dict]:
+    """A segment's networks in allocation order (``settings_store`` shape)."""
+    if not seg:
+        return []
+    nets = seg.get("networks")
+    return list(nets) if isinstance(nets, list) else store.normalize_networks(seg)
+
+
+def segment_cidrs(seg: dict | None) -> list[str]:
+    return [n["cidr"] for n in segment_networks(seg) if (n.get("cidr") or "").strip()]
+
+
+def pools_for(plan: LinePlan, segment_name: str = "") -> list[str]:
+    """Every IPAM pool an address for this line may come from, in order.
+
+    The profile's explicit pool wins (and is the only one); otherwise the
+    chosen segment's CIDRs, first network first — an allocation takes the
+    first one with a free address (FA-0002). [] when nothing is known — the
+    caller must then ASK, because the provider's configured default is a
+    fleet-wide pool and silently reaching for it puts a policy on a network
+    this line was never given.
+    """
+    if plan.ipam_pool:
+        return [plan.ipam_pool]
+    by_name = index_by_name(plan.segments)
+    if segment_name:
+        return segment_cidrs(by_name.get(segment_name))
+    for seg in plan.segments:
+        return segment_cidrs(seg)
+    return []
+
+
+def pool_for(plan: LinePlan, segment_name: str = "") -> str:
+    """The FIRST pool of :func:`pools_for` ("" when none)."""
+    pools = pools_for(plan, segment_name)
+    return pools[0] if pools else ""
+
+
+def network_of(seg: dict | None, address: str) -> dict | None:
+    """The network of *seg* whose CIDR holds *address* (None: none does, or
+    the address is not an IP)."""
+    import ipaddress
+    try:
+        # A FortiWeb VIP is often typed with its mask (198.51.100.5/24).
+        ip = ipaddress.ip_address((address or "").strip().split("/", 1)[0])
+    except ValueError:
+        return None
+    for net in segment_networks(seg):
+        try:
+            if net.get("cidr") and ip in ipaddress.ip_network(net["cidr"], strict=False):
+                return net
+        except ValueError:
+            continue
+    return None
+
+
+def interface_for(seg: dict | None, address: str = "", pool: str = "") -> str:
+    """The interface a VIP on *seg* goes on: that of the network holding the
+    address (or named by the pool it came from), else the segment's own."""
+    seg = seg or {}
+    net = network_of(seg, address)
+    if net is None and pool:
+        net = next((n for n in segment_networks(seg) if n.get("cidr") == pool), None)
+    return ((net or {}).get("interface") or "").strip() or (seg.get("interface") or "")
+
+
+def lines_overview(product: str = "fortiweb") -> list[dict]:
+    """Every catalog line with its plan — the admin page's whole payload."""
+    out = []
+    for line in store.classification("lines"):
+        out.append(line_plan(line, product).as_dict())
+    return out

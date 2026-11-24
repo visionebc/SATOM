@@ -1,0 +1,105 @@
+"""Fleet objects — fleet-wide FortiWeb object browser (read-only).
+
+Web port of the desktop ``settings_page._fleet_objects_page``. Unlike the
+desktop (which reads a local object cache), this view reads the objects
+**DB-first** from the local Postgres source of truth (device_objects) — the
+appliance is touched only by an explicit refresh / the Automation device_sync
+action, never on a page load. See ``app/services/fleet_objects.py``.
+
+Routes
+  GET /fleet-objects?type=server_policy|wpp|server_pool|search&q=...
+      → the 4-mode browser. Typed modes show an aggregated table with a Device
+        column + filter dropdowns; ``search`` is a generic any-field search.
+  GET /fleet-objects?...&format=csv
+      → the current view as a CSV download.
+
+Read-only: ``@login_required`` only, no special permission.
+"""
+from flask import Blueprint, Response, render_template, request
+from flask_login import login_required
+from ..auth.decorators import require_permission
+
+from ..services import fleet_objects as svc
+
+bp = Blueprint('fleet_objects', __name__, url_prefix='/fleet-objects')
+
+
+@bp.route('/')
+@login_required
+@require_permission('protection.view')
+def index():
+    # --- mode + query params --------------------------------------------
+    type_key = request.args.get('type') or svc.DEFAULT_TYPE
+    if type_key not in svc.TYPES:
+        type_key = svc.DEFAULT_TYPE
+    spec = svc.TYPES[type_key]
+    is_search = bool(spec.get('search'))
+    q = (request.args.get('q') or '').strip()
+    fmt = (request.args.get('format') or '').strip().lower()
+
+    columns = svc.columns_for(type_key)
+    filters = spec.get('filters', [])
+    selected: dict[str, str] = {}
+    filter_options: dict[str, list[str]] = {}
+
+    # The Build filter is server-side like the others: the rows are cut here,
+    # never hidden by the browser. Options are the builds the fleet runs.
+    build_options = svc.fleet_builds()
+    build_sel = (request.args.get('f_build') or '').strip()
+
+    # --- live aggregation ------------------------------------------------
+    if is_search:
+        rows, errors = svc.collect_search(q, build=build_sel)
+        total = len(rows)
+    else:
+        all_rows, errors = svc.collect_objects(type_key)
+        total = len(all_rows)
+        filter_options = svc.distinct_values(all_rows, [k for k, _ in filters])
+        for fkey, _label in filters:
+            val = (request.args.get('f_' + fkey) or '').strip()
+            if val:
+                selected[fkey] = val
+        if build_sel:
+            selected['build'] = build_sel
+        rows = svc.apply_filters(all_rows, selected, q, columns)
+
+    shown = len(rows)
+
+    # --- CSV export of the current view ---------------------------------
+    if fmt == 'csv':
+        csv_text = svc.to_csv(columns, rows)
+        filename = 'fleet_objects_%s.csv' % type_key
+        return Response(
+            csv_text,
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=%s' % filename},
+        )
+
+    # Args that reproduce the current view (used by the CSV link + GET form).
+    query_args: dict[str, str] = {'type': type_key}
+    if q:
+        query_args['q'] = q
+    for fkey, val in selected.items():
+        query_args['f_' + fkey] = val
+    if build_sel:
+        query_args['f_build'] = build_sel
+
+    return render_template(
+        'fleet_objects/index.html',
+        type_key=type_key,
+        spec=spec,
+        is_search=is_search,
+        type_choices=svc.type_choices(),
+        columns=columns,
+        rows=rows,
+        errors=errors,
+        q=q,
+        filters=filters,
+        selected=selected,
+        filter_options=filter_options,
+        build_options=build_options,
+        build_sel=build_sel,
+        shown=shown,
+        total=total,
+        query_args=query_args,
+    )

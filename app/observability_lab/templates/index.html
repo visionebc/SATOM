@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div id="obs-overview"
+     data-overview-url="{{ url_for('api.overview') }}"
+     data-series-url="{{ url_for('api.series', name='__N__') }}">
+
+{% call page_header('Overview', 'Infrastructure health, traffic and service state from the latest collections') %}
+  <span class="obs-updated text-muted small" id="ov-updated" role="status" aria-live="polite"></span>
+  <button class="btn btn-sm btn-outline-secondary" type="button" id="ov-pause" aria-pressed="false" title="Auto-refresh every 60 s">
+    <i class="bi bi-pause-fill" aria-hidden="true"></i> <span>Pause</span>
+  </button>
+  <button class="btn btn-sm btn-outline-secondary" type="button" id="ov-refresh"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh</button>
+{% endcall %}
+
+<section class="obs-kpis" aria-label="Key indicators" id="ov-kpis">
+  {% for k in ['health','systems','services','critical','availability','throughput','sessions','latency','reads'] %}
+  <div class="obs-kpi" data-kpi="{{ k }}"><div class="obs-skel obs-skel-kpi" aria-hidden="true"></div></div>
+  {% endfor %}
+</section>
+
+<div class="obs-grid">
+  <section class="fw-card obs-span-8" aria-labelledby="h-tp">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-tp"><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>Throughput</h2>
+      <span class="obs-card-hint">All interfaces of the sources in scope</span>
+      <div class="ms-auto obs-seg obs-seg-sm" role="group" aria-label="Throughput unit">
+        <button type="button" class="active" data-tp="throughput" aria-pressed="true">Bits/s</button><button type="button" data-tp="packets" aria-pressed="false">Packets/s</button>
+      </div></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-throughput"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-4" aria-labelledby="h-hd">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-hd"><i class="bi bi-heart-pulse me-1" aria-hidden="true"></i>Health distribution</h2></div>
+    <div class="fw-card-body">
+      <h3 class="obs-sub-title">Server policies</h3>
+      <div id="ch-services"></div>
+      <h3 class="obs-sub-title mt-3">Back-ends</h3>
+      <div id="ch-backends"></div>
+      <h3 class="obs-sub-title mt-3">Interfaces</h3>
+      <div id="ch-interfaces"></div>
+    </div>
+  </section>
+
+  <section class="fw-card obs-span-6" aria-labelledby="h-lat">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-lat"><i class="bi bi-stopwatch me-1" aria-hidden="true"></i>Latency</h2>
+      <span class="obs-card-hint" title="Fields client_rtt, server_rtt and app_response_time of FortiWeb policy status; unit as reported by the device, not yet verified with traffic">avg over server policies · as reported</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-latency"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-6" aria-labelledby="h-ses">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-ses"><i class="bi bi-people me-1" aria-hidden="true"></i>Sessions</h2>
+      <div class="ms-auto obs-seg obs-seg-sm" role="group" aria-label="Sessions measure">
+        <button type="button" class="active" data-ses="sessions" aria-pressed="true">Active</button><button type="button" data-ses="connections" aria-pressed="false">New per second</button>
+      </div></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-sessions"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-5" aria-labelledby="h-dev">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-dev"><i class="bi bi-hdd-rack me-1" aria-hidden="true"></i>Devices</h2>
+      <a class="ms-auto small" href="{{ url_for('sources.index') }}">Integrations</a></div>
+    <div class="fw-card-body p-0"><div id="ov-devices"><div class="obs-skel obs-skel-list" aria-hidden="true"></div></div></div>
+  </section>
+
+  <section class="fw-card obs-span-7" aria-labelledby="h-res">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-res"><i class="bi bi-cpu me-1" aria-hidden="true"></i>Device CPU and memory</h2>
+      <span class="obs-card-hint">average over devices that report it (FortiGate)</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-resources"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-8" aria-labelledby="h-fw">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-fw"><i class="bi bi-bricks me-1" aria-hidden="true"></i>Firewall traffic</h2>
+      <span class="obs-card-hint">through FortiGate policies</span>
+      <div class="ms-auto obs-seg obs-seg-sm" role="group" aria-label="Firewall measure">
+        <button type="button" class="active" data-fw="fw_traffic" aria-pressed="true">Bits/s</button><button type="button" data-fw="fw_sessions" aria-pressed="false">Active sessions</button>
+      </div></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-fw"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-4" aria-labelledby="h-topfw">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-topfw"><i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Busiest firewall policies</h2><span class="obs-card-hint">active sessions, now</span></div>
+    <div class="fw-card-body"><div id="ch-top-fw"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-4" aria-labelledby="h-top">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-top"><i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Busiest server policies</h2><span class="obs-card-hint">active sessions, now</span></div>
+    <div class="fw-card-body"><div id="ch-top-sessions"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-4" aria-labelledby="h-slow">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-slow"><i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>Slowest server policies</h2><span class="obs-card-hint">app response, now</span></div>
+    <div class="fw-card-body"><div id="ch-top-slow"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-4" aria-labelledby="h-reads">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-reads"><i class="bi bi-cloud-check me-1" aria-hidden="true"></i>Collection success</h2><span class="obs-card-hint">share of reads that worked</span></div>
+    <div class="fw-card-body"><div class="obs-chart-host" id="ch-reads"></div></div>
+  </section>
+
+  <section class="fw-card obs-span-7" aria-labelledby="h-att">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-att"><i class="bi bi-exclamation-diamond me-1" aria-hidden="true"></i>Needs attention</h2>
+      <span class="obs-card-hint" id="att-count"></span></div>
+    <div class="fw-card-body p-0"><div id="ov-problems"><div class="obs-skel obs-skel-list" aria-hidden="true"></div></div></div>
+  </section>
+
+  <section class="fw-card obs-span-5" aria-labelledby="h-act">
+    <div class="fw-card-header"><h2 class="fw-card-title" id="h-act"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>Recent activity</h2>
+      <a class="ms-auto small" href="{{ url_for('jobs.index') }}">All jobs</a></div>
+    <div class="fw-card-body"><ol class="obs-timeline" id="ov-activity"><li class="obs-skel obs-skel-list" aria-hidden="true"></li></ol></div>
+  </section>
+</div>
+
+<p class="obs-footnote"><i class="bi bi-info-circle" aria-hidden="true"></i>
+  Not collected yet, so not shown: HTTP error rates, request-level latency percentiles, CPU and memory of FortiWeb (its connector does not read them yet).
+  Everything on this page comes from stored reads; nothing is estimated.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/overview.js') }}?v={{ app_version }}"></script>
+{% endblock %}

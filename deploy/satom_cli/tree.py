@@ -1,0 +1,453 @@
+"""The command registry.
+
+THIS FILE IS THE EXTENSION POINT. Adding a command is one ``Node`` entry — the
+parser, the ``?`` help, tab completion, the privilege gate and the JSON output
+all read this structure and none of them need to change. The same contract the
+rest of the product already uses for ``registry_endpoints``, ``adoms`` and
+``acme_dns_providers``: behaviour is DATA.
+
+``tests/test_cli.py`` walks this tree and fails the suite if any node lacks
+help text or a declared privilege level. A command that forgets to say it needs
+root would otherwise fail with a traceback for an unprivileged operator — the
+one moment a traceback is least useful.
+"""
+from . import cmd_apipack as ap
+from . import cmd_apiver as v
+from . import cmd_checks as k
+from . import cmd_clone as cl
+from . import cmd_content as c
+from . import cmd_diagnose as d
+from . import cmd_docs as b
+from . import cmd_execute as e
+from . import cmd_fix as f
+from . import cmd_ha as ha
+from . import cmd_knowledge as kn
+from . import cmd_migration as mg
+from . import cmd_release as rl
+from . import cmd_rollback as rb
+from . import cmd_get as g
+from . import cmd_ops as o
+from . import cmd_show as s
+from . import cmd_tree as t
+from . import cmd_trust as u
+
+
+class Node:
+    __slots__ = ("name", "help", "run", "needs_root", "children", "usage", "danger")
+
+    def __init__(self, name, help, run=None, needs_root=False, children=None,
+                 usage="", danger=False):
+        self.name = name
+        self.help = help
+        self.run = run
+        self.needs_root = needs_root
+        self.children = children or {}
+        self.usage = usage
+        self.danger = danger
+
+
+def _n(name, help, **kw):
+    return name, Node(name, help, **kw)
+
+
+def _group(name, help, *kids):
+    return name, Node(name, help, children=dict(kids))
+
+
+ROOT = Node("satom", "SATOM operator CLI", children=dict([
+    _group("get", "Read state. Works as any user.",
+        _group("system", "This node.",
+            _n("status", "Identity, version, HA role and your privilege level.", run=g.system_status),
+            _n("health", "One-shot roll-up: units, /healthz, disk. Start here.", run=g.system_health),
+            _n("performance", "CPU, memory and filesystem usage.", run=g.system_performance),
+            _n("interface", "IP addresses and the ports SATOM cares about.", run=g.system_interface),
+            _n("disk", "Space, inodes, and the directories that actually grow.", run=o.system_disk),
+            _n("time", "Clock and NTP. Skew breaks TLS, ACME and every 'age' here.",
+               run=o.system_time),
+        ),
+        _group("service", "systemd units.",
+            _n("status", "State of one unit, or all of them.", run=g.service_status,
+               usage="get service status [<service>]"),
+        ),
+        _group("timer", "Timers and .path units — the automation that has no UI.",
+            _n("status", "Enabled, last fire, next fire, last result.", run=o.timer_status),
+        ),
+        _group("node", "High availability.",
+            _n("status", "Role, peer list and peer reachability over :8443.", run=g.node_status),
+        ),
+        _group("database", "PostgreSQL.",
+            _n("status", "Connection, size, replication.", run=g.database_status),
+        ),
+        _group("certificate", "TLS.",
+            _n("status", "Served certificate, expiry and the renewal journal.",
+               run=g.certificate_status),
+            _n("list", "Every certificate this node holds, not just the served one.",
+               run=o.certificate_list),
+        ),
+        _group("backup", "The four copies.",
+            _n("status", "All four, side by side, with their real ages.", run=o.backup_status),
+            _n("list", "Database bundles you can hand to 'execute restore db'.",
+               run=o.backup_list),
+        ),
+        _group("clone", "Deploy clones.",
+            _n("status", "Last clone import and whether this node is still holding it.",
+               run=cl.status),
+        ),
+        _group("scheduler", "Scheduled actions.",
+            _n("status", "What exists, when it last ran, what is overdue.",
+               run=o.scheduler_status),
+        ),
+        _group("api", "The API surface, keyed by FIRMWARE LINE — 7.6 and 8.0 "
+                      "speak the same api_version and do NOT take the same fields.",
+            _n("versions", "Firmware lines SATOM has evidence for, and how much.",
+               run=v.api_versions, usage="get api versions [<product>]"),
+            _n("preflight", "Would a payload of these fields be understood on that "
+                            "line? 'unmeasured' is an answer, never a yes.",
+               run=v.api_preflight,
+               usage="get api preflight <appliance|line> <object> <field>... "
+                     "[--product <p>]"),
+        ),
+        _group("device", "Managed appliances.",
+            _n("status", "Last sync to the local store, last reachability probe, "
+                         "maintenance flag.", run=o.device_status),
+            _n("config", "The device's configuration as SATOM last harvested it — "
+                         "read from the LOCAL store, never from the box.",
+               run=o.device_config,
+               usage="get device config [<device> [<section> [<table>]]] [--version <id>]"),
+            _n("naming", "The naming convention each object type already follows, "
+                         "from the stored tree — exceptions, fleet consensus.",
+               run=c.device_naming, usage=c.NAMING_USAGE),
+            _n("not-in-gui", "Every object and field the device's build has outside the "
+                             "Fortinet GUI, and the channel SATOM writes it over.",
+               run=c.device_not_in_gui, usage=c.NIG_USAGE),
+        ),
+        _group("signatures", "FortiGuard signature databases and the local signature index.",
+            _n("status", "DB version and age per device, the source, what the index holds.",
+               run=c.signatures_status),
+        ),
+        _group("monitor", "Probes.",
+            _n("status", "Probe states, and how much coverage is disabled.",
+               run=o.monitor_status),
+        ),
+        _group("job", "Background jobs.",
+            _n("list", "The ledger, including ghosts that keep the dock's toast open.",
+               run=o.job_list),
+        ),
+        _group("update", "Self-update records.",
+            _n("history", "Recent updates and whether the runner ever picked them up.",
+               run=o.update_history),
+        ),
+        _group("git", "The repository on this node.",
+            _n("status", "Branch, drift, unpushed age, parked safety refs.",
+               run=o.git_status),
+        ),
+        _group("release", "Signed releases: what root may install from deploy/.",
+            _n("trust", "Release trust anchor, newest signed commit, and whether "
+                        "HEAD's deploy/ matches it (details need sudo).",
+               run=rl.release_trust),
+        ),
+        _group("user", "Accounts.",
+            _n("list", "Who can log in — and whether anyone still can.", run=o.user_list),
+        ),
+        _group("alerts", "Alerting.",
+            _n("status", "Whether anyone is actually told when something breaks.",
+               run=o.alerts_status),
+        ),
+        _n("log", "Tail a unit's journal.", run=g.log_show,
+           usage="get log <service> [lines]"),
+    ),
+
+    _group("show", "Configuration and reference. Any user, no probing.",
+        _n("trust", "Public keys this node accepts, per purpose (update, api_pack, "
+                    "knowledge), with fingerprints.",
+           run=u.show_trust),
+        _n("package", "Inspect an update package without applying it.",
+           run=u.show_package, usage="show package <file.tar.gz>"),
+        _n("apipack", "API library packs on this node and what was imported from them.",
+           run=ap.show_apipacks),
+        _n("knowledge", "Knowledge packs per lane (age), the feed, the mode and the last fetch.",
+           run=kn.show_knowledge),
+        _n("layouts", "Measured GUI layouts per product and build, and which device "
+                      "has one for its exact build.",
+           run=c.show_layouts, usage="show layouts [<product>]"),
+        _n("config", "The .env, with secrets redacted.", run=s.config),
+        _n("units", "Alias -> systemd unit map, with install state.", run=s.units),
+        _n("services", "What each unit is FOR, and which ones are off limits.",
+           run=b.services),
+        _n("paths", "Canonical filesystem layout: what is replicated, what is not.",
+           run=b.paths),
+        _n("ports", "Which port belongs to which listener, and why.", run=b.ports),
+        _n("schedule", "What SHOULD run and how often.", run=b.schedule),
+        _n("runbook", "Offline recovery procedures. 'show runbook' lists them.",
+           run=b.runbook, usage="show runbook [<topic>]"),
+        _n("privilege", "How privilege is split here, and why. Read this first.",
+           run=s.privilege),
+        _n("sudoers", "Print the sudoers rule to request for an operator account.",
+           run=s.sudoers, usage="show sudoers [<account>]"),
+        _n("docs", "The manual, from the tree. 'show docs' lists it. Works with no network.",
+           run=b.docs, usage="show docs [<name>] [<section>]"),
+        _n("changelog", "The most recent release notes from the tree.", run=b.changelog),
+        _n("version", "Versions of the app, the CLI and Python.", run=s.version),
+        _n("tree", "The WHOLE command tree in one view. Filters: --commands/--depth/--root.",
+           run=t.tree,
+           usage="show tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]"),
+    ),
+
+    _group("diagnose", "Active probes that answer 'why is it broken'. Any user.",
+        _n("all", "Every check, folded into one exit code.", run=d.all_checks),
+        _n("service", "One unit: state, definition, drop-ins, journal.",
+           run=d.service, usage="diagnose service <service>"),
+        _n("install", "Is this node ARMED, or merely installed? Run on day one.",
+           run=k.install),
+        _n("code", "Is each process running the code that is on disk?", run=k.code),
+        _n("scheduler", "Is anything automated actually firing here?", run=k.scheduler),
+        _n("units", "Unit inventory and whether the privilege model survived.",
+           run=k.units),
+        _n("config", "The .env: present, correctly owned, internally consistent.",
+           run=k.config),
+        _n("data", "Is anything under data/ readable by another local account?",
+           run=k.data),
+        _n("database", "Connect, replication role, TLS, lock waits.", run=d.database),
+        _n("python", "venv integrity, compileall, and the LAZY-import smoke test.",
+           run=d.python),
+        _n("network", "Listening ports, nginx -t, local HTTPS probe.", run=d.network),
+        _n("nginx", "Syntax, which vhost wins :443, and the ACME redirect trap.",
+           run=k.nginx),
+        _n("certificate", "Expiry, live handshake, renewal timer result.", run=d.certificate),
+        _n("acme", "Client, account key, webroot, provider credentials.", run=k.acme),
+        _n("peer", "Peer reachability, datasync key and timer.", run=d.peer),
+        _n("git", "Repository integrity, including the root-owned-files trap.",
+           run=k.git),
+        _n("updates", "Can this node accept a signed offline package, and is that safe?",
+           run=u.diagnose_updates),
+        _n("privilege", "Integrity of the CLI install and the sudo boundary.",
+           run=d.privilege),
+        _n("recovery", "Does anyone hold the two secrets no backup carries?",
+           run=k.recovery),
+    ),
+
+    _group("execute", "Change state. Requires root.",
+        _group("rollback", "Put back an OS package upgrade or a Python change. "
+                           "Works with the web and the venv down.",
+            _n("list", "Rollback points saved on this node, newest first.",
+               run=rb.rollback_list, needs_root=True, usage=rb.LIST_USAGE),
+            _n("apply", "Restore one point. Dry run unless --yes.",
+               run=rb.rollback_apply, needs_root=True, danger=True, usage=rb.APPLY_USAGE),
+        ),
+        _group("seal", "Wrap the unreplicated secrets so every copy can carry them.",
+            _n("recovery",
+               "Seal FERNET_KEY + internal CA into data/ so the peer and every "
+               "bundle carry them. Passphrase shown once, never stored.",
+               run=f.seal_recovery, needs_root=True, danger=True,
+               usage="execute seal recovery [--yes]"),
+        ),
+        _group("unseal", "Open the sealed envelope during a recovery.",
+            _n("recovery",
+               "Print FERNET_KEY + internal CA from the sealed envelope.",
+               run=f.unseal_recovery, needs_root=True, danger=True,
+               usage="execute unseal recovery [--yes]"),
+        ),
+        _group("export", "Hand the operator something only they can keep.",
+            _n("recovery-key",
+               "Print FERNET_KEY + the internal CA key so a rebuild is possible.",
+               run=f.export_recovery_key, needs_root=True, danger=True,
+               usage="execute export recovery-key [--out PATH] [--yes]"),
+        ),
+        _n("restart", "Restart a service and VERIFY it actually came back.",
+           run=e.restart, needs_root=True, usage="execute restart <service>"),
+        _n("restart-all", "Migrate the schema on a primary (flask db upgrade), compile stale language catalogues, restart the whole stack in order, then verify /healthz.",
+           run=f.restart_all, needs_root=True),
+        _n("start", "Start a service.", run=e.start, needs_root=True,
+           usage="execute start <service>"),
+        _n("stop", "Stop a service.", run=e.stop, needs_root=True,
+           usage="execute stop <service>"),
+        _n("enable", "Enable a timer or .path unit (--now).", run=f.enable,
+           needs_root=True, usage="execute enable <unit>"),
+        _n("disable", "Disable a timer. Refuses the privileged runner.",
+           run=f.disable, needs_root=True, usage="execute disable <unit>"),
+        _group("reload", "Reload without dropping state.",
+            _n("nginx", "Validate the config, then reload nginx.",
+               run=e.reload_nginx, needs_root=True),
+        ),
+        _group("reset", "Put a subsystem back to its shipped state.",
+            _n("theme", "Activate the built-in theme — the way back from a palette "
+                        "that made the console unreadable.",
+               run=f.reset_theme, needs_root=True),
+        ),
+        _group("seed", "Create state a fresh install does NOT create for you.",
+            _n("actions", "The minimum scheduled actions. Shows the plan; --yes applies.",
+               run=f.seed_actions, needs_root=True, usage="execute seed actions [--yes] [--upgrade]"),
+        ),
+        _group("update", "Code and dependency updates (via the privileged queue).",
+            _n("code", "Queue a git update — or a rollback, by passing a commit.",
+               run=e.update_code, needs_root=True, usage="execute update code [<target>]"),
+            _n("pip", "Queue a curated-allowlist package change. Node-local.",
+               run=e.update_pip, needs_root=True,
+               usage="execute update pip <package> <version>"),
+            _n("package", "Apply a SIGNED offline update package. Works with no network.",
+               run=u.update_package, needs_root=True, danger=True,
+               usage="execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]"),
+            _n("fetch", "Download the newest signed package from the upgrade feed and apply it.",
+               run=u.update_fetch, needs_root=True, danger=True, usage=u.FETCH_USAGE),
+            _n("status", "Show the latest (or a specific) update record.",
+               run=e.update_status, usage="execute update status [<id>]"),
+        ),
+        _group("reinstall", "Rebuild a piece of the installation in place.",
+            _n("venv", "Recreate venv/ from requirements.txt. Needs --yes; keeps a freeze to roll back to.",
+               run=e.reinstall_venv, needs_root=True, danger=True),
+            _n("units", "Re-copy the systemd units AND re-pin User= via drop-in.",
+               run=e.reinstall_units, needs_root=True),
+            _n("cli", "Refresh the root-owned copy of this CLI from the repo.",
+               run=e.reinstall_cli, needs_root=True),
+            _n("runner", "Refresh the root-owned copy of the privileged update runner.",
+               run=u.reinstall_runner, needs_root=True),
+            _n("metrics-store", "Install or re-assert the node-local metrics store (VictoriaMetrics).",
+               run=e.reinstall_metrics_store, needs_root=True),
+        ),
+        _group("apipack", "API library packs: vendor API knowledge for offline nodes.",
+            _n("import", "Import a SIGNED API pack. Dry run unless --yes; never replaces local data.",
+               run=ap.import_apipack, needs_root=True, usage=ap.USAGE),
+        ),
+        _group("knowledge", "Knowledge packs from the online feed (release notes, Scout, signatures).",
+            _n("fetch", "Check the knowledge feed. --yes downloads the pack, --import --yes "
+                        "also imports it (signature verified). Primary only.",
+               run=kn.fetch_knowledge, needs_root=True, usage=kn.FETCH_USAGE),
+        ),
+        _group("apilib", "API library: harvest an appliance, compare builds by channel.",
+            _n("harvest", "Read one appliance's CLI schema (tree + hidden fields) and probe "
+                          "the REST paths the library lacks. Read-only on the box.",
+               run=ap.harvest_schema, needs_root=True, usage=ap.HARVEST_USAGE),
+            _n("compat", "Compare two builds of a product through both channels "
+                         "(REST + CLI schema): added/removed, options, renames.",
+               run=ap.apilib_compat, needs_root=True, usage=ap.COMPAT_USAGE),
+            _n("channels", "One build: fields per channel (both / CLI only / hidden / "
+                           "REST only / meta / unknown).",
+               run=ap.apilib_channels, needs_root=True, usage=ap.CHANNELS_USAGE),
+        ),
+        _group("migration", "Firmware migration checks against the API library.",
+            _n("report", "Check one appliance's configuration (newest vault dump) against a "
+                         "target build: blocking, translated, warned and new items + verdict. "
+                         "Read-only.",
+               run=mg.report, needs_root=True, usage=mg.USAGE),
+        ),
+        _group("trust", "Public keys this node accepts: update packages, api_pack and "
+                        "knowledge packs (one key, one use).",
+            _n("add-key", "Install a signing public key for one purpose (default: update).",
+               run=u.trust_add_key, needs_root=True, usage=u.ADD_USAGE),
+            _n("remove-key", "Stop accepting packages signed by a key. Needs --yes.",
+               run=u.trust_remove_key, needs_root=True, danger=True,
+               usage="execute trust remove-key <name|fingerprint> "
+                     "[--purpose update|api_pack|knowledge] --yes"),
+        ),
+        _group("repair", "Fix state that drifted.",
+            _n("permissions", "Give root-owned files in the app tree back to the service account.",
+               run=e.repair_permissions, needs_root=True),
+            _n("jobs", "Sweep ghost jobs and prune the terminated ledger.",
+               run=f.repair_jobs, needs_root=True,
+               usage="execute repair jobs [--older-than N] [--yes]", danger=True),
+            _n("tmp", "Delete aged scratch under data/tmp. Nothing else prunes it.",
+               run=f.repair_tmp, needs_root=True,
+               usage="execute repair tmp [--older-than N] [--yes]", danger=True),
+            _n("nginx", "Re-pin the proxied Host header and the served names in the vhost.",
+               run=f.repair_nginx, needs_root=True,
+               usage="execute repair nginx [--yes]", danger=True),
+            _n("data", "Close data/ to other accounts: 0750, vault and bundles owner-only.",
+               run=f.repair_data, needs_root=True,
+               usage="execute repair data [--yes]", danger=True),
+        ),
+        _group("cert", "Certificate operations.",
+            _n("renew", "Run the renewal pass now instead of waiting for 03:30.",
+               run=e.cert_renew, needs_root=True),
+        ),
+        _group("alerts", "Alert engine.",
+            _n("run", "Evaluate the health checks now.", run=e.alerts_run,
+               needs_root=True, usage="execute alerts run [--dry-run]"),
+        ),
+        _group("backup", "Backups.",
+            _n("db", "pg_dump the application database into data/system_backups/.",
+               run=e.backup_db, needs_root=True),
+            _n("git", "git bundle --all, including the parked safety refs.",
+               run=f.backup_git, needs_root=True),
+        ),
+        _group("restore", "Put a backup back.",
+            _n("db", "Replace the database from a bundle. Dumps the current one first.",
+               run=f.restore_db, needs_root=True, danger=True,
+               usage="execute restore db <file> --yes"),
+        ),
+        _group("clone", "Copy this deploy's configuration into another deploy.",
+            _n("export", "Write a clone bundle of this deploy's configuration (no backups, "
+                         "history or firmware). Secrets travel re-encrypted under a "
+                         "one-time key; the passphrase is printed once.",
+               run=cl.export, needs_root=True, usage=cl.EXPORT_USAGE),
+            _n("import", "Replace this deploy's configuration with a clone bundle's. Keeps "
+                         "this node's identity and holds every schedule until released.",
+               run=cl.import_, needs_root=True, danger=True, usage=cl.IMPORT_USAGE),
+            _n("release", "Re-enable what an import held: schedules, alert e-mail, "
+                          "NetBox push, hooks.",
+               run=cl.release, needs_root=True, usage=cl.RELEASE_USAGE),
+        ),
+        _group("admin", "Accounts, for when nobody can log in.",
+            _n("reset-password", "Set a password (asked interactively, never in argv); re-enables the account.",
+               run=f.admin_reset_password, needs_root=True,
+               usage="execute admin reset-password <username>"),
+            _n("unlock", "Clear a lockout. Touches neither the password nor the enabled flag.",
+               run=f.admin_unlock, needs_root=True,
+               usage="execute admin unlock <username>"),
+        ),
+        _group("scheduler", "Scheduled actions.",
+            _n("run", "Fire one action NOW as a manual run.", run=f.scheduler_run,
+               needs_root=True, usage="execute scheduler run <action-id>"),
+            _n("enable", "Enable one action.", run=f.scheduler_enable,
+               needs_root=True, usage="execute scheduler enable <action-id>"),
+            _n("disable", "Disable one action.", run=f.scheduler_disable,
+               needs_root=True, usage="execute scheduler disable <action-id>"),
+        ),
+        _group("support", "Hand-off.",
+            _n("bundle", "Collect every diagnostic and journal into one 0600 file.",
+               run=f.support_bundle, needs_root=True),
+        ),
+        _group("device", "Appliance operations. Each fires an EXISTING action "
+                         "bound to an approved change request — never a second "
+                         "privileged path to the box.",
+            _n("reboot", "Reboot one appliance via its CR-bound action. DESTRUCTIVE.",
+               run=f.device_reboot, needs_root=True, danger=True,
+               usage="execute device reboot <device> --yes"),
+            _n("upgrade", "Firmware upgrade of one appliance via its CR-bound action.",
+               run=f.device_upgrade, needs_root=True, danger=True,
+               usage="execute device upgrade <device> --yes"),
+        ),
+        _n("maintenance", "Park or un-park an appliance.", run=f.maintenance,
+           needs_root=True, usage="execute maintenance <device> <on|off>"),
+        _n("preflight", "Capture a health baseline BEFORE a risky change.",
+           run=e.preflight, needs_root=True, usage="execute preflight [<label>]"),
+        _n("postflight", "Diff the current health against the last preflight.",
+           run=e.postflight, needs_root=True),
+        _n("promote", "Promote this standby to primary. Requires --yes.",
+           run=e.promote, needs_root=True, danger=True),
+        _n("sign-release", "Sign HEAD of main with the root-only release key (one "
+                           "empty signed commit, pushed). Primary only; dry run "
+                           "unless --yes.",
+           run=rl.sign_release, needs_root=True, danger=True, usage=rl.SIGN_USAGE),
+    ),
+    _group("ha", "HA link: can the standby fetch code from this primary? "
+                 "Check it, and repair the primary's login service.",
+        _n("check", "Standby's own fetch state + this node's logind/sshd. "
+                    "Read-only; run it on the primary.",
+           run=ha.check),
+        _n("repair", "Restart systemd-logind on THIS primary via the privileged "
+                     "runner, then re-check. Preview unless --yes.",
+           run=ha.repair, needs_root=True,
+           usage="ha repair [--yes] [--wait SECONDS]"),
+    ),
+    _n("tree", "The whole command tree. Alias for 'show tree'.",
+       run=t.tree,
+       usage="tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]"),
+]))
+
+
+def walk(node=ROOT, path=()):
+    """Yield (path_tuple, node) for every node. Used by the tests and by help."""
+    yield path, node
+    for name, child in node.children.items():
+        for item in walk(child, path + (name,)):
+            yield item

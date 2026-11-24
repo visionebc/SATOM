@@ -1,0 +1,623 @@
+{#
+  The change request, WHOLE. One author for the blocks that now have two homes:
+  /web/change-requests/<id> and stage 2 of the upgrade flow, which cites the
+  change it has just raised. Copying this markup into the flow would have left
+  the embedded half — the one nobody re-reads — free to drift, which is exactly
+  how the flow came to be a second author of the CRQ form.
+
+  Everything is read from `crv` (change_requests.cr_view_context). The three
+  answers that differ between the two homes live there too:
+    crv.back      — the TOKEN the lifecycle forms post so they come back to the
+                    page they were pressed on. Never a URL: a redirect target
+                    taken from a form field is an open redirect.
+    crv.drift_url — re-renders THIS page with the live comparison, instead of
+                    sending the operator to the other one.
+    crv.can_act   — whether this operator may drive the workflow at all. The
+                    flow is reachable with BACKUP alone; a button that answers
+                    403 is worse than no button.
+#}
+{% set cr = crv.cr %}
+{% set devices = crv.devices %}
+{% set evidence = crv.evidence %}
+{% set policies = crv.policies %}
+{% set terminal = crv.terminal %}
+
+<!-- ACTION BAR -->
+<div class="fw-card mb-3">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2">
+    <div class="fw-topbar-spacer" style="flex:1 1 auto;"></div>
+
+    {% if not crv.can_act %}
+    <span class="text-muted" style="font-size:12.5px;">
+      {{ _('Read-only: driving this change needs the user-manage permission.') }}
+    </span>
+    {% else %}
+
+    {% if cr.status == 'draft' %}
+    <form method="POST" action="{{ url_for('change_requests.approve', id=cr.id) }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <button type="submit" class="btn btn-sm btn-fw-primary"><i class="bi bi-check2-circle me-1"></i>{{ _('Approve') }}</button>
+    </form>
+    {% endif %}
+
+    {% if not crv.executable %}
+    <span class="fw-badge fw-badge-warning" title="{{ _('This change type has no automated executor') }}">
+      <i class="bi bi-hand-index me-1"></i>{{ _('Carried out by hand') }}</span>
+    {% endif %}
+    {% if cr.action == 'upgrade' and not terminal %}
+    <span class="fw-badge fw-badge-warning" title="{{ _('The scheduled executor does not flash firmware: a scheduled upgrade closes as failed. Flash live from each appliance\'s firmware page inside the window; each run is recorded here and the change closes when every appliance has a result.') }}">
+      <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Flashed live, not by the scheduler') }}</span>
+    {% endif %}
+    {% if cr.status in ['approved', 'scheduled'] and crv.executable %}
+    <form method="POST" action="{{ url_for('change_requests.schedule', id=cr.id) }}" style="display:inline;"
+          data-fw-confirm-form="Bind a one-shot scheduled action at the window start for this change request?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <button type="submit" class="btn btn-sm btn-fw-primary">
+        <i class="bi bi-calendar-check me-1"></i>{{ 'Re-schedule' if cr.status == 'scheduled' else 'Schedule' }}
+      </button>
+    </form>
+    {% endif %}
+
+    {% if crv.closable_by_hand %}
+    {% for oc, label, icon, cls in [('completed', _('Mark completed'), 'bi-check2-all', 'btn-outline-success'), ('failed', _('Mark failed'), 'bi-x-octagon', 'btn-outline-danger')] %}
+    <form method="POST" action="{{ url_for('change_requests.close_by_hand', id=cr.id) }}" style="display:inline;"
+          data-fw-confirm-form="{{ _('Close this change request as %(outcome)s? This cannot be undone.', outcome=oc) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <input type="hidden" name="outcome" value="{{ oc }}">
+      <button type="submit" class="btn btn-sm {{ cls }}"><i class="bi {{ icon }} me-1"></i>{{ label }}</button>
+    </form>
+    {% endfor %}
+    {% endif %}
+
+    {% if cr.notify_status != 'sent' and not terminal %}
+    <form method="POST" action="{{ url_for('change_requests.mark_notified', id=cr.id) }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <button type="submit" class="btn btn-sm btn-fw-outline"><i class="bi bi-send-check me-1"></i>{{ _('Mark notified') }}</button>
+    </form>
+    {% endif %}
+
+    {% if not terminal %}
+    <a class="btn btn-sm btn-fw-outline" href="{{ crv.edit_url }}">
+      <i class="bi bi-pencil-square me-1"></i>{{ _('Edit') }}
+    </a>
+    <form method="POST" action="{{ url_for('change_requests.cancel', id=cr.id) }}"
+          class="d-inline-flex align-items-center gap-2 flex-nowrap"
+          data-fw-confirm-form="{{ _('Cancel this change request? Every scheduled action bound to it will be disabled.') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <!-- flex:0 1 220px, NOT the .form-control default width:100%: inside this
+           form that 100% resolves against the form's own width, leaving the
+           button whatever is left over - 80px, which broke the two-word label
+           across THREE lines at every viewport width. -->
+      <input type="text" class="form-control form-control-sm" name="reason"
+             placeholder="{{ _('Cancel reason (required)') }}" required maxlength="500"
+             style="flex:0 1 220px; width:auto; min-width:110px;">
+      <button type="submit" class="btn btn-sm btn-outline-danger flex-shrink-0">
+        <i class="bi bi-x-circle me-1"></i>{{ _('Cancel CR') }}
+      </button>
+    </form>
+    {% endif %}
+
+    {% endif %}{# can_act #}
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- LEFT: fields -->
+  <div class="col-lg-6">
+    {# Hidden where the host page renders this table itself (upgrade flow
+       stage 2 puts it inside its own change-request card). #}
+    {% if not hide_overview %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('Overview') }}</span>
+      </div>
+      <div class="fw-card-body">
+{% include 'change_requests/_overview.html' %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- CHANGE DOCUMENT -->
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-file-earmark-text me-2 text-accent"></i>{{ _('Change document') }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ cr.ref or ('CR #' ~ cr.id) }}</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted mb-2" style="font-size:12.5px;">
+          The formal 13-section change request (&sect;1 general information &hellip;
+          &sect;13 outcome), rendered from this record only. It reads the
+          <strong>{{ _('frozen') }}</strong> {{ _('inventory below, so printing an approved change twice produces the same document twice.') }}
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          {% for code, label in crv.langs %}
+          <a class="btn btn-sm {{ 'btn-fw-primary' if code == cr.doc_lang else 'btn-fw-outline' }}"
+             href="{{ url_for('change_requests.document', id=cr.id, lang=code) }}">
+            <i class="bi bi-eye me-1"></i>{{ label }}
+          </a>
+          <a class="btn btn-sm btn-fw-outline"
+             href="{{ url_for('change_requests.document', id=cr.id, lang=code, download=1) }}">
+            <i class="bi bi-download me-1"></i>{{ _('.md') }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- AFFECTED SERVICES (frozen inventory) -->
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _('Affected services') }}</span>
+        {% if cr.inventory_at %}
+        <span class="fw-badge fw-badge-secondary">frozen {{ cr.inventory_at|localtime }}</span>
+        {% endif %}
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted mb-2" style="font-size:12.5px;">
+          {{ _('The published services this window takes offline,') }} <strong>{{ _('as they were when this change was raised') }}</strong>. This is deliberately not a live read: the approver
+          signed this list, and a document that re-queried the fleet at print time would
+          describe a different one.
+          {# One run or twenty, the sentence has to match. "Captured by upgrade
+             preparation #88" was true of a single-device change and false of a
+             window over twenty appliances whose inventory is MERGED across
+             every bound run — the same class of quiet untruth as the About
+             card that claimed v1.0 for eight releases. #}
+          {% if evidence and evidence.preps %}
+            {# One msgid per SENTENCE, with the number as a named placeholder.
+               A sentence split around {{ }} cannot be translated into an
+               inflected language — the round that added the five UI languages
+               produced "À propos SATOM" exactly this way. #}
+            {% if evidence.preps|length == 1 %}
+              {{ _('Captured by upgrade preparation #%(id)s.', id=evidence.preps[0].id) }}
+            {% else %}
+              {{ _('Merged across %(count)s bound pre-upgrade runs.', count=evidence.preps|length) }}
+            {% endif %}
+          {% endif %}
+        </p>
+        {% if evidence and (evidence.preps or evidence.missing) %}
+        <div class="table-responsive mb-2">
+          <table class="fw-table mb-0" style="font-size:12.5px;">
+            <thead><tr>
+              <th>{{ _('Appliance') }}</th><th>{{ _('Pre-upgrade') }}</th>
+              <th>{{ _('Verdict') }}</th><th>{{ _('Firmware') }}</th>
+              <th>{{ _('Services') }}</th>
+            </tr></thead>
+            <tbody>
+            {% for d in devices %}
+              {% set p = evidence.by_appliance.get(d.id) %}
+              <tr>
+                <td>{{ d.name }}</td>
+                {% if p %}
+                  <td><a href="{{ url_for('appliances.upgrade_prep', id=d.id) }}">#{{ p.id }}</a>
+                      <span class="text-muted">{{ p.created_at|localtime }}</span></td>
+                  <td><span class="fw-badge fw-badge-{{ 'success' if p.ok else 'warning' }}">{{ _('passed') if p.ok else _('not clean') }}</span>
+                      <div class="text-muted">{{ p.summary }}</div></td>
+                  <td class="is-mono">{{ p.firmware or '—' }}</td>
+                  <td>{{ p.inventory_list|length }}</td>
+                {% else %}
+                  {# NAMED, never a blank row. A device silently absent from an
+                     evidence table reads as one that passed. #}
+                  <td colspan="4"><span class="fw-badge fw-badge-secondary">{{ _('no baseline') }}</span>
+                      <span class="text-muted">{{ _('this appliance is covered by the change but carries no pre-upgrade evidence') }}</span></td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+        {% if crv.live_drift is not none %}
+        <div class="fw-alert {{ 'fw-alert-warning' if (crv.live_drift.added or crv.live_drift.removed) else 'fw-alert-info' }} mb-2">
+          <strong>{{ _('Drift vs. the devices right now:') }}</strong>
+          {% if crv.live_drift.added or crv.live_drift.removed %}
+            {% if crv.live_drift.added %}<div>new since the snapshot: {{ crv.live_drift.added|join(', ') }}</div>{% endif %}
+            {% if crv.live_drift.removed %}<div>gone since the snapshot: {{ crv.live_drift.removed|join(', ') }}</div>{% endif %}
+            The snapshot above is unchanged &mdash; drift is reported, never silently merged.
+          {% else %}
+            none. The devices publish the same {{ crv.live_drift.total }} service(s) as the snapshot.
+          {% endif %}
+        </div>
+        {% else %}
+        {# Back to the page this block is EMBEDDED in, never hard-wired to the
+           change's own page: asking for the live comparison from inside the
+           flow must not be a way out of the flow. #}
+        {# Named, so a guard can ask for THIS link: the sidebar carries its own
+           bi-arrow-repeat and a search by icon finds that one first. #}
+        <a class="btn btn-sm btn-fw-outline mb-2" id="crv-drift" href="{{ crv.drift_url }}">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Compare against the devices now') }}
+        </a>
+        {% endif %}
+      </div>
+      {% if policies %}
+      {# SA-0028: pick the services by ANY AppID catalog column (built-in or
+         added by an import, under the operator's names) and a value present
+         among these rows. The ticks belong to the export form below (form=),
+         so the selection reaches the server with the columns, as before. #}
+      <div class="fw-card-body border-top py-2" id="crv-svc-tools-{{ cr.id }}"
+           data-crv-form="crv-export-{{ cr.id }}"
+           data-crv-values="{{ crv.appid_values|tojson|forceescape }}"
+           data-crv-empty="{{ _('(no value)') }}">
+        <div class="d-flex flex-wrap align-items-end gap-2" style="font-size:12.5px;">
+          <div>
+            <label class="fw-form-label mb-0" for="crv-col-{{ cr.id }}">{{ _('AppID catalog column') }}</label>
+            <select class="form-select form-select-sm" id="crv-col-{{ cr.id }}" data-crv-col>
+              {% for key, label in crv.appid_fields %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fw-form-label mb-0" for="crv-val-{{ cr.id }}">{{ _('Value') }}</label>
+            <select class="form-select form-select-sm" id="crv-val-{{ cr.id }}" data-crv-val style="min-width:160px;"></select>
+          </div>
+          <button type="button" class="btn btn-sm btn-fw-outline" data-crv-act="match-on">
+            <i class="bi bi-check2-square me-1"></i>{{ _('Select matching') }}
+          </button>
+          <button type="button" class="btn btn-sm btn-fw-outline" data-crv-act="match-off">
+            <i class="bi bi-square me-1"></i>{{ _('Clear matching') }}
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-crv-act="all">{{ _('Select all') }}</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-crv-act="none">{{ _('Select none') }}</button>
+          <span class="text-muted ms-auto" data-crv-count></span>
+        </div>
+      </div>
+      {% endif %}
+      <div class="fw-card-body p-0">
+        {% if policies %}
+        <table class="fw-table mb-0">
+          <thead>
+            <tr><th style="width:2rem;"><input type="checkbox" class="form-check-input" data-crv-all checked
+                       aria-label="{{ _('Select every service') }}"></th>
+              <th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('VServer') }}</th><th>{{ _('Service') }}</th><th>{{ _('Status') }}</th>
+              {# SA-0027: the AppID each policy is bound to in the catalog NOW
+                 (AppIDs page names), not part of the frozen inventory. #}
+              {% for _k, label in crv.appid_cols %}<th title="{{ _('From the AppID catalog now, not frozen with the change') }}">{{ label }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for p in policies %}
+            <tr>
+              <td><input type="checkbox" class="form-check-input crv-svc" name="svc"
+                         value="{{ crv.row_key(p) }}" form="crv-export-{{ cr.id }}" checked
+                         data-crv-appid="{{ ((p._appid or {}).fields or {})|tojson|forceescape }}"
+                         aria-label="{{ _('Include %(policy)s in the export', policy=(p.policy or p.device)) }}"></td>
+              <td style="font-size:13px;">{{ p.device }}</td>
+              <td style="font-size:13px;">{{ p.policy or '—' }}</td>
+              <td style="font-size:13px;">{{ p.vserver or '—' }}</td>
+              <td style="font-size:13px;">{{ p.service or '—' }}</td>
+              <td style="font-size:13px;">{{ p.status or '—' }}</td>
+              {% for k, _l in crv.appid_cols %}
+              <td style="font-size:13px;"{% if p._appid %} title="{{ p._appid.source }}"{% endif %}>{{ ((p._appid or {}).fields or {}).get(k) or '—' }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="fw-empty-state py-4">
+          <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-shield-slash"></i></div>
+          <div class="fw-empty-state-title">{{ _('No published services recorded') }}</div>
+          <div class="fw-empty-state-text">
+            {{ _('Nothing was captured when this change was raised — the devices were unreachable, or they publish no front-end object (FortiAnalyzer and FortiAuthenticator do not).') }}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% if policies %}
+      <div class="fw-card-body border-top">
+        {# POST, not GET: the ticked services travel with the columns, and one
+           key per service outgrows a URL on a large window. #}
+        <form method="POST" id="crv-export-{{ cr.id }}"
+              action="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}"
+              data-crv-none="{{ _('Select at least one service to export.') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="svc_pick" value="1">
+          <label class="fw-form-label">{{ _('Export columns') }}</label>
+          <div class="d-flex align-items-center gap-2 mb-1" style="font-size:12.5px;">
+            <span class="text-muted">{{ _('Inventory (frozen with the change)') }}</span>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="inv" data-crv-on="1">{{ _('Select all') }}</button>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="inv" data-crv-on="">{{ _('Select none') }}</button>
+          </div>
+          <div class="row g-1 mb-2">
+            {% for key, label in crv.fields %}
+            <div class="col-md-4">
+              <label class="d-flex align-items-center gap-1" style="font-size:12.5px;">
+                <input type="checkbox" name="field" value="{{ key }}" data-crv-group="inv"
+                       {{ 'checked' if key in crv.default_fields else '' }}>
+                <span>{{ label }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          {# ONE group for the catalog, named once: the columns are the AppIDs
+             page's own (names included), read NOW -- not frozen with the
+             change, which is what "(catalog now)" on every box used to say. #}
+          <div class="d-flex align-items-center gap-2 mb-1" style="font-size:12.5px;">
+            <span class="text-muted" title="{{ _('From the AppID catalog now, not frozen with the change') }}">{{ _('AppID catalog (current values, not frozen)') }}</span>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="appid" data-crv-on="1">{{ _('Select all') }}</button>
+            <button type="button" class="btn btn-link btn-sm p-0" data-crv-cols="appid" data-crv-on="">{{ _('Select none') }}</button>
+          </div>
+          <div class="row g-1 mb-2">
+            {% for key, label in crv.appid_fields %}
+            <div class="col-md-4">
+              <label class="d-flex align-items-center gap-1" style="font-size:12.5px;">
+                <input type="checkbox" name="field" value="{{ key }}" data-crv-group="appid">
+                <span>{{ label }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="form-text mb-2">
+            {{ _('Column ORDER is fixed regardless of what you tick, so two exports of the same change are comparable. Ticking nothing exports the default five columns rather than producing an empty file.') }}
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-fw-primary">
+              <i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ _('Download .xlsx') }}
+            </button>
+            <button type="submit" class="btn btn-sm btn-fw-outline"
+                    formaction="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='csv') }}">
+              <i class="bi bi-filetype-csv me-1"></i>{{ _('.csv') }}
+            </button>
+          </div>
+        </form>
+      </div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var tools = document.getElementById('crv-svc-tools-{{ cr.id }}');
+  var form = document.getElementById('crv-export-{{ cr.id }}');
+  if (!tools || !form) return;
+  var PREFIX = '{{ crv.appid_prefix }}';
+  var values = {};
+  try { values = JSON.parse(tools.dataset.crvValues || '{}'); } catch (e) { values = {}; }
+  var col = tools.querySelector('[data-crv-col]');
+  var val = tools.querySelector('[data-crv-val]');
+  var count = tools.querySelector('[data-crv-count]');
+  var all = document.querySelector('[data-crv-all]');
+  function boxes() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('input.crv-svc[form="' + form.id + '"]'));
+  }
+  function refresh() {
+    var b = boxes(), on = b.filter(function (x) { return x.checked; }).length;
+    count.textContent = on + ' / ' + b.length;
+    if (all) { all.checked = on === b.length; all.indeterminate = on > 0 && on < b.length; }
+  }
+  function fillValues() {
+    val.innerHTML = '';
+    (values[col.value] || []).forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.textContent = v === '' ? tools.dataset.crvEmpty : v;
+      val.appendChild(o);
+    });
+  }
+  function cell(box) {
+    var facts = {};
+    try { facts = JSON.parse(box.dataset.crvAppid || '{}'); } catch (e) { facts = {}; }
+    var v = facts[col.value.slice(PREFIX.length)];
+    return v === undefined || v === null ? '' : String(v);
+  }
+  tools.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-crv-act]');
+    if (!btn) return;
+    var act = btn.dataset.crvAct;
+    boxes().forEach(function (b) {
+      if (act === 'all') b.checked = true;
+      else if (act === 'none') b.checked = false;
+      else if (cell(b) === val.value) b.checked = (act === 'match-on');
+    });
+    refresh();
+  });
+  col.addEventListener('change', fillValues);
+  if (all) all.addEventListener('change', function () {
+    boxes().forEach(function (b) { b.checked = all.checked; });
+    refresh();
+  });
+  boxes().forEach(function (b) { b.addEventListener('change', refresh); });
+  form.querySelectorAll('[data-crv-cols]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      form.querySelectorAll('input[data-crv-group="' + btn.dataset.crvCols + '"]')
+        .forEach(function (x) { x.checked = !!btn.dataset.crvOn; });
+    });
+  });
+  form.addEventListener('submit', function (ev) {
+    if (!boxes().some(function (b) { return b.checked; })) {
+      ev.preventDefault();
+      alert(form.dataset.crvNone);
+    }
+  });
+  fillValues();
+  refresh();
+})();
+</script>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- RIGHT: integrations + timeline + notice -->
+  <div class="col-lg-6">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-plug me-2 text-accent"></i>{{ _('External change record') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-sm-4">{{ _('Approval') }}</dt>
+          <dd class="col-sm-8">
+            {% if cr.approval_mode == 'external' %}
+              {% if cr.external_approved_at %}
+                <span class="fw-badge fw-badge-success">{{ _('external approval on record') }}</span>
+                <div class="text-muted">{{ cr.external_approved_by }} &middot; {{ cr.external_approved_at|localtime }}</div>
+              {% else %}
+                <span class="fw-badge fw-badge-warning">{{ _('waiting for external approval') }}</span>
+                <div class="text-muted">{{ _('This change cannot run until the external authority approves it. No answer is not an approval.') }}</div>
+              {% endif %}
+              <div class="text-muted mt-1">{{ _('Integrations record the verdict with POST /api/v1/change-requests/%(id)s/external-approval (admin-scope token).', id=cr.id) }}</div>
+              {% if crv.can_act and not terminal %}
+              <form method="post" action="{{ url_for('change_requests.external_approval', id=cr.id) }}" class="d-flex flex-wrap gap-2 mt-2"
+                    data-fw-confirm-form="{{ _('Record this external verdict by hand? It is attributed to you and audited.') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <input type="text" class="form-control form-control-sm" style="max-width:220px;" name="detail" placeholder="{{ _('Reference / note (optional)') }}">
+                {% if cr.external_approved_at %}
+                <button type="submit" name="decision" value="withdraw" class="btn btn-sm btn-outline-danger">{{ _('Withdraw external approval') }}</button>
+                {% else %}
+                <button type="submit" name="decision" value="approve" class="btn btn-sm btn-outline-success">{{ _('Record external approval') }}</button>
+                {% endif %}
+              </form>
+              {% endif %}
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ _('manual (approved in SATOM)') }}</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4">{{ _('Change ticket') }}</dt>
+          <dd class="col-sm-8">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+              <span>
+                {% if cr.crq_ref %}
+                  {% if cr.crq_url %}<a href="{{ cr.crq_url }}" target="_blank" rel="noopener"><code>{{ cr.crq_ref }}</code></a>
+                  {% else %}<code>{{ cr.crq_ref }}</code>{% endif %}
+                {% else %}<span class="text-muted">{{ _('none recorded') }}</span>{% endif %}
+              </span>
+              {% if crv.can_act and not terminal and cr.status in ('draft', 'approved') %}
+              <form method="post" action="{{ url_for('change_requests.request_crq', id=cr.id) }}" class="d-inline m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;"
+                        {% if not crv.crq.ready %}disabled{% endif %}>
+                  <i class="bi bi-send me-1"></i>{{ _('Raise change ticket via integration hooks') }}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+            {% if crv.can_act and not terminal and cr.status in ('draft', 'approved') %}
+              {% if crv.crq.ready %}
+              <div class="form-text">Queues the <code>change.requested</code> hooks. The ticket id arrives back
+              asynchronously &mdash; hooks run out of process, so nothing here waits on your CRM.</div>
+              {% else %}
+              <div class="form-text">{{ _('The button is off because nothing is wired behind it: no ticket backend is selected and no enabled hook is bound to') }}
+              <code>change.requested</code> ({{ _('Settings') }} &rarr; {{ _('Integrations') }}).
+              {{ _('Nothing would be sent — so until one exists, write the reference your change board gave you here instead.') }}</div>
+              {% endif %}
+            {% endif %}
+            {% if crv.can_act and not terminal %}
+            <form method="post" action="{{ url_for('change_requests.record_crq', id=cr.id) }}"
+                  class="d-flex align-items-center flex-wrap gap-1 mt-1 m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="{{ crv.back }}">
+              <input type="text" class="form-control form-control-sm" name="crq_ref"
+                     value="{{ cr.crq_ref or '' }}" placeholder="{{ _('Ticket reference') }}"
+                     style="font-size:12px; max-width:180px;">
+              <input type="text" class="form-control form-control-sm" name="crq_url"
+                     value="{{ cr.crq_url or '' }}" placeholder="{{ _('https://… link (optional)') }}"
+                     style="font-size:12px; max-width:250px;">
+              <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;">
+                <i class="bi bi-pencil me-1"></i>{{ _('Record') }}
+              </button>
+            </form>
+            <div class="form-text">{{ _('Typed by hand, for a change board that does not talk to SATOM. Submitted empty it changes nothing; to correct a reference, type the right one over it.') }}</div>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4">{{ _('NetBox window') }}</dt>
+          <dd class="col-sm-8">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+              <span>
+                {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('open') }}</span>
+                {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-success">{{ _('closed') }}</span>
+                {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('error') }}</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">{{ _('none requested') }}</span>{% endif %}
+              </span>
+              {% if crv.can_act and not terminal and cr.mw_state != 'open'
+                    and cr.status in ('draft', 'approved', 'scheduled') %}
+              {% set mw_all_unmapped = crv.mw_unmapped and crv.mw_unmapped|length == crv.devices|length %}
+              {% set mw_blocked = (not crv.netbox_ready) or (not cr.window_start) or (not cr.window_end) or mw_all_unmapped %}
+              <form method="post" action="{{ url_for('change_requests.open_window', id=cr.id) }}" class="d-inline m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;"
+                        {% if mw_blocked %}disabled{% endif %}>
+                  <i class="bi bi-calendar-plus me-1"></i>{% if cr.mw_state == 'error' %}{{ _('Retry maintenance window in NetBox') }}{% else %}{{ _('Open maintenance window in NetBox') }}{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+            {% if cr.mw_ref %}<div class="text-muted"><code>{{ cr.mw_ref }}</code></div>{% endif %}
+            {% if cr.mw_state == 'error' %}
+              <div class="text-muted">{{ _('SATOM asked NetBox and it refused or never answered — a device may still be shown in maintenance there. This is deliberately not the same as “no window requested”.') }}</div>
+            {% endif %}
+            {% if crv.can_act and not terminal and cr.mw_state != 'open'
+                  and cr.status in ('draft', 'approved', 'scheduled') %}
+              {% if not crv.netbox_ready %}
+              <div class="form-text">{{ _('The button is off because the NetBox integration is not configured (Settings &rarr; Integrations). Nothing would be sent.') }}</div>
+              {% elif not (cr.window_start and cr.window_end) %}
+              <div class="form-text">{{ _('The button is off until this change has a window start AND end. NetBox refuses an ambiguous timestamp, and nothing would be sent.') }}</div>
+              {% elif mw_all_unmapped %}
+              <div class="form-text">{{ _('The button is off because NetBox does not document %(names)s, so nothing would be sent.', names=crv.mw_unmapped|join(', ')) }}</div>
+              {% for name in crv.mw_unmapped %}{% if crv.mw_detail.get(name) %}
+              <div class="form-text">{{ crv.mw_detail[name] }}</div>
+              {% endif %}{% endfor %}
+              {% else %}
+              {% if crv.mw_unmapped %}
+              <div class="form-text text-danger">{{ _('NetBox does not document %(names)s: those appliances will be skipped and reported by name, the rest still get a window.', names=crv.mw_unmapped|join(', ')) }}</div>
+              {% endif %}
+              {% if crv.mw_unverified %}
+              <div class="form-text">{{ _('SATOM could not check %(names)s against NetBox just now, so this is unknown rather than missing — the button stays available and the press will report what NetBox says.', names=crv.mw_unverified|join(', ')) }}</div>
+              {% endif %}
+              <div class="form-text">{{ _('Opens the window in NetBox now, for every device on this change. The scheduler opens the same window when the run starts; doing it here is for showing the devices in maintenance ahead of time. It is not closed until the run finishes.') }}</div>
+              {% endif %}
+            {% endif %}
+          </dd>
+
+        {% if cr.integration_log %}
+        <details class="mt-3">
+          <summary class="small">{{ _('Integration log') }}</summary>
+          <pre class="small mb-0 mt-2" style="white-space:pre-wrap;">{{ cr.integration_log }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-clock me-2 text-accent"></i>{{ _('Timeline') }}</span>
+      </div>
+      <div class="fw-card-body">
+        {% if crv.events %}
+        <ul class="list-unstyled mb-0">
+          {% for e in crv.events %}
+          <li class="d-flex gap-2 pb-3" style="border-left:2px solid #E2E8F0; padding-left:12px; margin-left:4px;">
+            <div>
+              <div style="font-size:13.5px;">
+                <strong class="text-capitalize">{{ e.kind|replace('_', ' ') }}</strong>
+                {% if e.by %}<span class="text-muted">by {{ e.by }}</span>{% endif %}
+              </div>
+              {% if e.detail %}<div style="font-size:12.5px;">{{ e.detail }}</div>{% endif %}
+              <div class="text-muted" style="font-size:12px;">
+                {{ e.ts|localtime if e.ts else '' }}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-muted" style="font-size:13px;">{{ _('No events recorded yet.') }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-envelope-paper me-2 text-accent"></i>{{ _('Maintenance notice') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px;
+                    max-height:420px; overflow:auto; font-size:12.5px; white-space:pre-wrap;">{{ crv.notice }}</pre>
+        <div class="form-text">{{ _('Client-facing draft. "Mark notified" e-mails this notice to the change\'s recipients when Settings → Email is configured; otherwise it only records the notice as sent.') }}</div>
+      </div>
+    </div>
+  </div>
+</div>

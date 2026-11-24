@@ -1,0 +1,4103 @@
+"""Settings — the admin console (web port of the desktop Settings page).
+
+Sections mirror the desktop ``settings_page.py`` admin console, scoped to what
+makes sense for a multi-user web app:
+
+* General        — app name, default platform, session lock, status-poll
+                   interval, log levels, show-raw-config (persisted in the DB,
+                   not per-worker ``current_app.config``).
+* Classification — the zones / lines / departments catalogs that drive the
+                   appliance Zone/Line/Department dropdowns.
+* Network Segments — named back-end networks (CIDR/interface/gateway) scoped to
+                   a classification value.
+* Security / Change Password / About — available to every user.
+
+The config sections are admin-only (USER_MANAGE), exactly like the desktop
+console; Security/About/Change-Password stay open to all authenticated users.
+"""
+from __future__ import annotations
+
+import ipaddress
+
+from flask import (Blueprint, render_template, request, flash, redirect, url_for,
+                   jsonify, abort, session, current_app)
+from flask_login import login_required, current_user
+
+from ..auth.decorators import require_permission
+from ..auth.password_policy import password_problem
+from ..extensions import csrf, limiter
+from ..models import db, Permission, User, Profile, Appliance, visible_appliances
+from ..services import settings_store as store
+from ..services import lang_policy, langs as lang_registry
+from ..services import email_service as email
+from ..services import auth_store
+from ..services import secret_backend
+from ..services import twofa
+from ..services import git_service
+from ..services import user_settings_store as user_store
+from ..services import system_info
+from ..services import dns_tool as dns_tool_svc
+from ..services import dns_providers
+from ..services import acme_providers
+from ..services import policy_links as policy_links_svc
+from ..services import advisor as ai_advisor
+from ..services import log_sources as log_sources_svc
+from ..services.advisor_providers import ProviderError as _AiProviderError
+from ..services import clone_rules as clone_rules_svc
+from ..services import gui_pages
+from ..services import alert_routing
+from ..services import alerts as alerts_svc
+from ..services.audit import log_action
+
+bp = Blueprint('settings', __name__, url_prefix='/settings')
+
+
+def _theme_rows():
+    """Every theme, built-ins first then alphabetical — for the Appearance tab."""
+    try:
+        from ..models_theme import UiTheme
+        rows = UiTheme.query.order_by(UiTheme.builtin.desc(), UiTheme.name).all()
+        return [t.to_dict() for t in rows]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _theme_groups():
+    try:
+        from ..services.theme_tokens import by_group
+        return by_group()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _theme_defaults():
+    try:
+        from ..services.theme_tokens import DEFAULTS
+        return DEFAULTS
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _is_admin() -> bool:
+    return bool(current_user and current_user.can(Permission.USER_MANAGE))
+
+
+# The self-service account routes (2FA, recovery email, password) still live in
+# this blueprint -- their URLs are what the forms post to -- but the cards they
+# serve are on the Profile now, so that is where every one of them returns.
+def _account_security_url() -> str:
+    return url_for('auth.profile') + '#security'
+
+
+def _account_password_url() -> str:
+    return url_for('auth.profile') + '#password'
+
+
+def _language_rows() -> list:
+    """One row per language the product speaks, for the Languages tab.
+
+    ``renderable`` is read BEFORE the availability gate on purpose: the column
+    answers "can a change document be produced in this language", which is a
+    fact about the catalogue and must not change just because the operator has
+    not ticked the box yet -- otherwise the page would tell them a language is
+    unusable *because* it is switched off, and switching it on would be the
+    only way to discover the claim was circular.
+    """
+    from ..services import cr_document
+
+    offered = set(lang_policy.offered_codes())
+    renderable = {code for code, _label in cr_document.renderable_langs()}
+    usage = user_store.language_usage()
+    return [{
+        'code': code,
+        'label': lang_registry.label(code),
+        'offered': code in offered,
+        'renderable': code in renderable,
+        'is_source': code == lang_registry.DEFAULT,
+        'users': usage.get(code, 0),
+    } for code in lang_registry.codes()]
+
+
+def _acme_creds_state() -> dict:
+    """Per provider: which env vars already have a stored value, and which
+    REQUIRED ones are still missing. Secret VALUES never reach the template —
+    only the fact that one is stored (same contract as every other secret)."""
+    out = {}
+    for p in acme_providers.catalog(enabled_only=False):
+        stored = store.acme_provider_creds(p.slug, p.field_list, reveal=False)
+        out[p.slug] = {
+            'vals': {f['env']: ('' if f.get('secret') else stored.get(f['env'], ''))
+                     for f in p.field_list},
+            'secret_set': {f['env']: bool(stored.get(f['env'] + '__set'))
+                           for f in p.field_list if f.get('secret')},
+            'missing': acme_providers.missing_required(p.slug),
+        }
+    return out
+
+
+@bp.route('/')
+@login_required
+def index():
+    from ..services import product_scope
+    # Every Settings group is admin-only since My Account moved to the Profile
+    # (2026-10-23): a non-admin would be drawn a console with no menu at all.
+    # What such a user CAN change about their own account is on the Profile.
+    if not _is_admin():
+        return redirect(url_for('auth.profile'))
+    # Built before the render so the metrics-store health it contains is
+    # computed ONCE and handed to all three Sentinel sections. Three
+    # independent calls would triple this page's round-trips to the store for
+    # an answer that cannot have changed between them.
+    sentinel_ctx = _sentinel_view_context()
+    return render_template(
+        'settings/index.html',
+        settings=store.general(),
+        # Sentinel's form is generated from the SAME catalog its
+        # accessors read through, so a knob cannot exist in one and
+        # be missing from the other (the metrics.vm_url lesson).
+        # The Sentinel section is rendered INLINE in its pane (the operator
+        # asked for it not to bounce to another page), so the pane needs the
+        # same context the standalone page builds -- from the same builder,
+        # or the two surfaces disagree about the numbers they exist to show.
+        **sentinel_ctx,
+        sentinel_inline=True,
+        # Context and Response policy, Sentinel's other configuration
+        # surfaces. The console, the architecture, the border blocklist and
+        # the overview are Operations › Sentinel pages (operator, 2026-11-01:
+        # what is configured stays in Settings, the rest goes to Operations).
+        sentinel_context=_sentinel_context_context(sentinel_ctx.get('health')),
+        sentinel_policy=_sentinel_policy_context(sentinel_ctx.get('health')),
+        # Scout: the site knobs, the read-only criteria and the ladder. Same
+        # posture as Sentinel's builders -- an optional module that will not
+        # import renders an empty section rather than taking /settings/ down.
+        scout_settings=_scout_form(),
+        scout_criteria=_scout_criteria(),
+        scout_docs=_scout_docs_context(),
+        platform_options=product_scope.device_products(),
+        platform_labels=dict(product_scope.device_products()),
+        adom_names=dict(product_scope.device_products()),
+        log_levels_all=store.LOG_LEVELS_ALL,
+        log_formats_all=store.LOG_FORMATS,
+        timezones_all=store.timezones(),
+        classification=store.all_classification(),
+        segments=store.segments(),
+        ip_whitelist=store.ip_whitelist(),
+        stale_allowed_users=(store.stale_allowed_users() if _is_admin() else []),
+        profiles=(Profile.query.order_by(Profile.is_system.desc(), Profile.name).all() if _is_admin() else []),
+        profiles_counts=({p.id: User.query.filter_by(profile_id=p.id).count()
+                          for p in Profile.query.all()} if _is_admin() else {}),
+        banner_templates=store.BANNER_TEMPLATES,
+        banners=store.all_banners(),
+        adoms=(branding.all_adoms() if _is_admin() else []),
+        themes=(_theme_rows() if _is_admin() else []),
+        theme_groups=_theme_groups(),
+        theme_defaults=_theme_defaults(),
+        adom_caps=Adom.CAPS,
+        email_config=email.config(),
+        email_deliverability=(email.deliverability() if _is_admin() else None),
+        alerts_config=alerts_svc.config(),
+        auth_config=(auth_store.config() if _is_admin() else None),
+        auth_backends=auth_store.BACKENDS,
+        fac_appliances=(visible_appliances(Appliance.query.filter_by(kind='fortiauthenticator'))
+                        .order_by(Appliance.name).all() if _is_admin() else []),
+        cert_adcs=(store.cert_manager_adcs() if _is_admin() else None),
+        cert_classes=([(c, store.CERT_CLASS_LABELS[c], store.cert_class_config(c))
+                       for c in store.CERT_CLASSES] if _is_admin() else []),
+        cert_cmd_tokens=store.CERT_CMD_TOKENS,
+        cert_protocol=(store.cert_manager_protocol() if _is_admin() else 'adcs'),
+        cert_protocols=[(p, store.CERT_PROTOCOL_LABELS[p]) for p in store.CERT_PROTOCOLS],
+        cert_acme=(store.cert_manager_acme() if _is_admin() else None),
+        acme_cmd_tokens=store.ACME_CMD_TOKENS,
+        acme_challenges=store.ACME_CHALLENGES,
+        acme_key_types=store.ACME_KEY_TYPES,
+        acme_directories=acme_providers.KNOWN_DIRECTORIES,
+        acme_providers=([p.to_dict() for p in acme_providers.catalog(enabled_only=False)]
+                        if _is_admin() else []),
+        acme_provider_creds=(_acme_creds_state() if _is_admin() else {}),
+        cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
+        policy_links=(policy_links_svc.links() if _is_admin() else []),
+        policy_link_tokens=policy_links_svc.TOKENS,
+        clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
+        # One row per ADOM plus the house rule, because the four families are
+        # not comparable in size and a single number fits none of them.
+        sot_local_policies=(_sot_local_policies() if _is_admin() else None),
+        sot_dormant_adoms=(_sot_dormant_adoms() if _is_admin() else []),
+        sot_log_archive=(_sot_log_archive() if _is_admin() else None),
+        sot_store_stats=(_sot_store_stats() if _is_admin() else None),
+        bundle_local_keep=(store.bundle_local_keep() if _is_admin() else None),
+        sot_refresh=(store.sot_refresh() if _is_admin() else None),
+        # Server-side, on the first render: whether this node has an update
+        # repository at all decides whether the configuration form opens by
+        # itself. A client-side guess would flash the form open on a node that
+        # has been registered for a year.
+        sot_backup_server=(store.backup_server() if _is_admin() else None),
+        system_backup_schedule=(store.system_backup_schedule() if _is_admin() else None),
+        system_info=system_info.collect(),
+        # Languages — one row per language the PRODUCT speaks, so a language
+        # the operator switched off is still visible (and switchable back on).
+        # Listing only the offered ones would make withdrawing irreversible
+        # from the page that does the withdrawing.
+        lang_rows=(_language_rows() if _is_admin() else []),
+        lang_configured=(lang_policy.configured() if _is_admin() else False),
+        lang_malformed=(lang_policy.malformed() if _is_admin() else False),
+        lang_source=lang_registry.DEFAULT,
+        adom_menu_hidden=(sorted(gui_pages.hidden_kinds()) if _is_admin() else []),
+        **_nav_menu_context(),
+        adom_menu_counts=(_adom_menu_counts() if _is_admin() else {}),
+        vault_config=(secret_backend.config() if _is_admin() else None),
+        vault_modes=[(m, secret_backend.MODE_LABELS[m])
+                     for m in secret_backend.MODES],
+        is_admin=_is_admin(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Thresholds — one declared limit, many probes
+# ---------------------------------------------------------------------------
+# Deliberately NOT folded into the Email & Alerts tab. That tab is DELIVERY
+# policy (who is mailed, how often, from what severity); this is MEASUREMENT
+# policy (what counts as bad). Mixing them is how ``warn_pct = 80`` ended up
+# stored on interface and throughput probes, which do not grade on a percentage
+# at all.
+@bp.route('/thresholds/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def thresholds_state():
+    from ..services import thresholds as th
+    scope = (request.args.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        scope = th.all_scopes()[0]['key']
+    return jsonify(ok=True, **th.state(scope))
+
+
+@bp.route('/thresholds', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_thresholds():
+    from ..services import thresholds as th
+    scope = (request.form.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        return jsonify(ok=False, error='unknown scope', errors=['unknown scope']), 400
+    res = th.save_scope(scope, request.form)
+    log_action('thresholds.save', scope,
+               {'saved': res['saved'], 'cleared': res['cleared'],
+                'errors': res['errors']})
+    return jsonify(ok=not res['errors'], **res)
+
+
+@bp.route('/thresholds/reset', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def reset_thresholds():
+    """Anti-lockout: one button back to the shipped behaviour.
+
+    A scope tuned into permanent red (or permanent silence) has to be
+    recoverable without a psql session, for the same reason the theme engine
+    ships ``satom execute reset theme``."""
+    from ..services import thresholds as th
+    scope = (request.form.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        return jsonify(ok=False, error='unknown scope'), 400
+    n = th.reset_scope(scope)
+    log_action('thresholds.reset', scope, {'cleared': n})
+    return jsonify(ok=True, cleared=n)
+
+
+@bp.route('/library-updates')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_updates():
+    """Best-effort 'update available?' check for the Settings → Libraries card.
+
+    Kept out of the page render (see ``services.library_updates``): the PyPI
+    lookup runs only here, is cached in-process, and never blocks the Settings
+    page. ``?force=1`` bypasses the cache (the 'Check for updates' button).
+    """
+    from ..services import library_updates as libupd
+    data = libupd.check(force=(request.args.get('force') == '1'))
+    return jsonify(data)
+
+
+# --------------------------------------------------------------------------
+# Update sources — General tab        [SATOM-UPDATE-SOURCES]
+# --------------------------------------------------------------------------
+# Where Software Update finds packages and where the Libraries card checks and
+# installs from. The token is write-only: it is never sent back to the browser.
+
+
+def _update_source_form(payload: dict) -> dict:
+    return {
+        'custom': payload.get('mode') == 'custom',
+        'url': str(payload.get('url') or ''),
+        'auth': payload.get('auth') == 'basic',
+        'user': str(payload.get('user') or ''),
+        'token': str(payload.get('token') or ''),
+    }
+
+
+@bp.route('/update-sources')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_state():
+    from ..services import update_sources as usrc
+    return jsonify(usrc.state())
+
+
+@bp.route('/update-sources', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_save():
+    from ..services import update_sources as usrc
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get('kind')
+    if kind not in usrc.KINDS:
+        return jsonify(ok=False, errors=['unknown update source']), 400
+    form = _update_source_form(payload)
+    try:
+        errors = usrc.save(kind, **form)
+    except ValueError as exc:
+        errors = [str(exc)]
+    if errors:
+        return jsonify(ok=False, errors=errors), 400
+    db.session.commit()
+    cfg = usrc.config(kind)
+    # The audit row names the source and whether it authenticates, never the token.
+    log_action('settings.update_sources', kind,
+               {'custom': cfg['custom'], 'url': cfg['effective_url'],
+                'auth': cfg['auth'], 'user': cfg['user']})
+    return jsonify(ok=True, config=cfg)
+
+
+@bp.route('/update-sources/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_test():
+    """Reach the source the form describes (saved or not) and say what it offers."""
+    from ..services import update_sources as usrc
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get('kind')
+    if kind not in usrc.KINDS:
+        return jsonify(ok=False, error='unknown update source'), 400
+    return jsonify(usrc.test(kind, **_update_source_form(payload)))
+
+
+# --------------------------------------------------------------------------
+# Service control — General tab       [SATOM-SERVICE-CONTROL-VIEWS]
+# --------------------------------------------------------------------------
+# The web worker never runs systemctl for a state change; it enqueues a request
+# the privileged runner applies. See app/services/service_control.py for why
+# (a generic sudo systemctl grant is root by another name) and for the table
+# that bounds what a console admin can reach.
+
+
+@bp.route('/services')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_state():
+    """Live state of the controllable units on THIS node.
+
+    Read-only and unprivileged (`systemctl show` answers any user), so the card
+    renders on every page load without opening a privileged path.
+    """
+    from .. import runtime
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    return jsonify({
+        'node': su.this_node_name(),
+        'role': su.node_role(),
+        'units': svc.states(),
+        # Empty on a host. In a container it is the reason there is nothing
+        # to control (no agent, or an agent that stopped answering).
+        'note': runtime.unavailable_reason('service_control'),
+        'runtime': runtime.runtime(),
+    })
+
+
+@bp.route('/services/action', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_action():
+    """Enqueue an allowlisted start/stop/restart for the privileged runner.
+
+    Returns as soon as the request is queued and never waits for the outcome:
+    restarting satom.service kills the worker handling this very request, so a
+    synchronous answer would be a promise this endpoint cannot keep. The
+    browser polls /services/status/<uid>, whose file the ROOT runner writes.
+    """
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    who = getattr(current_user, 'username', '?')
+    try:
+        uid = svc.request_service_action(unit, action, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.service_action',
+               detail='%s %s on %s' % (action, unit, su.this_node_name()))
+    return jsonify({'uid': uid, 'unit': unit, 'action': action,
+                    'node': su.this_node_name()})
+
+
+@bp.route('/services/status/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_action_status(uid):
+    """Poll a queued service action (steps written by the privileged runner)."""
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
+
+
+@bp.route('/services/peers')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peers():
+    """Live unit state of every registered PEER node.  [SATOM-SERVICE-PEER]
+
+    Deliberately a SEPARATE endpoint from /services rather than another key in
+    it. Reading a peer is a network round trip with a timeout; folding it into
+    the local card would make a dead standby look like a broken page on a
+    perfectly healthy primary. The local table paints immediately and the peer
+    section fills in (or reports why it could not) on its own.
+    """
+    from ..services import service_control as svc
+    return jsonify({'peers': svc.peer_states()})
+
+
+@bp.route('/services/peer-action', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peer_action():
+    """Ask a registered peer to enqueue a start/stop/restart on ITSELF.
+
+    The host is resolved from the node registry by NAME, never taken from the
+    request, so this cannot be aimed at an arbitrary address. The peer is the
+    security boundary: it re-validates against its own allowlist and its own
+    root runner does the work.
+    """
+    from ..services import service_control as svc
+    payload = request.get_json(silent=True) or {}
+    node = (payload.get('node') or '').strip()
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    who = getattr(current_user, 'username', '?')
+    row = svc.request_service_action_on_peer(node, unit, action, by=who)
+    log_action('settings.service_action.peer',
+               detail='%s %s on peer %s -> %s%s'
+                      % (action, unit, node, row.get('state'),
+                         ' (%s)' % row['error'] if row.get('error') else ''))
+    return jsonify(row), (200 if row.get('state') == 'queued' else 400)
+
+
+@bp.route('/services/peer-status/<node>/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peer_action_status(node, uid):
+    """Poll a queued peer action on the peer that is applying it."""
+    from ..services import service_control as svc
+    return jsonify(svc.peer_action_status(node, uid))
+
+
+@bp.route('/library-pip/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_state():
+    """This node's identity + per-package rollback points for the Libraries
+    card. Cheap, no network — safe to call on every card render."""
+    from ..services import self_update as su
+    return jsonify({
+        'node': su.this_node_name(),
+        'role': su.node_role(),
+        'rollbacks': su.lib_versions(),
+    })
+
+
+@bp.route('/library-pip', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip():
+    """Enqueue a curated-only per-package pip upgrade/rollback as a job. The
+    web worker NEVER runs pip — it writes a request the privileged updater
+    service applies (curated allowlist enforced both here and in the runner).
+    The job, not the browser, carries the change to the peer: see
+    ``services/library_jobs``."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = (payload.get('package') or '').strip()
+    version = (payload.get('version') or '').strip()
+    action = (payload.get('action') or 'upgrade').strip()
+    # OPT-IN, never the default: staging a risky upgrade on ONE node and
+    # watching it before touching the other is a legitimate and common
+    # workflow, and quietly changing both nodes would take that away.
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start(package, version, action=action,
+                                 also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    # The peer is NOT asked now. Both runners restarting the web at the same
+    # moment is a full outage when the change is bad: psycopg 3.3.6 took a1
+    # AND a2 down together for ~100 s on 2026-10-15. The job asks the peer
+    # after this node reports success, whether or not a browser is watching.
+    log_action('settings.library_pip',
+               detail='%s %s==%s on %s%s (job %s)' % (
+                   action, package, version, su.this_node_name(),
+                   ' (peer after local success)' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'uid': job['meta']['local_uid'],
+                    'node': su.this_node_name(), 'also_peer': also_peer})
+
+
+@bp.route('/library-pip/status/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_status(uid):
+    """Poll a queued pip change's live status (steps written by the runner)."""
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
+
+
+@bp.route('/library-pip/drift')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_drift():
+    """Per-node installed versions of the curated libraries + a level verdict.
+
+    The venv is node-local, so this is the only place an operator can SEE
+    whether the HA pair is actually level. A peer that did not answer is
+    reported unreachable, never as agreeing.
+    """
+    from ..services import self_update as su
+    return jsonify(su.lib_version_drift())
+
+
+# --- node-to-node endpoints (identity key, NOT a user session) -------------
+# These are the receiving half of the peer fan-out. They are deliberately not
+# @login_required: the caller is the other NODE, authenticated by the shared
+# identity key that already secures every peer probe. There is one inter-node
+# auth scheme and this is it.
+def _peer_gate():
+    """None when the caller is the trusted peer, else a ready-made response.
+
+    Same shape and same convention as ``metrics_admin._peer_gate`` — there is
+    one inter-node auth scheme and one way to refuse. ``verify_request``
+    answers None when no key is configured at all: that is "the feature is
+    off", NOT "permission granted", so it FAILS CLOSED with 503 (a distinct,
+    diagnosable state) rather than being folded into a wrong-key 403.
+    """
+    from ..services import node_security as nsec
+    try:
+        verdict = nsec.verify_request(request)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'identity check failed: %s' % exc}), 403
+    if verdict is None:
+        return jsonify({'error': 'node identity key not configured'}), 503
+    if not verdict:
+        return jsonify({'error': 'bad node key'}), 403
+    return None
+
+
+@bp.route('/peer/libraries')
+@csrf.exempt
+def peer_libraries():
+    """THIS node's installed curated library versions, for the peer's drift
+    view. Read-only, and only what the Libraries card already shows."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'libraries': su.local_lib_versions()})
+
+
+@bp.route('/peer/library-pip', methods=['POST'])
+@csrf.exempt
+def peer_library_pip():
+    """Enqueue a curated pip change on THIS node, asked for by the peer.
+
+    Writes exactly the request the local button writes, so THIS node's own
+    privileged runner does the install, the import smoke test, the restart and
+    the auto-rollback. Nothing is executed here and no package crosses the
+    wire — only a package NAME and a VERSION, both re-validated against THIS
+    node's own allowlist and regexes inside ``request_pip_change``. The caller
+    is never trusted: a peer with a valid identity key still cannot install
+    something that is not curated here.
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = (payload.get('package') or '').strip()
+    version = (payload.get('version') or '').strip()
+    action = (payload.get('action') or 'upgrade').strip()
+    # An older peer sends no scope: the curated change it always meant.
+    scope = str(payload.get('scope') or 'curated').strip()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = su.request_pip_change(package, version, by=by, action=action,
+                                    origin='peer-push', scope=scope)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.library_pip.peer',
+               detail='%s %s==%s enqueued on %s for %s'
+                      % (action, package, version, su.this_node_name(), by))
+    return jsonify({'uid': uid, 'node': su.this_node_name()})
+
+
+@bp.route('/system-packages')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_state():
+    """Every node x every curated OS package: installed, version, and whether
+    the sandbox actually works for the app user. A silent peer is shown as
+    unreachable, never as installed."""
+    from ..services import system_packages as sp
+    return jsonify(sp.overview())
+
+
+@bp.route('/system-packages/install', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_install():
+    """Enqueue the install of ONE curated OS package for the privileged runner
+    on this node, as a job. The web worker installs nothing; the runner
+    re-checks the key against its own table. With ``also_peer`` the job asks
+    the peers only after this node succeeded (``services/library_jobs``), so
+    the two nodes never change at the same moment and no browser has to stay
+    open for the peer half."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    key = (payload.get('package') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_install(key, also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package',
+               detail='install %s on %s%s (job %s)' % (
+                   key, su.this_node_name(),
+                   ' (peer after local success)' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'uid': job['meta']['local_uid'],
+                    'node': su.this_node_name(), 'also_peer': also_peer})
+
+
+@bp.route('/system-packages/upgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_upgrade():
+    """Enqueue the upgrade of ONE Installed software component as a job.
+
+    With ``also_peer`` the standby goes FIRST when this node is the primary:
+    a package that breaks a node breaks the one without traffic, and this
+    node is not touched unless every peer succeeded (``library_jobs``)."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    key = str(payload.get('package') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_upgrade(key, also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package',
+               detail='upgrade %s on %s%s (job %s)' % (
+                   key, su.this_node_name(),
+                   ' + peers (%s first)' % job['meta'].get('order', 'local')
+                   if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name(),
+                    'also_peer': also_peer, 'order': job['meta'].get('order')})
+
+
+@bp.route('/python-packages/upgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def python_packages_upgrade():
+    """Upgrade ONE Python package already installed in the venv (Installed
+    software), as a job: a full copy of the venv is saved first, a failed
+    health check puts it back, and the point stays for a later rollback."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = str(payload.get('package') or '').strip()
+    version = str(payload.get('version') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start(package, version, action='upgrade',
+                                 also_peer=also_peer, by=who, scope='installed')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.library_pip',
+               detail='upgrade %s==%s (installed software) on %s%s (job %s)' % (
+                   package, version, su.this_node_name(),
+                   ' + peer' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
+@bp.route('/rollback', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def rollback_point_apply():
+    """Put ONE rollback point of THIS node back, as a job. The same restore
+    runs from the console: 'satom execute rollback apply <id>'."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    point = str(payload.get('point') or '').strip()
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_rollback(point, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.rollback', detail='roll back %s on %s (job %s)'
+               % (point, su.this_node_name(), job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
+@bp.route('/system-packages/check', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_check():
+    """Enqueue an update check (package index refresh + compare) as a job,
+    on this node and, with ``also_peer``, on the peers after it. Changes no
+    package."""
+    from ..services import library_jobs
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        job = library_jobs.start_check(also_peer=also_peer, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package',
+               detail='check for updates on %s%s (job %s)' % (
+                   su.this_node_name(), ' + peers' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'node': su.this_node_name()})
+
+
+@bp.route('/software-inventory')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def software_inventory():
+    """Every node x every installed platform component and Python package,
+    plus the browser assets. Read-only. ``?refresh=1`` re-measures this node;
+    ``?download=1`` returns the same JSON as an attachment (an inventory to
+    hand to an auditor). A silent peer is unreachable, never "same as here"."""
+    from ..services import software_inventory as inv
+    data = inv.overview(refresh=request.args.get('refresh') == '1')
+    resp = jsonify(data)
+    if request.args.get('download') == '1':
+        import re
+        from ..services import self_update as su
+        node = re.sub(r'[^A-Za-z0-9._-]', '_', su.this_node_name() or 'node')
+        resp.headers['Content-Disposition'] = (
+            'attachment; filename="satom-software-%s-%s.json"'
+            % (node, data['generated_at'][:10]))
+        log_action('settings.software_inventory', detail='downloaded')
+    return resp
+
+
+@bp.route('/peer/software-inventory')
+@csrf.exempt
+def peer_software_inventory():
+    """THIS node's installed software, for the peer's card. Read-only."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import software_inventory as inv
+    from ..services import system_packages as sp
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'inventory': inv.local_inventory(),
+                    'updates': sp.latest_check(),
+                    'rollback_points': sp.rollback_points()})
+
+
+@bp.route('/peer/system-packages')
+@csrf.exempt
+def peer_system_packages():
+    """THIS node's curated OS package state, for the peer's card. Read-only."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import system_packages as sp
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'packages': sp.local_state()})
+
+
+@bp.route('/peer/system-package-install', methods=['POST'])
+@csrf.exempt
+def peer_system_package_install():
+    """Enqueue a curated OS package install on THIS node, asked for by the
+    peer. Only a package KEY crosses the wire, re-checked against THIS node's
+    table; the distro name and the command come from this node's runner."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import system_packages as sp
+    payload = request.get_json(silent=True) or {}
+    key = str(payload.get('package') or '').strip()
+    # An older peer sends no action: that is the install it always meant.
+    action = str(payload.get('action') or 'install').strip()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = sp.request_on_peer_node(action, key, by=by, origin='peer-push')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package.peer',
+               detail='%s %s enqueued on %s for %s' % (action, key or '(all)',
+                                                        su.this_node_name(), by))
+    return jsonify({'uid': uid, 'node': su.this_node_name()})
+
+
+@bp.route('/peer/services')
+@csrf.exempt
+def peer_services():
+    """THIS node's controllable units, for the peer's card. Read-only.
+
+    Exactly what the local card already shows -- `systemctl show` answers any
+    user, so nothing privileged is exposed by answering, and a peer learns
+    nothing it could not learn by being handed this node's console.
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'units': svc.states()})
+
+
+@bp.route('/peer/service-action', methods=['POST'])
+@csrf.exempt
+def peer_service_action():
+    """Enqueue a start/stop/restart on THIS node, asked for by the peer.
+
+    Writes exactly the request the local button writes, so THIS node's own
+    privileged runner applies it and verifies it. Only a unit NAME and an
+    ACTION cross the wire, and both are re-validated here against THIS node's
+    own POLICY inside ``request_service_action``. The caller is never trusted:
+    a peer holding a valid identity key still cannot reach a unit this node
+    does not list, and cannot reach the updater at all (``FORBIDDEN``).
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = svc.request_service_action(unit, action, by=by, origin='peer-push')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.service_action.peer_recv',
+               detail='%s %s enqueued on %s for %s'
+                      % (action, unit, su.this_node_name(), by))
+    return jsonify({'uid': uid, 'unit': unit, 'action': action,
+                    'node': su.this_node_name()})
+
+
+@bp.route('/peer/service-status/<uid>')
+@csrf.exempt
+def peer_service_status(uid):
+    """A queued action's status ON this node, for the peer that asked for it."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
+
+
+# NOTE: the read-only Database browser (schema + relational model + SQL console)
+# moved out of Settings into its own top-level section — see app/views/database.py
+# (blueprint ``database``, /database). Its backend is app/services/dbintrospect.py.
+
+
+@bp.route('/general', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_general():
+    try:
+        store.save_general(
+            app_name=request.form.get('app_name', ''),
+            default_kind=request.form.get('default_kind', ''),
+            session_timeout=request.form.get('session_timeout', 60),
+            log_levels=request.form.getlist('log_levels'),
+            timezone=request.form.get('timezone', ''),
+            log_format=request.form.get('log_format', 'detailed'),
+            env_mode=request.form.get('env_mode', ''),
+            admin_self_approval=request.form.get('admin_self_approval') == '1',
+        )
+        # Take effect now: the idle lock re-reads its timeout, and the log
+        # file handler gets the new levels/format (this worker; the others
+        # pick the timeout up within 30 s and the log settings at restart).
+        from ..auth import session_lock
+        from ..errors import apply_log_settings
+        session_lock.invalidate_cache()
+        apply_log_settings()
+        log_action('settings.general', detail='Updated general settings; administrators '
+                   + ('MAY' if store.admin_self_approval() else 'may NOT')
+                   + ' approve their own changes')
+        flash('General settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-general')
+
+
+def _adom_menu_counts() -> dict:
+    """{kind: "FortiAnalyzer 57 · FortiADC 17"} for the ADOM Menus panel:
+    what each switch takes out of which ADOM; {} when it cannot be measured
+    (the panel then shows the switches without counts)."""
+    from ..services import gui_products
+    try:
+        per = gui_pages.kind_counts(Appliance.query.order_by(Appliance.id).all())
+    except Exception:  # noqa: BLE001
+        return {}
+    return {k: ' · '.join(f'{gui_products.label(p)} {c[k]}' for p, c in per.items() if c[k])
+            for k in gui_pages.KINDS}
+
+
+def _nav_menu_context():
+    """Settings › Appearance › Sidebar menu: the hideable tree of every ADOM
+    this administrator may enter, merged (app/nav_hide.py)."""
+    if not _is_admin():
+        return {'nav_menu_tree': [], 'nav_menu_adoms': {}, 'nav_hidden': []}
+    from .. import nav_hide
+    from ..branding import PRODUCTS
+    from ..services.product_scope import adom_allowed
+    adoms = {k: p.get('name', k) for k, p in PRODUCTS.items() if adom_allowed(k)}
+    return {'nav_menu_tree': nav_hide.catalog(adoms),
+            'nav_menu_adoms': adoms,
+            'nav_hidden': sorted(nav_hide.hidden())}
+
+
+@bp.route('/appearance/sidebar-menu', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_nav_menu():
+    """Which sidebar entries, submenus and groups stay out of every user's
+    sidebar in every ADOM (app/nav_hide.py). The form posts every key it drew
+    in ``k`` and the ticked ones in ``show``; a hidden key the form did not
+    draw (an entry this administrator's sidebar does not have today) is kept.
+
+    One key can be drawn in several rows (Architecture sits under Global and
+    under Operations): it is hidden when ANY of its rows is unticked, i.e.
+    when it is ticked fewer times than it is listed. Comparing sets instead
+    made one ticked twin outvote the row the operator unticked, and nothing
+    was ever hidden (operator report, 2026-10-23)."""
+    from collections import Counter
+    from .. import nav_hide
+    if request.form.get('reset') == '1':
+        stored = nav_hide.save([])
+    else:
+        rows = Counter(request.form.getlist('k'))
+        ticked = Counter(request.form.getlist('show'))
+        listed = set(rows)
+        kept = {k for k in nav_hide.hidden() if k not in listed}
+        wanted = {k for k, n in rows.items() if ticked[k] < n}
+        stored = nav_hide.save(kept | wanted)
+        refused = sorted(wanted - set(stored))
+        if refused:
+            # Never drop a row silently: the operator unticked it and must be
+            # told it is still in the sidebar, and which one.
+            flash('Not hidden (these rows cannot be hidden): %s' % ', '.join(refused), 'warning')
+    log_action('settings.nav_menu',
+               detail='Hidden from the sidebar: ' + (', '.join(stored) or 'nothing'))
+    flash('Sidebar menu saved: %d hidden.' % len(stored), 'success')
+    return redirect(url_for('settings.index') + '#card-sidebar-menu')
+
+
+@bp.route('/adom-menus', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_adom_menus():
+    """Which page classes (live monitors, pages managed on the device, GUI-only
+    pages with no API) stay out of every ADOM menu. Stored in the replicated
+    app_settings table; every user's menu follows it on the next render."""
+    try:
+        on = [k for k in gui_pages.KINDS if request.form.get('hide_' + k) == '1']
+        gui_pages.set_hidden_kinds(on)
+        log_action('settings.adom_menus',
+                   detail='Hidden from the ADOM menus: ' + (', '.join(on) or 'nothing'))
+        flash('ADOM menu settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save the ADOM menu settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-adommenus')
+
+
+@bp.route('/languages', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_languages():
+    """Which languages this installation offers its users.
+
+    The checkbox for the source language is rendered disabled, so it never
+    reaches here -- which is exactly why the rule cannot live in the form:
+    ``lang_policy.save`` puts it back unconditionally, and a post that omitted
+    every language would otherwise leave the install with no readable one.
+
+    Nothing is deleted by a withdrawal: per-user preferences and translation
+    catalogues both survive, so switching a language back on restores it whole.
+    """
+    try:
+        picked = request.form.getlist('offered')
+        stored = lang_policy.save(picked)
+        withdrawn = lang_policy.withdrawn_codes()
+        # Both halves are recorded. "Offered: en, es" does not say what changed
+        # -- and the interesting half of this action is always the one that
+        # stopped being available to other people.
+        log_action('settings.languages',
+                   target=','.join(stored),
+                   extra={'offered': list(stored),
+                          'withdrawn': list(withdrawn)})
+        flash('Language availability saved — %d offered%s.' % (
+            len(stored),
+            (', %d withdrawn' % len(withdrawn)) if withdrawn else ''),
+            'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save language availability: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-languages')
+
+
+@bp.route('/cert-manager', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_cert_manager():
+    """Certificate Manager config — the ADCS connection + per-class command
+    templates. Lives in the admin console (this tab); the Automation inventory
+    only consumes what is saved here. Nothing hardcoded."""
+    f = request.form
+    store.save_cert_manager_adcs({
+        'bin': f.get('adcs_bin', ''),
+        'ca': f.get('adcs_ca', ''),
+        'ca_name': f.get('adcs_ca_name', ''),
+        'domain': f.get('adcs_domain', ''),
+        'user': f.get('adcs_user', ''),
+        'date_format': f.get('adcs_date_format', ''),
+        'notify_to': f.get('adcs_notify_to', ''),
+        'secret': f.get('adcs_secret', ''),
+        'clear_secret': bool(f.get('adcs_clear_secret')),
+    })
+    for cls in store.CERT_CLASSES:
+        store.save_cert_class_config(cls, {
+            'template': f.get(f'{cls}_template', ''),
+            'key_type': f.get(f'{cls}_key_type', 'rsa'),
+            'key_size': f.get(f'{cls}_key_size', '2048'),
+            'subject_format': f.get(f'{cls}_subject_format', ''),
+            'san_format': f.get(f'{cls}_san_format', ''),
+            'submit_cmd': f.get(f'{cls}_submit_cmd', ''),
+            'revoke_cmd': f.get(f'{cls}_revoke_cmd', ''),
+            'renew_before_days': f.get(f'{cls}_renew_before_days', '30'),
+        })
+    # Issuance protocol (pluggable CA backend) + ACME client config.
+    store.save_cert_manager_protocol(f.get('cert_protocol', 'adcs'))
+    store.save_cert_manager_acme({
+        'client': f.get('acme_client', 'lego'),
+        'bin': f.get('acme_bin', ''),
+        'helper': f.get('acme_helper', ''),
+        'directory_url': f.get('acme_directory_url', ''),
+        'account_email': f.get('acme_account_email', ''),
+        'account_key_dir': f.get('acme_account_key_dir', ''),
+        'tos_agreed': '1' if f.get('acme_tos_agreed') else '',
+        'key_type': f.get('acme_key_type', 'EC256'),
+        'eab_kid': f.get('acme_eab_kid', ''),
+        'challenge': f.get('acme_challenge', 'http-01'),
+        'http_mode': f.get('acme_http_mode', 'webroot'),
+        'webroot_path': f.get('acme_webroot_path', ''),
+        'http_port': f.get('acme_http_port', '80'),
+        'dns_provider': f.get('acme_dns_provider', ''),
+        'dns_resolvers': f.get('acme_dns_resolvers', ''),
+        'dns_propagation_wait': f.get('acme_dns_propagation_wait', ''),
+        'dns_disable_precheck': '1' if f.get('acme_dns_disable_precheck') else '',
+        'template_mode': f.get('acme_template_mode', 'auto'),
+        'submit_cmd': f.get('acme_submit_cmd', ''),
+        'revoke_cmd': f.get('acme_revoke_cmd', ''),
+        'eab_hmac': f.get('acme_eab_hmac', ''),
+        'clear_eab_hmac': bool(f.get('acme_clear_eab_hmac')),
+    })
+    # Lifecycle policy — the DEFAULT rotation windows (each certificate can
+    # override them) and when revoked / expired material leaves the devices.
+    store.save_cert_lifecycle_policy({
+        'revoke_on_supersede': f.get('lc_revoke_on_supersede') == 'on',
+        'swap_after_days': f.get('lc_swap_after_days', 3),
+        'delete_superseded_after_days': f.get('lc_delete_superseded_after_days', 14),
+        'retain_after_removal_days': f.get('lc_retain_after_removal_days', 30),
+        'delete_expired_after_days': f.get('lc_delete_expired_after_days', 30),
+        'delete_revoked_from_device': f.get('lc_delete_revoked_from_device') == 'on',
+        'auto_apply': f.get('lc_auto_apply') == 'on',
+    })
+    log_action('settings.cert_manager',
+               detail=f"protocol={f.get('cert_protocol', 'adcs')} + ADCS/ACME + lifecycle policy saved")
+    flash('Certificate Manager settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+# --------------------------------------------------------------------------- #
+#  ACME DNS-01 providers — catalog + per-provider credentials                   #
+#  The catalog is DATA (acme_dns_providers, seeded INSERT-ONLY from             #
+#  acme_providers.yaml): adding a provider is a row, never a deploy. The form   #
+#  is rendered FROM the provider's field list, so nothing here is hardcoded.    #
+# --------------------------------------------------------------------------- #
+@bp.route('/acme-provider/<slug>/creds', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_acme_provider_creds(slug):
+    prov = acme_providers.get(slug)
+    if prov is None:
+        flash(f'Unknown DNS provider {slug!r}.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-certmgr')
+    f = request.form
+    values = {}
+    for spec in prov.field_list:
+        env = spec['env']
+        values[env] = f.get(f'cred_{env}', '')
+        values['clear__' + env] = bool(f.get(f'clear_{env}'))
+    store.save_acme_provider_creds(slug, prov.field_list, values)
+    # Never log values — only which variables were touched.
+    log_action('settings.acme_provider_creds', target=slug,
+               detail=f"{len(prov.field_list)} field(s) submitted")
+    flash(f'Credentials for {prov.label} saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+@bp.route('/acme-provider', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_acme_provider():
+    """Create or edit a catalog entry. ``fields`` arrives as the JSON list the
+    UI edits — that is what makes a brand-new provider possible without code."""
+    f = request.form
+    slug = (f.get('slug') or '').strip().lower()
+    try:
+        acme_providers.upsert(slug, {
+            'label': f.get('label', ''),
+            'flag': f.get('flag', ''),
+            'doc_url': f.get('doc_url', ''),
+            'fields': f.get('fields', '[]'),
+            'enabled': f.get('enabled') == 'on',
+            'sort': f.get('sort') or None,
+        })
+    except Exception as exc:  # noqa: BLE001 — a bad JSON blob must not 500
+        flash(f'Provider not saved: {exc}', 'danger')
+        return redirect(url_for('settings.index') + '#tab-certmgr')
+    log_action('settings.acme_provider', target=slug, detail='catalog entry saved')
+    flash(f'DNS provider {slug} saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+@bp.route('/acme-provider/<slug>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def delete_acme_provider(slug):
+    if acme_providers.delete(slug):
+        log_action('settings.acme_provider_delete', target=slug)
+        flash(f'DNS provider {slug} deleted.', 'success')
+    else:
+        flash('Built-in providers cannot be deleted — disable them instead.',
+              'warning')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+# POST /settings/naming and /settings/segments are GONE (2026-10-03 audit,
+# AD-58): nothing posted to them any more and both redirected to Settings tabs
+# that no longer exist. The writers are naming.save and segments.save, on the
+# pages that own those editors.
+
+
+# The blob-textarea POST that used to live here is GONE. It was already
+# unreachable -- the Settings console dropped its Classification tab when the
+# page was ported to the Administrator section -- but it stayed a live,
+# USER_MANAGE-reachable writer that called store.save_classification()
+# directly. That path cannot tell a rename from a delete, so it orphaned every
+# Appliance / Baseline / segment reference in silence: exactly the failure
+# services/classification_ops.py exists to prevent. One writer, one set of
+# guards. See classification.save.
+
+
+@bp.route('/access', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_access():
+    # IP whitelist — validate each entry as an IP or CIDR.
+    ips = request.form.getlist('wl_ip[]')
+    notes = request.form.getlist('wl_note[]')
+    rows, bad = [], []
+    for i, ip in enumerate(ips):
+        ip = (ip or '').strip()
+        if not ip:
+            continue
+        try:
+            ipaddress.ip_network(ip, strict=False)
+        except ValueError:
+            bad.append(ip)
+            continue
+        rows.append({'ip': ip, 'note': notes[i] if i < len(notes) else ''})
+    store.save_ip_whitelist(rows)
+
+    log_action('settings.access', detail=f'{len(rows)} whitelisted IP(s)')
+    if bad:
+        flash(f"Skipped invalid IP/CIDR(s): {', '.join(bad)}", 'warning')
+    flash('Access control saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-access')
+
+
+@bp.route('/access/clear-legacy-allowlist', methods=['POST'])
+@login_required
+def clear_legacy_allowlist():
+    """Drop the dead ``access.allowed_users`` row (the gate it fed is gone)."""
+    if not _is_admin():
+        abort(403)
+    dropped = len(store.stale_allowed_users())
+    store.clear_stale_allowed_users()
+    log_action('settings.access.clear_legacy_allowlist',
+               detail=f'{dropped} leftover username(s) removed')
+    flash(f'Cleared {dropped} leftover username(s) from the removed allowlist.',
+          'success')
+    return redirect(url_for('settings.index') + '#tab-access')
+
+
+@bp.route('/banners', methods=['POST'])
+@login_required
+def save_banners():
+    # Branding is a PER-USER preference now: every authenticated user picks
+    # their own banner, saved against their user_id in the DB (no cookie).
+    mapping = {p: request.form.get('banner_' + p, '')
+               for p in store.BANNER_PRODUCTS}
+    user_store.save_banners(current_user.id, mapping)
+    log_action('settings.banners',
+               detail=", ".join(f"{p}={v}" for p, v in mapping.items() if v))
+    flash('Banner templates saved.', 'success')
+    return redirect(url_for('auth.profile'))
+
+
+# --------------------------------------------------------------------------- #
+#  ADOM registry (Settings → ADOMs) — the data-driven product catalog.         #
+#  Admin-only. The registry itself (branding.PRODUCTS + capability sequences)   #
+#  reads the ``adoms`` table; these routes are the CRUD + logo upload for it.   #
+# --------------------------------------------------------------------------- #
+import os as _os
+import re as _re
+
+from ..models_adom import Adom
+from .. import branding
+
+_ADOM_KEY_RE = _re.compile(r'^[a-z][a-z0-9_-]{1,63}$')
+
+
+class _UndeletableAdoms:
+    """The ADOM keys Settings -> ADOMs refuses to delete.
+
+    Two sources, unioned on every membership test:
+
+    * :data:`CORE` -- ``global``/``fortiweb``/``fortiadc`` are wired into URL
+      scoping and would orphan data. They may be edited or deactivated, never
+      deleted.
+    * ANY ADOM that still owns registered appliances. An appliance's ``kind``
+      IS an ADOM key, so deleting that row silently un-manages every device
+      stamped with it: the boxes stay in the table, no product console can see
+      them any more, and nothing raises. This half used to be missing, which is
+      how ``fortiauthenticator`` and ``fortianalyzer`` -- both real products
+      with registered units -- stayed one POST away from disappearing.
+
+    Membership is computed per check, never cached, so onboarding the first
+    appliance of a product protects that product's ADOM immediately. A DB
+    failure degrades to :data:`CORE` (the pre-2026-08-06 behaviour) rather than
+    blocking every delete or, worse, allowing every delete.
+    """
+
+    CORE = frozenset({'global', 'fortiweb', 'fortiadc'})
+
+    def __contains__(self, key) -> bool:
+        k = (key or '').strip().lower()
+        if k in self.CORE:
+            return True
+        try:
+            from ..models import Appliance
+            return db.session.query(
+                Appliance.query.filter(Appliance.kind == k).exists()
+            ).scalar() is True
+        except Exception:  # noqa: BLE001 -- never break the settings page
+            return False
+
+    def appliance_count(self, key) -> int:
+        """How many registered appliances would be orphaned by the delete.
+
+        The refusal message needs this. Two different conditions land in the
+        same branch, and telling an operator that FortiAuthenticator is "a core
+        product" sends them looking for a flag that does not exist instead of
+        at the four devices they have to move first.
+        """
+        try:
+            from ..models import Appliance
+            return Appliance.query.filter(
+                Appliance.kind == (key or '').strip().lower()).count()
+        except Exception:  # noqa: BLE001 -- a count must not break the page
+            return 0
+
+    def __iter__(self):
+        return iter(sorted(self.CORE))
+
+    def __repr__(self) -> str:
+        return '_UndeletableAdoms(core=%r, plus any ADOM with appliances)' % (
+            sorted(self.CORE),)
+
+
+_ADOM_UNDELETABLE = _UndeletableAdoms()
+_LOGO_RASTER_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+_LOGO_MAX_PX = 256   # rasters are fit within this box (aspect preserved)
+
+
+def _adom_form_caps():
+    """Read the five capability checkboxes off the current request form."""
+    return {c: (request.form.get('cap_' + c) in ('1', 'on', 'true'))
+            for c in Adom.CAPS}
+
+
+def _bump_registry():
+    branding.invalidate()
+
+
+def _save_logo(adom: Adom, file) -> str | None:
+    """Persist an uploaded logo for ``adom``. Rasters are resized server-side to
+    fit ``_LOGO_MAX_PX`` (aspect preserved, transparency kept); SVGs are
+    sanitised (scripts/handlers stripped) rather than resized. Returns an error
+    string on failure, else ``None`` and sets ``adom.mark``."""
+    if not file or not file.filename:
+        return None
+    ext = _os.path.splitext(file.filename)[1].lower()
+    img_dir = _os.path.join(current_app.static_folder, 'img')
+    _os.makedirs(img_dir, exist_ok=True)
+
+    if ext == '.svg':
+        raw = file.read()
+        if len(raw) > 512 * 1024:
+            return 'SVG too large (max 512 KB).'
+        try:
+            text = raw.decode('utf-8', 'replace')
+        except Exception:
+            return 'SVG could not be decoded.'
+        # Strip the obvious XSS vectors — third-party SVG goes into the DOM.
+        text = _re.sub(r'(?is)<script.*?>.*?</script>', '', text)
+        text = _re.sub(r'(?is)<foreignObject.*?>.*?</foreignObject>', '', text)
+        text = _re.sub(r'(?i)\son\w+\s*=\s*"[^"]*"', '', text)
+        text = _re.sub(r"(?i)\son\w+\s*=\s*'[^']*'", '', text)
+        text = _re.sub(r'(?i)javascript:', '', text)
+        if '<svg' not in text.lower():
+            return 'Not a valid SVG file.'
+        rel = 'img/adom-%s-mark.svg' % adom.key
+        with open(_os.path.join(current_app.static_folder, rel), 'w',
+                  encoding='utf-8') as fh:
+            fh.write(text)
+        adom.mark = rel
+        return None
+
+    if ext in _LOGO_RASTER_EXT:
+        try:
+            from PIL import Image
+            img = Image.open(file.stream)
+            img.load()
+            if img.mode not in ('RGBA', 'RGB'):
+                img = img.convert('RGBA')
+            img.thumbnail((_LOGO_MAX_PX, _LOGO_MAX_PX), Image.LANCZOS)
+            rel = 'img/adom-%s-mark.png' % adom.key
+            img.save(_os.path.join(current_app.static_folder, rel), 'PNG')
+            adom.mark = rel
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return 'Image could not be processed: %s' % exc
+
+    return 'Unsupported logo type (use PNG, JPG, WEBP, GIF or SVG).'
+
+
+@bp.route('/adoms', methods=['POST'])
+@login_required
+def create_adom():
+    if not _is_admin():
+        abort(403)
+    key = (request.form.get('key') or '').strip().lower()
+    if not _ADOM_KEY_RE.match(key):
+        flash('Invalid ADOM key — use lowercase letters, digits, - and _ '
+              '(2-64 chars, starting with a letter).', 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    if Adom.query.filter_by(key=key).first():
+        flash('An ADOM with key %r already exists.' % key, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+
+    caps = _adom_form_caps()
+    max_order = db.session.query(db.func.max(Adom.sort_order)).scalar() or 0
+    adom = Adom(
+        key=key,
+        name=(request.form.get('name') or key).strip()[:128],
+        title=(request.form.get('title') or 'SATOM').strip()[:128],
+        tagline=(request.form.get('tagline') or '').strip()[:200],
+        description=(request.form.get('description') or '').strip(),
+        active=(request.form.get('active') in ('1', 'on', 'true')),
+        placeholder=(request.form.get('placeholder') in ('1', 'on', 'true')),
+        sort_order=int(max_order) + 1,
+        banner_default=(request.form.get('banner_default') or 'slate').strip()[:32],
+        mark='img/global-mark.svg',
+        cap_banner=caps['banner'], cap_tokens=caps['tokens'],
+        cap_firmware=caps['firmware'], cap_naming=caps['naming'],
+        cap_regex=caps['regex'], cap_webserver=caps['webserver'],
+    )
+    db.session.add(adom)
+    db.session.flush()
+    err = _save_logo(adom, request.files.get('logo'))
+    if err:
+        db.session.rollback()
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.create', detail='key=%s' % key)
+    flash('ADOM %r created.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
+
+
+@bp.route('/adoms/<key>', methods=['POST'])
+@login_required
+def update_adom(key):
+    if not _is_admin():
+        abort(403)
+    adom = Adom.query.filter_by(key=key).first_or_404()
+    caps = _adom_form_caps()
+    adom.name = (request.form.get('name') or adom.name).strip()[:128]
+    adom.title = (request.form.get('title') or 'SATOM').strip()[:128]
+    adom.tagline = (request.form.get('tagline') or '').strip()[:200]
+    adom.description = (request.form.get('description') or '').strip()
+    adom.active = (request.form.get('active') in ('1', 'on', 'true'))
+    adom.placeholder = (request.form.get('placeholder') in ('1', 'on', 'true'))
+    adom.banner_default = (request.form.get('banner_default')
+                           or adom.banner_default).strip()[:32]
+    for c in Adom.CAPS:
+        setattr(adom, 'cap_' + c, caps[c])
+    if request.form.get('sort_order', '').strip().isdigit():
+        adom.sort_order = int(request.form['sort_order'])
+    err = _save_logo(adom, request.files.get('logo'))
+    if err:
+        db.session.rollback()
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.update', detail='key=%s' % key)
+    flash('ADOM %r updated.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
+
+
+@bp.route('/adoms/<key>/delete', methods=['POST'])
+@login_required
+def delete_adom(key):
+    if not _is_admin():
+        abort(403)
+    if key in _ADOM_UNDELETABLE:
+        n = _ADOM_UNDELETABLE.appliance_count(key)
+        if n and key not in _UndeletableAdoms.CORE:
+            flash('The %r ADOM still has %d registered appliance%s and cannot '
+                  'be deleted — move or de-register them first, or deactivate '
+                  'the ADOM instead.' % (key, n, '' if n == 1 else 's'),
+                  'danger')
+        else:
+            flash('The %r ADOM is a core product and cannot be deleted — '
+                  'deactivate it instead.' % key, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    adom = Adom.query.filter_by(key=key).first_or_404()
+    db.session.delete(adom)
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.delete', detail='key=%s' % key)
+    flash('ADOM %r deleted.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
+
+
+@bp.route('/change-password', methods=['POST'])
+@login_required
+def change_password():
+    current_password = request.form.get('current_password', '')
+    new_password = request.form.get('new_password', '')
+    confirm_password = request.form.get('confirm_password', '')
+
+    if not current_user.check_password(current_password):
+        flash('Current password is incorrect.', 'danger')
+    elif password_problem(new_password):
+        flash(password_problem(new_password), 'danger')
+    elif new_password != confirm_password:
+        flash('New passwords do not match.', 'danger')
+    else:
+        current_user.set_password(new_password)
+        db.session.commit()
+        log_action('settings.change_password', detail='Changed own password')
+        flash('Password changed successfully.', 'success')
+    return redirect(_account_password_url())
+
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+
+@bp.route("/git/info")
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_info():
+    return jsonify(git_service.git_info())
+
+
+# There is no /git/pull (removed 2026-11-24, [SATOM-UPDATE-METHODS]). It ran
+# `git pull` over the running tree with none of an update's steps -- no pip, no
+# migrations, no restart of web + scheduler + reconciler, no standby-first
+# order -- and told the operator to restart by hand, which is how a scheduler
+# ends up serving old code for days. Software Update > Git repository > Apply
+# does the same pull through the privileged runner.
+
+
+@bp.route("/git/console", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_console():
+    script = (request.get_json(silent=True) or {}).get("script", "")
+    transcript = git_service.run_git_script(script)
+    log_action("settings.git_console", detail=f"{len(script.splitlines())} line(s)")
+    return jsonify({"transcript": transcript})
+
+
+@bp.route("/git/configure", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_configure():
+    data = request.get_json(silent=True) or {}
+    remote_url = data.get("remote_url", "").strip()
+    token = data.get("token", "").strip()
+    branch = data.get("branch", "").strip()
+    if not remote_url and not branch:
+        return jsonify({"error": "Provide at least a remote URL or branch"}), 400
+    transcript = git_service.git_configure(remote_url, token, branch)
+    log_action("settings.git_configure", detail=f"remote={bool(remote_url)} branch={branch!r}")
+    return jsonify({"transcript": transcript})
+
+
+# ── Source of Truth & Backup ───────────────────────────────────
+#
+#  ONE POST PER PANE, on purpose. The single ``/sot-backup`` action that
+#  preceded these wrote the firmware repo AND the SFTP credentials from one
+#  submit, so saving a retention number re-wrote the backup server, and the
+#  redirect landed on a pane the operator might not have been on. Two panes
+#  sharing one action is also how a field that has been deleted from one of
+#  them keeps being written as blank by the other.
+
+def _sot_registered_adoms() -> list:
+    """Every device family the ADOM registry knows, active or not.
+
+    Read from the registry, never a hardcoded tuple: that registry exists
+    precisely because five scattered lists used to disagree, and a sixth here
+    would put an ADOM in the selector with no retention policy behind it.
+    ``global`` is excluded — it is a console scope, not a device family.
+    """
+    try:
+        from ..models_adom import Adom
+        rows = (Adom.query.filter(Adom.key != 'global')
+                .order_by(Adom.sort_order, Adom.key).all())
+        return [{"key": r.key, "name": r.name, "active": bool(r.active)}
+                for r in rows]
+    except Exception:  # noqa: BLE001 — settings must render without the table
+        return []
+
+
+def _sot_adoms() -> list:
+    """The device families whose SoT policy is EDITABLE here.
+
+    An inactive ADOM is switched off across the whole console — its routes
+    404, it is gone from the selector — so offering a per-family retention
+    form for it invites an operator to configure a family this node does not
+    manage. The gate is the registry's own ``active`` flag rather than a
+    second list, for the reason the registry exists at all.
+    """
+    return [a for a in _sot_registered_adoms() if a["active"]]
+
+
+def _sot_dormant_adoms() -> list:
+    """Inactive ADOMs that nonetheless still carry a stored override or still
+    hold change-log rows.
+
+    Hiding an inactive family is right; hiding a RULE that is still in force
+    is not. If an ADOM is switched off after a policy was written, that policy
+    keeps resolving for every row filed under it — so it is reported here,
+    with the numbers, instead of silently disappearing from the page.
+    """
+    out = []
+    for a in _sot_registered_adoms():
+        if a["active"]:
+            continue
+        policy = store.sot_local_policy(a["key"])
+        versions = 0
+        try:
+            from ..models import db
+            from ..models_sot import SotVersion
+            versions = (db.session.query(db.func.count(SotVersion.id))
+                        .filter(SotVersion.product == a["key"]).scalar() or 0)
+        except Exception:  # noqa: BLE001
+            versions = 0
+        if policy["own"] or versions:
+            out.append(dict(a, policy=policy, versions=int(versions)))
+    return out
+
+
+def _sot_local_policies() -> dict:
+    """House rule + one resolved policy per ADOM, each carrying WHICH level
+    answered. "2 because you set it" and "2 because nobody set anything" are
+    different facts and lead to different next actions."""
+    return {"house": store.sot_local_policy(""),
+            "adoms": [dict(a, policy=store.sot_local_policy(a["key"]))
+                      for a in _sot_adoms()]}
+
+
+def _sot_log_archive() -> dict:
+    """Where the change-log archive lands and what the last run did.
+
+    Read from the stored outcome, never by listing the server: this renders on
+    every visit to Settings, and an SFTP round-trip in that path would make an
+    unreachable backup server look like a broken page.
+    """
+    out = {"path": "", "last": None}
+    try:
+        from ..services import sot_store
+        cfg = store.backup_server()
+        base = (cfg.get("system_path") or "/system").rstrip("/")
+        out["path"] = f"{base}/{sot_store.LOG_ARCHIVE_SUBDIR}"
+        out["configured"] = bool(cfg.get("configured"))
+        raw = store.get_str(store.K_SOT_LOG_ARCHIVE_LAST, "")
+        if raw:
+            import json as _json
+            out["last"] = _json.loads(raw)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _sot_store_stats() -> dict:
+    """Store totals, so the policy is edited beside what it currently costs."""
+    try:
+        from ..services import sot_store
+        return sot_store.stats()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@bp.route('/sot', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_sot():
+    """Local PAYLOAD policy for the Configuration SoT, for ONE ADOM.
+
+    There is no index-retention field here and there will not be one: the
+    index IS the change log, and the only thing a knob shortening it could
+    achieve is destroying the record this store exists to keep. What is
+    configurable is how much payload stays on this node.
+    """
+    product = (request.form.get('product') or '').strip()
+    # Registered, not active: the pane offers a Clear button for a dormant
+    # ADOM whose rule is still in force, and rejecting it here would make that
+    # rule impossible to remove without psql.
+    valid = {a["key"] for a in _sot_registered_adoms()}
+    if product and product not in valid:
+        # An unknown ADOM would write a key nothing ever reads — a policy that
+        # looks saved and governs nothing, which is the exact defect the SoT
+        # retention knob had for three weeks.
+        flash('Unknown ADOM %r — no policy was written.' % product, 'danger')
+        return redirect(url_for('settings.index') + '#tab-sot')
+    store.save_sot_local_policy(request.form.get('keep_versions', ''),
+                                request.form.get('keep_days', ''), product,
+                                log_days=request.form.get('keep_log_days', ''))
+    cfg = store.sot_local_policy(product)
+    log_action("settings.sot_local_policy",
+               detail=f"adom={product or 'house'} versions={cfg['versions']} "
+                      f"days={cfg['days']} log_days={cfg['log_days']}")
+    flash('SoT policy saved for %s: newest %d version(s) and %d day(s) of '
+          'snapshot stay on this node, and %s of change log. Older snapshots '
+          'move to the backup server; whole past months of the log are '
+          'written there before they leave the database.'
+          % (product or 'every ADOM', cfg['versions'], cfg['days'],
+             ('%d day(s)' % cfg['log_days']) if cfg['log_days'] > 0
+             else 'the full history'), 'success')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/sot/evacuate', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def run_sot_evacuate():
+    """Apply the payload policy now: push what is missing off-box, then delete
+    only what the server is confirmed to hold."""
+    from ..services import sot_store
+    res = sot_store.offload()
+    log_action("settings.sot_evacuate", detail=str(res.get('detail', ''))[:200])
+    flash(res.get('detail', 'done') if res.get('ok')
+          else 'Nothing was evacuated: ' + str(res.get('detail', '')),
+          'success' if res.get('ok') else 'warning')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/sot/refresh', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_sot_refresh():
+    """Cadence of the SoT harvest. Its own POST, like every other pane's."""
+    res = store.save_sot_refresh(request.form.get('refresh_minutes', ''))
+    log_action("settings.sot_refresh",
+               detail=f"every={res['minutes']}min created={res['created']}")
+    flash('Created a fleet-wide SoT harvest every %d minutes.' % res['minutes']
+          if res['created'] else
+          'Configuration SoT now refreshes every %d minutes.' % res['minutes'],
+          'success')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/backup-server', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_backup_srv():
+    store.save_backup_server(request.form)
+    log_action("settings.backup_server",
+               detail=f"backup_server={request.form.get('host','')!r}")
+    flash('Backup server settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/schedule', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_backup_schedule():
+    """The hour this node writes its own bundle at.
+
+    Its own POST on purpose: sharing the SFTP form's endpoint would make
+    changing the hour rewrite the credentials, which is exactly how the fused
+    SoT/backup pane used to behave.
+    """
+    res = store.save_system_backup_schedule(request.form.get('bundle_time', ''))
+    if res.get('conflict'):
+        flash('This node backs up on a %s schedule, which one hour cannot '
+              'express — change it in Automation rather than adding a second '
+              'nightly bundle.' % res['kind'], 'warning')
+        return redirect(url_for('settings.index') + '#tab-backupsrv')
+    log_action("settings.system_backup_schedule",
+               detail=f"at={res['time']} tz={store.tz_name()} created={res['created']}")
+    flash('Created a nightly system backup at %s %s.' % (res['time'], store.tz_name())
+          if res['created'] else
+          'System bundles are now written at %s %s.' % (res['time'], store.tz_name()),
+          'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/bundle-retention', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_bundle_retention():
+    """How many bundles stay on this node after a verified upload.
+
+    Its own POST, like the hour and the credentials: three panes that shared
+    one endpoint is how saving a number used to rewrite an SFTP password.
+    """
+    keep = store.save_bundle_local_keep(request.form.get('bundle_keep', ''))
+    log_action("settings.bundle_local_keep", detail=f"keep={keep}")
+    flash('System bundles: keeping %d on this node after a verified upload. '
+          'A bundle is only deleted once the backup server is confirmed to '
+          'hold it at the same size.' % keep, 'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/bundle-evict', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def run_bundle_evict():
+    """Apply the bundle policy now."""
+    from ..services import system_backup as sb
+    res = sb.evict_local_bundles()
+    log_action("settings.bundle_evict",
+               detail=f"removed={len(res['removed'])} kept={len(res['kept'])} "
+                      f"unverified={len(res['unverified'])}")
+    if res["removed"]:
+        flash('%d bundle(s) removed from this node, %d MB freed. %d kept by '
+              'policy, %d kept because the backup server does not hold them.'
+              % (len(res["removed"]), res["bytes_freed"] // (1024 * 1024),
+                 len(res["kept"]), len(res["unverified"])), 'success')
+    else:
+        flash('Nothing removed. %d kept by policy, %d not verified on the '
+              'backup server (%d bundle(s) known off-box).'
+              % (len(res["kept"]), len(res["unverified"]), res["remote_known"]),
+              'warning')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_backup_srv():
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.test_connection())
+
+
+# ── Deploy Clone (copy another deploy's data into this one) ──
+# The worker only lists, preflights, queues and releases. Export and import
+# run in the privileged runner through the installed CLI: an import stops the
+# service answering this request. See app/services/deploy_clone.py.
+
+def _no_store(resp):
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@bp.route('/deploy-clone/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_state():
+    from .. import runtime
+    from ..services import deploy_clone as dc
+    from ..services import self_update as su
+    st = dc.status()
+    q = st.pop('quarantine', None) or {}      # the held ids stay server-side
+    st['held_since'], st['held_bundle'] = q.get('at'), q.get('bundle')
+    return _no_store(jsonify({
+        'node': su.this_node_name(), 'role': su.node_role(),
+        'container': runtime.is_container_runtime(),
+        'upload_limit_mb': (current_app.config.get('MAX_CONTENT_LENGTH') or 0) // (1024 * 1024),
+        'jobs': dc.recent_jobs(), **st}))
+
+
+@bp.route('/deploy-clone/export', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_export():
+    """Queue an export. The passphrase is chosen HERE and returned once, in
+    this response: the runner's result is a status file and must not hold it."""
+    from ..services import deploy_clone as dc
+    passphrase = dc.new_passphrase()
+    try:
+        uid = dc.request_job('export', by=current_user.username, passphrase=passphrase)
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return _no_store(jsonify({'uid': uid, 'passphrase': passphrase}))
+
+
+@bp.route('/deploy-clone/upload', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_upload():
+    from ..services import deploy_clone as dc
+    f = request.files.get('bundle')
+    if not f or not f.filename:
+        return jsonify({'error': 'choose a clone bundle to upload'}), 400
+    try:
+        return jsonify(dc.save_upload(f.stream, f.filename))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/uploads/<name>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_preflight(name):
+    from ..services import deploy_clone as dc
+    p = dc.bundle_path('uploads', name)
+    if p is None:
+        abort(404)
+    try:
+        return jsonify(dc.preflight(p))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_import():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    if body.get('confirm') != 'IMPORT':
+        return jsonify({'error': 'not confirmed -- type IMPORT'}), 400
+    try:
+        uid = dc.request_job('import', by=current_user.username,
+                             passphrase=str(body.get('passphrase') or ''),
+                             name=str(body.get('name') or ''))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return _no_store(jsonify({'uid': uid}))
+
+
+@bp.route('/deploy-clone/release', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_release():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    if body.get('confirm') != 'RELEASE':
+        return jsonify({'error': 'not confirmed -- type RELEASE'}), 400
+    try:
+        return jsonify(dc.release_quarantine(by=current_user.username))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/job/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_job(uid):
+    from ..services import deploy_clone as dc
+    st = dc.job_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return _no_store(jsonify(st))
+
+
+@bp.route('/deploy-clone/download/<name>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_download(name):
+    from flask import send_file
+    from ..services import deploy_clone as dc
+    p = dc.bundle_path('exports', name)
+    if p is None:
+        abort(404)
+    log_action('deploy_clone.download', target=name)
+    return send_file(str(p), as_attachment=True, download_name=name)
+
+
+@bp.route('/deploy-clone/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_delete():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    try:
+        dc.delete_bundle(str(body.get('where') or ''), str(body.get('name') or ''))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True})
+
+
+# ── Email / SMTP ──────────────────────────────────────────
+
+@bp.route('/email', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_email():
+    try:
+        email.save_config(request.form)
+        log_action('settings.email', detail='Updated email settings')
+        flash('Email settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save email settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-email')
+
+
+@bp.route('/alerts', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_alerts():
+    try:
+        alerts_svc.save_config(request.form)
+        log_action('settings.alerts', detail='Updated alert/notification settings')
+        flash('Alert settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save alert settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-email')
+
+
+@bp.route('/alerts/preview')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def preview_alerts():
+    """Run every enabled check once WITHOUT dispatching — lets the admin see what
+    would fire right now before turning alerts on."""
+    try:
+        findings = alerts_svc.evaluate()
+        # Per-sink counts, so the preview answers the question the filter
+        # created: not just "what would fire" but "who would actually hear
+        # it". A finding every sink drops is invisible on the old preview.
+        routed = {s: len(alert_routing.route(findings, s))
+                  for s in alert_routing.SINKS}
+        for f in findings:
+            f['family'] = alert_routing.family_of(f.get('key', ''))
+            f['sinks'] = [s for s in alert_routing.SINKS
+                          if alert_routing.accepts(
+                              family=f['family'],
+                              severity=f.get('severity', 'info'),
+                              floor=alert_routing.min_severity(s),
+                              families=alert_routing.mask(s))
+                          and alert_routing.is_enabled(s)]
+        return jsonify({'ok': True, 'count': len(findings),
+                        'recipients': alerts_svc.recipients(),
+                        'routed': routed, 'findings': findings})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'ok': False, 'detail': str(exc)}), 500
+
+
+@bp.route('/email/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_email():
+    data = request.get_json(silent=True) or {}
+    result = email.send_test(data.get('to', ''))
+    log_action('settings.email_test',
+               detail=('ok' if result.get('ok') else 'fail') + ': ' + str(result.get('detail', '')))
+    return jsonify(result)
+
+
+# ── Authentication backend (admin) ────────────────────────
+
+@bp.route('/auth', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_auth():
+    try:
+        auth_store.save_config(request.form)
+        log_action('settings.auth',
+                   detail='sources=' + (','.join(auth_store.backends()) or 'local'))
+        flash('Authentication settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save authentication settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-auth')
+
+
+@bp.route('/auth/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_auth():
+    result = auth_store.test_connection(request.form)
+    log_action('settings.auth_test',
+               detail=('ok' if result.get('ok') else 'fail') + ': ' + str(result.get('detail', '')))
+    return jsonify(result)
+
+
+@bp.route('/auth/sync', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def sync_auth():
+    """Import directory users (scoped to the sync group/OU) into local rows so
+    the admin can assign profiles / block access BEFORE first sign-in. New rows
+    are created DISABLED (pending approval)."""
+    result = auth_store.sync_directory_users(default_active=False)
+    log_action('settings.auth_sync',
+               detail=('ok' if result.get('ok') else 'fail') + ': '
+               + str(result.get('detail', '')))
+    flash(result.get('detail', 'Sync finished.'),
+          'success' if result.get('ok') else 'danger')
+    if result.get('ok'):
+        return redirect(url_for('users.index'))
+    return redirect(url_for('settings.index') + '#tab-auth')
+
+
+# ── 2FA self-service (any local user) ───────────────────
+
+def _reauth_problem() -> str | None:
+    """Re-authentication gate for self-service security changes.
+
+    Returns an error string when the caller has not re-proven who they are,
+    else ``None``. The current password is always required — the same
+    ``current_user.check_password`` check ``change_password`` and
+    ``twofa_disable`` already make — and, when the account already has 2FA
+    enabled, a valid current TOTP code as well. Without this a hijacked session
+    could point the recovery email at the attacker, rotate the backup codes or
+    stand up a brand-new authenticator with no second proof at all.
+    """
+    pw = request.form.get('current_password', '')
+    if not current_user.check_password(pw):
+        return 'Current password is incorrect.'
+    if getattr(current_user, 'totp_enabled', False):
+        code = (request.form.get('totp_code', '') or '').strip()
+        secret = twofa.decrypt_secret(current_user.totp_secret or '')
+        if not twofa.verify_totp(secret, code):
+            return 'A valid authentication code is required.'
+    return None
+
+
+@bp.route('/2fa/setup', methods=['POST'])
+@login_required
+def twofa_setup():
+    if not current_user.is_local:
+        return jsonify({'ok': False, 'error': 'Directory accounts manage MFA at the directory.'}), 400
+    err = _reauth_problem()
+    if err:
+        return jsonify({'ok': False, 'error': err}), 403
+    secret = twofa.generate_secret()
+    session['twofa_setup_secret'] = secret
+    uri = twofa.provisioning_uri(secret, current_user.username)
+    return jsonify({'ok': True, 'secret': secret, 'uri': uri, 'qr': twofa.qr_svg(uri)})
+
+
+@bp.route('/2fa/enable', methods=['POST'])
+@login_required
+def twofa_enable():
+    if not current_user.is_local:
+        flash('Directory accounts manage MFA at the directory.', 'danger')
+        return redirect(_account_security_url())
+    # Re-enrolment must go through disable first: silently overwriting a live
+    # secret would let a hijacked session swap the authenticator out from under
+    # the owner, who still holds working codes for the old one.
+    if current_user.totp_enabled:
+        flash('Two-factor authentication is already enabled — disable it first '
+              'to re-enroll.', 'danger')
+        return redirect(_account_security_url())
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
+        return redirect(_account_security_url())
+    secret = session.get('twofa_setup_secret')
+    code = (request.form.get('code', '') or '').strip()
+    if not secret or not twofa.verify_totp(secret, code):
+        flash('Invalid code — 2FA was not enabled. Re-scan the QR and try again.', 'danger')
+        return redirect(_account_security_url())
+    codes = twofa.generate_backup_codes()
+    current_user.totp_secret = twofa.encrypt_secret(secret)
+    current_user.totp_enabled = True
+    current_user.backup_codes = twofa.encode_codes(codes)
+    db.session.commit()
+    session.pop('twofa_setup_secret', None)
+    session['twofa_backup_codes_once'] = codes
+    log_action('settings.2fa_enable', target=current_user.username)
+    flash('Two-factor authentication enabled. Save your backup codes now — they are shown only once.', 'success')
+    return redirect(_account_security_url())
+
+
+@bp.route('/2fa/disable', methods=['POST'])
+@login_required
+def twofa_disable():
+    if not current_user.totp_enabled:
+        return redirect(_account_security_url())
+    pw = request.form.get('current_password', '')
+    if current_user.is_local and not current_user.check_password(pw):
+        flash('Password incorrect — 2FA was not disabled.', 'danger')
+        return redirect(_account_security_url())
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    current_user.backup_codes = None
+    db.session.commit()
+    log_action('settings.2fa_disable', target=current_user.username)
+    flash('Two-factor authentication disabled.', 'warning')
+    return redirect(_account_security_url())
+
+
+@bp.route('/2fa/backup-codes', methods=['POST'])
+@login_required
+def twofa_regen_codes():
+    if not (current_user.is_local and current_user.totp_enabled):
+        flash('Enable two-factor authentication first.', 'danger')
+        return redirect(_account_security_url())
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
+        return redirect(_account_security_url())
+    codes = twofa.generate_backup_codes()
+    current_user.backup_codes = twofa.encode_codes(codes)
+    db.session.commit()
+    session['twofa_backup_codes_once'] = codes
+    log_action('settings.2fa_backup_regen', target=current_user.username)
+    flash('New backup codes generated. Save them now — the old ones no longer work.', 'success')
+    return redirect(_account_security_url())
+
+
+@bp.route('/recovery-email', methods=['POST'])
+@login_required
+def recovery_email():
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
+        return redirect(_account_security_url())
+    addr = (request.form.get('recovery_email', '') or '').strip()
+    if addr and ('@' not in addr or '.' not in addr.split('@')[-1]):
+        flash('Enter a valid email address.', 'danger')
+        return redirect(_account_security_url())
+    current_user.recovery_email = addr or None
+    db.session.commit()
+    log_action('settings.recovery_email', target=current_user.username)
+    flash('Recovery email updated.' if addr else 'Recovery email cleared.', 'success')
+    return redirect(_account_security_url())
+@bp.route('/dns-tool', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_dns_tool():
+    """Persist the DNS & LB Lookup resolver list (AppSetting ``dnstool.servers``).
+
+    The list is variable by design — rows are parallel ``dns_name[]`` /
+    ``dns_server[]`` arrays plus ``dns_enabled`` checkboxes carrying the row
+    index; blank rows are dropped, so removing a server = clearing its row."""
+    names = request.form.getlist('dns_name')
+    servers = request.form.getlist('dns_server')
+    enabled = set(request.form.getlist('dns_enabled'))
+    rows = [{'name': n, 'server': s, 'enabled': str(i) in enabled}
+            for i, (n, s) in enumerate(zip(names, servers))]
+    try:
+        saved = dns_tool_svc.save_dns_servers(rows)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('dns_tool.resolvers'))
+    log_action('settings.dns_tool', target='dnstool.servers')
+    flash(f'DNS server list saved ({len(saved)} servers).', 'success')
+    return redirect(url_for('dns_tool.resolvers'))
+
+
+# ---------------------------------------------------------------------------
+# DNS / IPAM backends — a registry of rows, not one global provider.
+#
+# Three rules, and the first two are inherited from the hypervisor registry
+# for the same reasons:
+#
+# 1. **Secrets never cross back to the browser.** ``public()`` is the only
+#    shape sent out; an empty secret field on edit means "keep what is
+#    stored", never "blank it".
+# 2. **Admin only.** These credentials publish names and hand out addresses.
+# 3. **Roles are validated against what the provider MAY do, once, in
+#    ``store.save_backend``.** The view does not re-implement that check —
+#    the migration writes rows too, and a rule enforced only in the view is a
+#    rule the other writer can break.
+# ---------------------------------------------------------------------------
+
+def _dnsb_or_404(backend_id: int):
+    from ..models_dnsbackend import DnsBackend
+    row = db.session.get(DnsBackend, backend_id)
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.route('/dns-records/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backends_state():
+    from ..models_dnsbackend import DnsBackend
+    rows = DnsBackend.query.order_by(DnsBackend.priority.asc(),
+                                     DnsBackend.name.asc()).all()
+    return jsonify({
+        'backends': [r.public() for r in rows],
+        'providers': [{
+            'key': k,
+            'label': dns_providers.PROVIDERS[k].label,
+            'fields': dns_providers.FIELD_SPECS.get(k, []),
+            'secret_label': dns_providers.SECRET_LABELS.get(k, 'Secret'),
+            'may_write': bool(getattr(dns_providers.PROVIDERS[k], 'may_write', False)),
+            'may_allocate': bool(getattr(dns_providers.PROVIDERS[k], 'may_allocate', False)),
+        } for k in dns_providers.SELECTABLE],
+    })
+
+
+@bp.route('/dns-records/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_save():
+    from ..services.dns_providers import store as dnsb_store
+    data = request.get_json(silent=True) or request.form.to_dict()
+    try:
+        row = dnsb_store.save_backend(data, data.get('id'))
+    except dnsb_store.BackendError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    log_action('settings.dns_backend.save',
+               detail='name=%s provider=%s ipam=%s dns=%s'
+                      % (row.name, row.provider, row.role_ipam, row.role_dns))
+    return jsonify({'ok': True, 'backend': row.public()})
+
+
+@bp.route('/dns-records/<int:backend_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_toggle(backend_id: int):
+    row = _dnsb_or_404(backend_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    log_action('settings.dns_backend.toggle',
+               detail='name=%s enabled=%s' % (row.name, row.enabled))
+    return jsonify({'ok': True, 'backend': row.public()})
+
+
+@bp.route('/dns-records/<int:backend_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_delete(backend_id: int):
+    from ..services.dns_providers import store as dnsb_store
+    row = _dnsb_or_404(backend_id)
+    name = row.name
+    try:
+        dnsb_store.delete_backend(row)
+    except dnsb_store.BackendError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 409
+    log_action('settings.dns_backend.delete', detail='name=%s' % name)
+    return jsonify({'ok': True})
+
+
+@bp.route('/dns-records/<int:backend_id>/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_test(backend_id: int):
+    """Probe a SAVED backend and record the outcome on the row."""
+    from ..services.dns_providers import store as dnsb_store
+    row = _dnsb_or_404(backend_id)
+    try:
+        ok, message = row.instance().test_connection()
+    except Exception as exc:  # noqa: BLE001 — surface any client error
+        ok, message = False, str(exc)
+    caps = dns_providers.capabilities_of(row)
+    dnsb_store.record_test(row, ok, message)
+    log_action('settings.dns_backend.test',
+               detail='name=%s ok=%s' % (row.name, ok))
+    return jsonify(ok=bool(ok), message=message,
+                   capabilities=caps.as_dict() if caps else None,
+                   backend=row.public())
+
+
+@bp.route('/dns-records/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_dns_records():
+    """Test UNSAVED form values, so a backend can be proved before it is added.
+
+    Unlike the saved-row probe this one CANNOT fall back to a stored secret:
+    there is no row yet to fall back to, and quietly testing with some other
+    backend's credential would report a connection the new one has not made.
+    """
+    data = request.get_json(silent=True) or {}
+    provider = (data.get('provider') or '').strip()
+    if provider not in dns_providers.SELECTABLE:
+        return jsonify(ok=False, message='Select a provider first.'), 400
+    fields = {'verify_ssl': bool(data.get('verify_ssl', True))}
+    for spec in dns_providers.FIELD_SPECS.get(provider, []):
+        fields[spec['key']] = data.get(spec['key'], '')
+    secret = (data.get('secret') or '').strip()
+    if not secret:
+        bid = str(data.get('id') or '').strip()
+        row = dns_providers.backend_by_id(bid) if bid else None
+        if row is None:
+            return jsonify(
+                ok=False,
+                message='Enter the credential — there is no saved backend to '
+                        'take it from yet.'), 400
+        secret = row.secret
+    prov = dns_providers.provider_for_test(provider, fields, secret)
+    try:
+        ok, message = prov.test_connection()
+    except Exception as exc:  # noqa: BLE001 — surface any client error to the UI
+        ok, message = False, str(exc)
+    return jsonify(ok=bool(ok), message=message)
+
+
+@bp.route('/clone-rules', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_clone_rules():
+    """Persist the Clone / Migrate policy (AppSetting ``clone.rules``): the
+    dummy-IP transformation rules (leading-octet match → replace, e.g. 10 → 240),
+    the fallback dummy IP, and whether a clone/migrate copies the Web Protection
+    Profile by default. Variable-length rows like the DNS-tool list — blank rows
+    are dropped, so clearing a row removes that rule."""
+    matches = request.form.getlist('rule_match')
+    replaces = request.form.getlist('rule_replace')
+    rows = [{'match': m, 'replace': r} for m, r in zip(matches, replaces)]
+    try:
+        cfg = clone_rules_svc.save_config(
+            rows,
+            request.form.get('fallback_ip', ''),
+            request.form.get('copy_wpp_default') == 'on')
+    except ValueError as exc:
+        flash('Clone/Migrate rules NOT saved: %s' % exc, 'danger')
+        return redirect(url_for('settings.index') + '#tab-clonerules')
+    log_action('settings.clone_rules', target=clone_rules_svc.SETTING_KEY,
+               detail='rules=%d fallback=%s copy_wpp=%s' % (
+                   len(cfg['ip_rules']), cfg['fallback_ip'], cfg['copy_wpp_default']))
+    flash('Clone/Migrate rules saved (%d IP rule%s).'
+          % (len(cfg['ip_rules']), '' if len(cfg['ip_rules']) == 1 else 's'), 'success')
+    return redirect(url_for('settings.index') + '#tab-clonerules')
+
+
+@bp.route('/policy-links', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_policy_links():
+    """Persist the dynamic policy-link list (AppSetting ``policy.links``).
+
+    Variable-length by design — rows are parallel ``link_label[]`` / ``link_url[]``
+    arrays plus ``link_newtab`` / ``link_enabled`` checkboxes carrying the row
+    index; blank rows are dropped, so clearing a row removes that link."""
+    # Each row carries a stable per-row token (``link_row``) in a hidden input
+    # plus its ``link_label`` / ``link_url`` (text inputs always submit, so the
+    # three lists stay aligned). The enabled / new-tab checkboxes carry that
+    # SAME token as their value — so we map state BY TOKEN, never by position
+    # (robust to rows added/removed in any order in the browser).
+    row_ids = request.form.getlist('link_row')
+    labels = request.form.getlist('link_label')
+    urls = request.form.getlist('link_url')
+    enabled = set(request.form.getlist('link_enabled'))
+    newtab = set(request.form.getlist('link_newtab'))
+    if len(row_ids) != len(labels):  # fallback if a client omits link_row
+        row_ids = [str(i) for i in range(len(labels))]
+    rows = [{'label': lbl, 'url': u,
+             'enabled': rid in enabled, 'new_tab': rid in newtab}
+            for rid, lbl, u in zip(row_ids, labels, urls)]
+    saved, errors = policy_links_svc.save_links(rows)
+    log_action('settings.policy_links', target='policy.links')
+    for msg in errors:
+        flash(msg, 'warning')
+    submitted = any((lbl.strip() or u.strip()) for lbl, u in zip(labels, urls))
+    if saved:
+        flash('Policy links saved (%d link%s).'
+              % (len(saved), '' if len(saved) == 1 else 's'), 'success')
+    elif submitted:
+        flash('No links were saved — see the message(s) above. Each link '
+              'needs both a label and a URL.', 'danger')
+    else:
+        flash('Policy links cleared.', 'success')
+    return redirect(url_for('settings.index') + '#tab-policylinks')
+
+
+# ---- Node TLS: the service's own cert + node-to-node SSL policy -----------
+@bp.route('/node-cert/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_state():
+    from ..services import cert_service as cs
+    from ..services import encryption_health as eh
+    from ..services import node_security as nsec
+    return jsonify({
+        'cert': cs.current(),
+        'pg_ssl': eh.pg_ssl_policy(),
+        'identity_key': nsec.configured(),
+        'hostname': cs.node_hostname(),
+        'renew_mode': cs.renew_mode(),
+        'autopull': cs.autopull_config(),   # no secret revealed
+        'csrs': cs.pending_csrs(),          # CSRs are public; keys never leave pki/csr
+    })
+
+
+@bp.route('/node-cert/renew-mode', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_renew_mode():
+    """Choose how an IMPORTED cert is renewed: 'alert' (warn only) or 'autopull'
+    (fetch+install from a source over SFTP). Saves the mode + connection."""
+    from ..services import cert_service as cs
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    mode = (data.get('renew_mode') or 'alert').strip().lower()
+    try:
+        cs.save_autopull_config(dict(data), mode=mode)
+        log_action('node_cert.renew_mode', 'security', detail=mode)
+        return jsonify({'ok': True, 'renew_mode': cs.renew_mode(),
+                        'autopull': cs.autopull_config()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/autopull', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_autopull():
+    """Trigger a one-off autopull now (test button). Ignores the mode gate."""
+    from ..services import cert_service as cs
+    try:
+        res = cs.autopull(by=getattr(current_user, 'username', ''), force=True)
+        log_action('node_cert.autopull', 'security', detail=str(res))
+        return jsonify({'ok': bool(res.get('pulled') or 'up to date' in (res.get('reason') or '')),
+                        'result': res, 'cert': cs.current()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_import():
+    """Each slot comes as an uploaded file OR as pasted PEM text, never both.
+    The key may be left empty when the certificate was issued from a CSR
+    generated on this node (cert_service pairs it with the pending key)."""
+    from ..services import cert_service as cs
+    slots = {}
+    for name in ('cert', 'key', 'chain'):
+        up = request.files.get(name)
+        fdata = (up.read() or b'').strip() if (up and up.filename) else b''
+        tdata = (request.form.get(name + '_text') or '').strip().encode()
+        if fdata and tdata:
+            return jsonify({'ok': False, 'error': 'the %s was given both as a file and as '
+                            'pasted text — keep one' % name}), 400
+        slots[name] = fdata or tdata
+    if not slots['cert']:
+        return jsonify({'ok': False, 'error': 'the certificate is required (file or pasted PEM)'}), 400
+    by = getattr(current_user, 'username', '')
+    cert, key, chain = slots['cert'], slots['key'] or None, slots['chain'] or None
+    return _node_cert_job('import', 'Installing an imported certificate', by,
+                          lambda: cs.import_pem(cert, key, chain, by=by))
+
+
+def _node_cert_job(kind: str, title: str, by: str, fn):
+    """Run a certificate activation as a job the page follows step by step.
+
+    The activation ends by reloading the nginx that carries the operator's own
+    session, and the root-runner fallback can wait 90 s — done inside the
+    request, the page sat on a disabled button and then either said "done" or
+    lost the connection with no explanation. As a job, cert_service reports
+    each step through progress_sink and the page renders them, so the operator
+    sees the reload happen and is told why the browser may need reopening."""
+    from datetime import datetime
+    from ..services import cert_service as cs
+    from ..services import jobs as jobsvc
+    job = jobsvc.create_job('node_cert_' + kind, title, by=by, cancelable=False,
+                            meta={'steps': [], 'node': cs.node_hostname()})
+    jid = job['id']
+
+    def sink(key, label, state, detail):
+        now = datetime.utcnow().isoformat()
+
+        def upd(st):
+            steps = st.setdefault('meta', {}).setdefault('steps', [])
+            for s in steps:
+                if s['key'] == key:
+                    s.update(label=label, state=state, detail=detail or '', at=now)
+                    break
+            else:
+                steps.append({'key': key, 'label': label, 'state': state,
+                              'detail': detail or '', 'at': now})
+            st['message'] = label + (' — ' + detail if detail else '')
+            done = sum(1 for s in steps if s['state'] in ('ok', 'warn'))
+            st['percent'] = min(95, done * 18)
+        jobsvc.mutate_job(jid, upd)
+
+    def work(app, _jid):
+        with app.app_context():
+            with cs.progress_sink(sink):
+                try:
+                    res = fn()
+                except Exception as e:  # noqa: BLE001 — journalled by cert_service
+                    log_action('node_cert.' + kind + '_failed', 'security', detail=str(e)[:200],
+                               by=by)
+                    raise
+            if kind == 'renew':
+                info, result = cs.current(), res
+            else:
+                info, result = res, None
+            log_action('node_cert.' + kind, 'security', detail=(info or {}).get('subject'), by=by)
+            jobsvc.finish_success(_jid, result={'cert': info, 'result': result},
+                                  message=('Renewal skipped: ' + str(res.get('reason')))
+                                  if kind == 'renew' and not res.get('renewed')
+                                  else 'Certificate active: %s' % (info or {}).get('subject'))
+
+    jobsvc.run_async(current_app._get_current_object(), jid, work)
+    return jsonify({'ok': True, 'job_id': jid}), 202
+
+
+@bp.route('/node-cert/csr', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_csr():
+    """Generate a key + CSR on this node for an external CA to sign."""
+    from ..services import cert_service as cs
+    f = request.form
+    try:
+        res = cs.generate_csr(by=getattr(current_user, 'username', ''),
+                              common_name=f.get('common_name'), sans=f.get('sans'),
+                              key_type=(f.get('key_type') or 'rsa2048').strip(),
+                              organization=f.get('organization') or '',
+                              org_unit=f.get('org_unit') or '',
+                              locality=f.get('locality') or '',
+                              state=f.get('state') or '', country=f.get('country') or '')
+        log_action('node_cert.csr', 'security', detail=res.get('subject'))
+        return jsonify({'ok': True, 'csr': res, 'csrs': cs.pending_csrs()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/csr/<csr_id>/discard', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_csr_discard(csr_id):
+    from ..services import cert_service as cs
+    try:
+        existed = cs.discard_csr(csr_id)
+        log_action('node_cert.csr_discard', 'security', detail=csr_id)
+        return jsonify({'ok': True, 'discarded': existed, 'csrs': cs.pending_csrs()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/issue', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_issue():
+    from ..services import cert_service as cs
+    if not cs.can_issue_internal():
+        return jsonify({'ok': False, 'error': 'internal CA key not present on this node — '
+                        'import a certificate instead'}), 400
+    by = getattr(current_user, 'username', '')
+    return _node_cert_job('issue', 'Issuing a certificate from the internal CA', by,
+                          lambda: cs.issue_internal(by=by))
+
+
+@bp.route('/node-cert/renew', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_renew():
+    from ..services import cert_service as cs
+    by = getattr(current_user, 'username', '')
+    return _node_cert_job('renew', 'Renewing the service certificate', by,
+                          lambda: cs.renew_if_needed(by=by, force=True))
+
+
+# ---- TLS trust store: the CAs this node ACCEPTS from devices --------------
+# Mirror of the Node TLS block above. That one is the certificate SATOM
+# PRESENTS; this one is which issuers it BELIEVES when it dials an appliance.
+# Before it existed, Appliance.verify_ssl=True meant "validate against the
+# public root store", which no privately-signed device can satisfy — so every
+# appliance in this fleet had verification switched off instead.
+@bp.route('/trust-store/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_state():
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    from ..models import visible_appliances
+    rows = TrustedCa.query.order_by(TrustedCa.role.desc(), TrustedCa.name).all()
+    target = ts.verify_param()
+    # The probe picker is built from visible_appliances(), so a concrete ADOM
+    # can only aim it at its own product's boxes.
+    appls = [{'id': a.id, 'name': a.name, 'host': a.host, 'port': a.port,
+              'kind': a.kind, 'verify_ssl': bool(a.verify_ssl)}
+             for a in visible_appliances().order_by(Appliance.name).all()]
+    return jsonify({
+        'cas': [r.to_dict() for r in rows],
+        'gaps': ts.chain_gaps(),
+        # A path means the private bundle is live; True means public roots only.
+        'bundle': (target if isinstance(target, str) else ''),
+        'public_roots_only': target is True,
+        'appliances': appls,
+    })
+
+
+@bp.route('/trust-store/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_import():
+    """Accept a pasted PEM or an uploaded file. A whole chain in one blob is
+    the normal case (root + intermediate), so partial success is reported
+    rather than rejecting the lot."""
+    from ..services import trust_store as ts
+    # Two labelled slots (root / intermediate) plus the original unlabelled
+    # pair, concatenated into ONE blob. import_pem already splits a
+    # multi-certificate PEM, so a single call keeps the whole submission in one
+    # transaction, one dedupe pass and one bundle rebuild. Importing the slots
+    # separately would let the root land while the intermediate failed, leaving
+    # a chain gap the operator never asked for.
+    #
+    # THE SLOT LABEL IS A HINT, NEVER THE VERDICT. `role` is derived inside
+    # trust_store from subject == issuer, so a root pasted into the
+    # intermediate box is still recorded as a root. A form field must not be
+    # able to relabel a trust anchor -- chain_gaps() would then report a
+    # phantom gap, or worse, stay silent about a real one.
+    #
+    # Both the file and the text of a slot are taken (the old code let the file
+    # win). Filling both is a stated intent, and a duplicate is harmless: the
+    # fingerprint is the identity, so it lands as an update, not a second row.
+    parts = []
+    for f_field, t_field in (('pem_file', 'pem_text'),
+                             ('pem_file_root', 'pem_text_root'),
+                             ('pem_file_intermediate', 'pem_text_intermediate')):
+        up = request.files.get(f_field)
+        if up and up.filename:
+            data = (up.read() or b'').strip()
+            if data:
+                parts.append(data)
+        txt = (request.form.get(t_field) or '').strip()
+        if txt:
+            parts.append(txt.encode())
+    blob = b'\n'.join(parts)
+    try:
+        res = ts.import_pem(blob,
+                            actor=getattr(current_user, 'username', ''),
+                            note=(request.form.get('note') or '').strip()[:500],
+                            name_hint=(request.form.get('name') or '').strip()[:200])
+        log_action('trust_store.import', 'security',
+                   detail=f"imported={res['imported']} updated={res['updated']} "
+                          f"rejected={len(res['rejected'])}")
+        return jsonify({'ok': True, 'result': res})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:500]}), 400
+
+
+@bp.route('/trust-store/<int:ca_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_toggle(ca_id):
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    ts.invalidate()
+    log_action('trust_store.toggle', 'security',
+               detail=f"{row.name} enabled={row.enabled}")
+    return jsonify({'ok': True, 'ca': row.to_dict()})
+
+
+@bp.route('/trust-store/<int:ca_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_delete(ca_id):
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    name = row.name
+    db.session.delete(row)
+    db.session.commit()
+    ts.invalidate()
+    log_action('trust_store.delete', 'security', detail=name)
+    return jsonify({'ok': True, 'deleted': name})
+
+
+@bp.route('/trust-store/<int:ca_id>/content')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_content(ca_id):
+    """The Content button: what was actually stored, decoded, plus the PEM.
+    "Is this the CA I meant?" is otherwise unanswerable from a name and a DN
+    truncated in a table cell."""
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    try:
+        detail = ts.describe(row.pem)
+    except Exception as e:  # noqa: BLE001 — show the stored PEM even if it no longer parses
+        detail = {'pem': row.pem, 'error': str(e)[:300]}
+    return jsonify({'ok': True, 'ca': row.to_dict(), 'detail': detail})
+
+
+@bp.route('/trust-store/probe', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_probe():
+    """Diagnose one appliance's TLS against the CURRENT store.
+
+    Answers the only question that matters after importing a CA: can this
+    device now be verified, and if not, WHICH of the three causes is it? The
+    appliance is resolved through visible_appliances(), so this cannot be used
+    from one ADOM to probe another product's box."""
+    from ..services import trust_store as ts
+    from ..models import visible_appliances
+    aid = request.form.get('appliance_id') or (request.get_json(silent=True) or {}).get('appliance_id')
+    try:
+        appl = visible_appliances().filter_by(id=int(aid)).first()
+    except (TypeError, ValueError):
+        appl = None
+    if appl is None:
+        return jsonify({'ok': False, 'error': 'unknown appliance'}), 404
+    try:
+        res = ts.probe(appl.host, appl.port or 443)
+        res['appliance'] = {'id': appl.id, 'name': appl.name,
+                            'kind': appl.kind, 'verify_ssl': bool(appl.verify_ssl)}
+        return jsonify({'ok': True, 'result': res})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/pg-ssl', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_pg_ssl():
+    from ..services import pg_ssl as pgsvc
+    try:
+        res = pgsvc.apply_policy(request.form.get('min_protocol', 'TLSv1.2'),
+                                 request.form.get('ciphers', ''),
+                                 by=getattr(current_user, 'username', ''))
+        log_action('pg_ssl.policy', 'security', detail=str(res))
+        return jsonify({'ok': True, 'result': res})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+# --------------------------------------------------------------------------- #
+#  Appearance — UI themes                                                      #
+#                                                                              #
+#  The console's look is a set of ``--fw-*`` design tokens (registry generated  #
+#  from the stylesheet itself, see deploy/gen_theme_tokens.py). These routes    #
+#  are the CRUD around named sets of them plus the brand logo/favicon.         #
+#                                                                              #
+#  Two things are load-bearing:                                                #
+#   * every token value is allowlisted per KIND in theme_service before it can  #
+#     reach the nonced <style> block — the DB is not a trust boundary;          #
+#   * the built-in themes are immutable, so an operator who paints the console  #
+#     unreadable always has a way back (Reset, or `satom execute reset theme`   #
+#     on a node whose UI is unusable).                                          #
+# --------------------------------------------------------------------------- #
+from pathlib import Path as _Path
+
+from flask import send_from_directory as _send_from_directory
+
+from ..models_theme import UiTheme
+from ..services import theme_portable
+from ..services import theme_service as theme_svc
+
+_THEME_ASSET_KINDS = theme_portable.ASSET_KINDS
+_THEME_RASTER_EXT = theme_portable.RASTER_EXT
+
+
+def _theme_dir() -> _Path:
+    """``data/branding``: replicated to the standby by ``satom-ha-datasync``
+    and carried by the system backup bundles, so a custom logo survives a
+    failover and a restore. ``static/img`` (where the per-ADOM marks live) is
+    node-local and in neither. The resolver is ``theme_portable.asset_dir``."""
+    return theme_portable.asset_dir()
+
+
+def _theme_slug(name: str, exclude_id: int | None = None) -> str:
+    base = _re.sub(r'[^a-z0-9]+', '-', (name or '').lower()).strip('-')[:56] or 'theme'
+    slug, n = base, 2
+    while True:
+        q = UiTheme.query.filter_by(slug=slug)
+        if exclude_id:
+            q = q.filter(UiTheme.id != exclude_id)
+        if not q.first():
+            return slug
+        slug = '%s-%d' % (base, n)
+        n += 1
+
+
+def _form_tokens() -> dict:
+    """Token overrides off the current request form (fields named ``tok_<name>``)."""
+    out = {}
+    for name in theme_svc.TOKEN_NAMES:
+        val = request.form.get('tok_' + name)
+        if val is not None and val.strip():
+            out[name] = val.strip()
+    return out
+
+
+def _save_theme_asset(theme: UiTheme, file, kind: str) -> str | None:
+    """Store an uploaded brand asset. Returns an error string, or ``None``.
+
+    The rules (SVG sanitised, rasters re-encoded through Pillow and fitted to
+    256 px) live in ``theme_portable.store_asset``, shared with the imports.
+    """
+    if not file or not file.filename:
+        return None
+    ext = _os.path.splitext(file.filename)[1].lower()
+    if ext not in _THEME_RASTER_EXT and ext != '.svg':
+        return 'Unsupported %s type (use PNG, JPG, WEBP, GIF, ICO or SVG).' % kind
+    raw = file.read(theme_portable.MAX_RASTER_BYTES + 1)
+    return theme_portable.store_asset(theme, kind, raw, ext, _theme_dir())
+
+
+def _theme_redirect():
+    return redirect(url_for('settings.index') + '#tab-appearance')
+
+
+@bp.route('/appearance/asset/<int:theme_id>/<kind>')
+def theme_asset(theme_id, kind):
+    """Serve a theme's brand asset. No auth gate on purpose: the logo/favicon
+    now render on the login, forgot-password, reset-password and 2FA pages too
+    (theme_service._inject_theme is a global context processor), so a session
+    requirement here would 404 the icon on every page a signed-out visitor can
+    reach. Not sensitive data — a PNG/SVG brand mark — and the filename comes
+    from the DB row, never from the URL, so the path cannot be traversed."""
+    if kind not in _THEME_ASSET_KINDS:
+        abort(404)
+    row = UiTheme.query.get_or_404(theme_id)
+    rel = getattr(row, kind, '') or ''
+    if not rel or '/' in rel or '\\' in rel:
+        abort(404)
+    resp = _send_from_directory(str(_theme_dir()), rel, max_age=300)
+    if rel.endswith('.svg'):
+        # Opened directly (not through <img>), an SVG is a document on this
+        # origin. The sanitiser strips script; this makes anything it missed
+        # inert: no script, no network, a unique opaque origin.
+        resp.headers['Content-Security-Policy'] = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
+    return resp
+
+
+@bp.route('/appearance/preview', methods=['POST'])
+@login_required
+def theme_preview():
+    """Validate a candidate palette without saving it.
+
+    Powers the live preview and the contrast report. Returning the SAME css the
+    server would emit (not something the browser assembled) means what the
+    operator previews is what gets stored — a preview built client-side could
+    show a value the validator would later reject.
+    """
+    if not _is_admin():
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    tokens = payload.get('tokens') or {}
+    clean, errors = theme_svc.validate_tokens(tokens)
+    return jsonify(ok=not errors, errors=errors, css=theme_svc.css_for(clean),
+                   overrides=clean, contrast=theme_svc.audit_contrast(clean))
+
+
+def _apply_theme_form(theme: UiTheme) -> list[str]:
+    """Name/description/tokens/assets from the request form. Returns errors."""
+    errors: list[str] = []
+    name = (request.form.get('name') or '').strip()[:128]
+    if not name:
+        errors.append('A theme name is required.')
+    else:
+        clash = UiTheme.query.filter(UiTheme.name == name,
+                                     UiTheme.id != (theme.id or -1)).first()
+        if clash:
+            errors.append('A theme named %r already exists.' % name)
+        else:
+            theme.name = name
+    theme.description = (request.form.get('description') or '').strip()[:300]
+    clean, terrors = theme_svc.validate_tokens(_form_tokens())
+    errors.extend(terrors)
+    if not terrors:
+        theme.tokens = clean
+        if theme_svc.has_unreadable(clean) and \
+                request.form.get('confirm_unreadable') not in ('1', 'on', 'true'):
+            errors.append(
+                'This palette drops text contrast below %.1f:1 in places — tick '
+                '"apply anyway" to confirm.' % theme_svc.CONTRAST_FAIL)
+    return errors
+
+
+@bp.route('/appearance/themes', methods=['POST'])
+@login_required
+def create_theme():
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme(slug='pending', name='', builtin=False,
+                    created_by=getattr(current_user, 'username', '') or '')
+    errors = _apply_theme_form(theme)
+    if errors:
+        for e in errors:
+            flash(e, 'danger')
+        return _theme_redirect()
+    theme.slug = _theme_slug(theme.name)
+    db.session.add(theme)
+    db.session.flush()          # need the id for the asset filenames
+    for kind in _THEME_ASSET_KINDS:
+        err = _save_theme_asset(theme, request.files.get(kind), kind)
+        if err:
+            db.session.rollback()
+            flash(err, 'danger')
+            return _theme_redirect()
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.create', detail='name=%s' % theme.name)
+    flash('Theme %r created.' % theme.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>', methods=['POST'])
+@login_required
+def update_theme(tid):
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme.query.get_or_404(tid)
+    if theme.builtin:
+        flash('Built-in themes cannot be edited — duplicate it first.', 'warning')
+        return _theme_redirect()
+    errors = _apply_theme_form(theme)
+    if errors:
+        db.session.rollback()
+        for e in errors:
+            flash(e, 'danger')
+        return _theme_redirect()
+    for kind in _THEME_ASSET_KINDS:
+        if request.form.get('clear_' + kind) in ('1', 'on', 'true'):
+            setattr(theme, kind, '')
+        err = _save_theme_asset(theme, request.files.get(kind), kind)
+        if err:
+            db.session.rollback()
+            flash(err, 'danger')
+            return _theme_redirect()
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.update', detail='name=%s' % theme.name)
+    flash('Theme %r saved.' % theme.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/duplicate', methods=['POST'])
+@login_required
+def duplicate_theme(tid):
+    if not _is_admin():
+        abort(403)
+    src = UiTheme.query.get_or_404(tid)
+    name = (request.form.get('name') or '').strip()[:128] or ('%s copy' % src.name)
+    if UiTheme.query.filter_by(name=name).first():
+        flash('A theme named %r already exists.' % name, 'danger')
+        return _theme_redirect()
+    dup = UiTheme(slug=_theme_slug(name), name=name,
+                  description=src.description, builtin=False,
+                  created_by=getattr(current_user, 'username', '') or '')
+    dup.tokens = src.tokens
+    db.session.add(dup)
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.duplicate', detail='from=%s to=%s' % (src.name, name))
+    flash('Theme %r created from %r — edit it below.' % (name, src.name), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/activate', methods=['POST'])
+@login_required
+def activate_theme(tid):
+    if not _is_admin():
+        abort(403)
+    err = theme_svc.set_active(tid)
+    if err:
+        flash(err, 'danger')
+    else:
+        row = db.session.get(UiTheme, tid)
+        log_action('settings.theme.activate', detail='name=%s' % row.name)
+        flash('Theme %r applied.' % row.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/delete', methods=['POST'])
+@login_required
+def delete_theme(tid):
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme.query.get_or_404(tid)
+    if theme.builtin:
+        flash('Built-in themes cannot be deleted.', 'warning')
+        return _theme_redirect()
+    name, was_active = theme.name, theme.is_active
+    for kind in _THEME_ASSET_KINDS:
+        rel = getattr(theme, kind, '')
+        if rel and '/' not in rel:
+            try:
+                (_theme_dir() / rel).unlink()
+            except OSError:
+                pass
+    db.session.delete(theme)
+    db.session.commit()
+    if was_active:
+        # Deleting the active theme must not leave the console with no theme
+        # at all — fall back to the immutable built-in.
+        theme_svc.reset_to_builtin()
+    theme_svc.invalidate()
+    log_action('settings.theme.delete', detail='name=%s' % name)
+    flash('Theme %r deleted.' % name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/export')
+@login_required
+def export_theme(tid):
+    """Portable JSON, schema ``satom.ui-theme/2``: the token overrides plus the
+    logo and favicon (base64), no ids or node state, so it imports on any
+    install regardless of its own theme list. Version 1 carried the tokens
+    only, and a theme arrived on another node without its logo."""
+    if not _is_admin():
+        abort(403)
+    row = UiTheme.query.get_or_404(tid)
+    resp = jsonify(theme_portable.export_document(row, _theme_dir()))
+    resp.headers['Content-Disposition'] = \
+        'attachment; filename="satom-theme-%s.json"' % row.slug
+    return resp
+
+
+def _free_theme_name(base: str) -> str:
+    name, n = base, 1
+    # Loop until free: a single "(imported)" suffix collided on the third
+    # import of the same file and the unique constraint turned it into a 500.
+    while UiTheme.query.filter_by(name=name).first():
+        name = '%s (imported)' % base if n == 1 else '%s (imported %d)' % (base, n)
+        n += 1
+    return name
+
+
+def _create_imported_theme(parsed, action: str, source: str = ''):
+    """Store a parsed theme (file, node or website) as a NEW, INACTIVE theme.
+
+    Flashes the reason and returns ``None`` when anything is refused — one bad
+    token or an asset that is not an image refuses the whole import, because a
+    theme that arrives half (colours without the logo it was exported with)
+    looks like a working import that silently lost something.
+    """
+    if parsed.errors:
+        for e in parsed.errors[:8]:
+            flash('Import rejected — %s' % e, 'danger')
+        return None
+    name = _free_theme_name(parsed.name)
+    row = UiTheme(slug=_theme_slug(name), name=name,
+                  description=parsed.description, builtin=False,
+                  created_by=getattr(current_user, 'username', '') or '')
+    row.tokens = parsed.tokens
+    db.session.add(row)
+    db.session.flush()          # need the id for the asset filenames
+    written: list = []
+    for kind in _THEME_ASSET_KINDS:
+        if kind not in parsed.assets:
+            continue
+        raw, ext = parsed.assets[kind]
+        err = theme_portable.store_asset(row, kind, raw, ext, _theme_dir())
+        if err:
+            db.session.rollback()
+            # Only what THIS import wrote: a glob on the id could reach files
+            # this request never created.
+            for rel in written:
+                try:
+                    (_theme_dir() / rel).unlink()
+                except OSError:
+                    pass
+            flash('Import rejected — %s: %s' % (kind, err), 'danger')
+            return None
+        written.append(getattr(row, kind))
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action(action, detail='name=%s%s' % (name, ' source=%s' % source if source else ''))
+    if theme_svc.has_unreadable(row.tokens):
+        flash('Theme %r has text below %.1f:1 contrast in places: review it in the '
+              'editor before applying it.' % (name, theme_svc.CONTRAST_FAIL), 'warning')
+    return row
+
+
+def _brought(parsed) -> str:
+    kinds = [k for k in _THEME_ASSET_KINDS if k in parsed.assets]
+    return (' with its %s' % ' and '.join(kinds)) if kinds else ''
+
+
+@bp.route('/appearance/import', methods=['POST'])
+@login_required
+def import_theme():
+    if not _is_admin():
+        abort(403)
+    import json as _json
+    file = request.files.get('themefile')
+    if not file or not file.filename:
+        flash('Choose a theme JSON file to import.', 'warning')
+        return _theme_redirect()
+    try:
+        payload = _json.loads(file.read(theme_portable.MAX_DOCUMENT_BYTES + 1)
+                              .decode('utf-8', 'replace'))
+    except Exception:
+        flash('That file is not valid JSON.', 'danger')
+        return _theme_redirect()
+    parsed = theme_portable.parse_document(payload)
+    row = _create_imported_theme(parsed, 'settings.theme.import')
+    if row is not None:
+        flash('Theme %r imported%s.' % (row.name, _brought(parsed)), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/import/node', methods=['POST'])
+@limiter.limit('20 per minute')
+@login_required
+def import_theme_from_node():
+    """Copy a theme from another SATOM node over its /api/v1 (``GET
+    /api/v1/ui/theme``). The API token is used for that one request: it is not
+    stored, logged or echoed back."""
+    if not _is_admin():
+        abort(403)
+    from urllib.parse import urlsplit as _urlsplit
+    node = (request.form.get('node_url') or '').strip()
+    wanted = (request.form.get('node_theme') or '').strip()[:128]
+    try:
+        doc = theme_portable.fetch_from_node(node, request.form.get('node_token') or '',
+                                             wanted)
+    except theme_portable.FetchError as exc:
+        flash('Could not fetch the theme: %s' % exc, 'danger')
+        return _theme_redirect()
+    parsed = theme_portable.parse_document(doc)
+    host = _urlsplit(node).netloc
+    parsed.name = ('%s (from %s)' % (parsed.name, host))[:100]
+    row = _create_imported_theme(parsed, 'settings.theme.import_node', source=host)
+    if row is not None:
+        flash('Theme %r copied from %s%s. It is not applied yet: review it, then '
+              'Apply.' % (row.name, host, _brought(parsed)), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/import/site', methods=['POST'])
+@limiter.limit('20 per minute')
+@login_required
+def import_theme_from_site():
+    """Build a theme from a website's brand colours, icon and favicon
+    (``services/theme_from_site.py``). Created inactive, with a report of
+    where each value came from."""
+    if not _is_admin():
+        abort(403)
+    from urllib.parse import urlsplit as _urlsplit
+
+    from ..services import theme_from_site
+    url = (request.form.get('site_url') or '').strip()
+    try:
+        parsed, report = theme_from_site.build(url)
+    except theme_portable.FetchError as exc:
+        flash('Could not read the site: %s' % exc, 'danger')
+        return _theme_redirect()
+    host = _urlsplit(url if '://' in url else 'https://' + url).netloc
+    if not parsed.tokens and not parsed.assets:
+        flash('Nothing usable found on %s: no brand colour, icon or favicon.' % host,
+              'warning')
+        for line in report[:8]:
+            flash(line, 'info')
+        return _theme_redirect()
+    row = _create_imported_theme(parsed, 'settings.theme.import_site', source=host)
+    if row is not None:
+        flash('Theme %r created from %s. It is not applied yet: review it, then '
+              'Apply.' % (row.name, host), 'success')
+        for line in report[:10]:
+            flash(line, 'info')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/reset', methods=['POST'])
+@login_required
+def reset_theme():
+    """Back to the shipped look. Deliberately reachable with a single POST and
+    no arguments — this is what an operator uses when a palette made the console
+    hard to read, and it must not itself require reading fine print."""
+    if not _is_admin():
+        abort(403)
+    name = theme_svc.reset_to_builtin()
+    log_action('settings.theme.reset', detail='name=%s' % name)
+    flash('Reverted to %r.' % name, 'success')
+    return _theme_redirect()
+
+
+# ---------------------------------------------------------------------------
+# Hypervisors — where SATOM may build appliance virtual machines.
+#
+# Multi-target on purpose: a site commonly runs both Proxmox and ESXi, and
+# more than one of each. That is why these live in a table rather than in an
+# ``app_settings`` key like the DNS provider — a single-value setting cannot
+# express "build this one on the lab Proxmox and that one on the DMZ ESXi".
+#
+# Three rules this section enforces:
+#
+# 1. **Secrets never cross back to the browser.** ``public()`` is the only
+#    shape sent out; an empty password field on edit means "keep what is
+#    stored", never "blank it".
+# 2. **Capabilities are resolved against the live endpoint, not assumed.** The
+#    Test button reports what the host will actually permit, including the
+#    read-only-API case, so the operator learns the limit here rather than
+#    three steps into a provisioning run that already reserved an address.
+# 3. **Admin only.** These credentials can create and destroy machines.
+# ---------------------------------------------------------------------------
+
+def _hv_target_or_404(target_id: int):
+    from ..models_provision import HypervisorTarget
+    row = db.session.get(HypervisorTarget, target_id)
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.route('/hypervisors/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_state():
+    from ..services import hypervisors as hv
+    from ..models_provision import HypervisorTarget, MODES
+    rows = HypervisorTarget.query.order_by(HypervisorTarget.name.asc()).all()
+    return jsonify({
+        'targets': [r.public() for r in rows],
+        'backends': [{'key': k, 'label': hv.BACKEND_LABELS.get(k, k),
+                      'fields': hv.FIELD_SPECS.get(k, []),
+                      'default_port': hv.DEFAULT_PORTS.get(k)}
+                     for k in sorted(hv.BACKENDS)],
+        'modes': MODES,
+    })
+
+
+@bp.route('/hypervisors/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_save():
+    from ..services import hypervisors as hv
+    from ..models_provision import HypervisorTarget
+    f = request.form
+    tid = (f.get('id') or '').strip()
+    backend = (f.get('backend') or '').strip().lower()
+    if not hv.is_valid(backend):
+        return jsonify({'ok': False,
+                        'error': 'unknown backend %r' % backend}), 400
+    name = (f.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'a name is required'}), 400
+    host = (f.get('host') or '').strip()
+    if not host:
+        return jsonify({'ok': False, 'error': 'a host is required'}), 400
+
+    row = db.session.get(HypervisorTarget, int(tid)) if tid.isdigit() else None
+    creating = row is None
+    # Uniqueness is checked BEFORE the row joins the session. With the add()
+    # first, SQLAlchemy's autoflush pushes the pending INSERT to satisfy the
+    # very query that is looking for a duplicate, so the row collides with
+    # itself and every first-time save is rejected as a name clash — while
+    # leaving the half-written row behind for the transaction to commit later.
+    clash = HypervisorTarget.query.filter(
+        HypervisorTarget.name == name,
+        HypervisorTarget.id != (row.id if row is not None else -1)).first()
+    if clash is not None:
+        db.session.rollback()
+        return jsonify({'ok': False,
+                        'error': 'another target is already called %r' % name}), 400
+    if creating:
+        row = HypervisorTarget(name=name, backend=backend, host=host)
+        db.session.add(row)
+
+    row.name, row.backend, row.host = name, backend, host
+    try:
+        row.port = int(f.get('port') or 0) or hv.DEFAULT_PORTS.get(backend)
+    except ValueError:
+        row.port = hv.DEFAULT_PORTS.get(backend)
+    row.username = (f.get('username') or '').strip()
+    row.verify_ssl = (f.get('verify_ssl') or '').lower() in ('1', 'on', 'true')
+    row.enabled = (f.get('enabled') or '').lower() in ('1', 'on', 'true')
+    row.notes = (f.get('notes') or '').strip()
+    row.default_node = (f.get('default_node') or '').strip()
+    row.default_datastore = (f.get('default_datastore') or '').strip()
+    row.default_network = (f.get('default_network') or '').strip()
+    row.token_id = (f.get('token_id') or '').strip()
+    row.ssh_user = (f.get('ssh_user') or '').strip()
+    try:
+        row.ssh_port = int(f.get('ssh_port') or 22)
+    except ValueError:
+        row.ssh_port = 22
+
+    # An empty secret field means "leave the stored one alone". Treating blank
+    # as "erase" would silently break a working target every time somebody
+    # edited its name, and the operator would have no way to tell why.
+    for field, setter in (('password', 'password'),
+                          ('token_secret', 'token_secret'),
+                          ('ssh_password', 'ssh_password')):
+        val = f.get(field)
+        if val:
+            setattr(row, setter, val)
+    db.session.commit()
+    log_action('settings.hypervisor.save',
+               detail='name=%s backend=%s created=%s' % (name, backend, creating))
+    return jsonify({'ok': True, 'target': row.public()})
+
+
+@bp.route('/hypervisors/<int:target_id>/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_test(target_id: int):
+    """Authenticate, then report what this host will actually permit.
+
+    The capability probe is the point of this button. "Connected OK" alone
+    would be a comfortable lie on a free-licensed ESXi, whose API answers
+    every read and refuses every write.
+    """
+    from datetime import datetime
+    from ..services.hypervisors import HypervisorError
+    row = _hv_target_or_404(target_id)
+    out = {'ok': False, 'target': row.public()}
+    try:
+        client = row.client()
+        info = client.test_connection()
+        caps = client.capabilities()
+        out.update({
+            'ok': True,
+            'info': info,
+            'capabilities': {
+                'create_vm': caps.create_vm, 'delete_vm': caps.delete_vm,
+                'power_control': caps.power_control,
+                'upload_image': caps.upload_image,
+                'ovf_import': caps.ovf_import,
+                'disk_import': caps.disk_import,
+                'serial_console': caps.serial_console,
+                'notes': list(caps.notes),
+                'blocking': caps.missing_for_full_provision(),
+            },
+        })
+        row.last_status = 'online' if caps.create_vm else 'readonly'
+        row.last_error = ''
+    except HypervisorError as exc:
+        row.last_status = 'error'
+        row.last_error = '%s %s' % (exc, exc.detail or '')
+        out['error'] = str(exc)
+        out['detail'] = exc.detail
+    except Exception as exc:  # noqa: BLE001 — never 500 a diagnostics button
+        row.last_status = 'error'
+        row.last_error = str(exc)
+        out['error'] = str(exc)
+    row.last_checked_at = datetime.utcnow()
+    db.session.commit()
+    out['target'] = row.public()
+    log_action('settings.hypervisor.test',
+               detail='name=%s status=%s' % (row.name, row.last_status))
+    return jsonify(out)
+
+
+@bp.route('/hypervisors/<int:target_id>/inventory')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_inventory(target_id: int):
+    """Nodes / networks / datastores, for the placement dropdowns."""
+    from ..services.hypervisors import HypervisorError
+    row = _hv_target_or_404(target_id)
+    node = (request.args.get('node') or row.default_node or '').strip()
+    try:
+        client = row.client()
+        nodes = client.list_nodes()
+        if not node and nodes:
+            node = nodes[0].get('node') or ''
+        stores = client.list_datastores(node)
+        return jsonify({
+            'ok': True, 'node': node, 'nodes': nodes,
+            'networks': client.list_networks(node),
+            'datastores': stores,
+            # Split by role: Proxmox keeps the disk and the uploaded image on
+            # DIFFERENT storages and there is no rule that one does both.
+            'disk_datastores': [s for s in stores if s.get('can_disk')],
+            'import_datastores': [s for s in stores if s.get('can_import')],
+        })
+    except HypervisorError as exc:
+        return jsonify({'ok': False, 'error': str(exc),
+                        'detail': exc.detail}), 502
+
+
+@bp.route('/hypervisors/<int:target_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_toggle(target_id: int):
+    row = _hv_target_or_404(target_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    log_action('settings.hypervisor.toggle',
+               detail='name=%s enabled=%s' % (row.name, row.enabled))
+    return jsonify({'ok': True, 'target': row.public()})
+
+
+@bp.route('/hypervisors/<int:target_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_delete(target_id: int):
+    """Remove a target. Refused while runs still point at it.
+
+    A provisioning run keeps the target id as its undo handle: deleting the
+    target would leave a machine SATOM built with no way to reach it again.
+    """
+    from ..models_provision import ProvisionRun
+    row = _hv_target_or_404(target_id)
+    live = ProvisionRun.query.filter(
+        ProvisionRun.target_id == row.id,
+        ProvisionRun.status.notin_(('done', 'aborted'))).count()
+    if live:
+        return jsonify({
+            'ok': False,
+            'error': '%d provisioning run(s) still reference this target'
+                     % live,
+            'detail': 'Finish or abort them first — they hold the only handle '
+                      'back to the machines SATOM created here.'}), 409
+    name = row.name
+    db.session.delete(row)
+    db.session.commit()
+    log_action('settings.hypervisor.delete', detail='name=%s' % name)
+    return jsonify({'ok': True})
+
+
+# ---------------------------------------------------------------------------
+# AI Advisor — provider registry + feature flags. Self-contained JSON API,
+# does not touch the main index() context (see settings/_ai.html).
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai/state")
+@login_required
+@require_permission('advisor.configure')
+def ai_state():
+    # The seed used to happen only on /advisor/, which the sidebar no longer
+    # links until Scout is configured: Settings is now the way in.
+    ai_advisor.ensure_default_ollama()
+    return jsonify(
+        ok=True, enabled=ai_advisor.enabled(), tools_on=ai_advisor.tools_enabled(),
+        external_on=ai_advisor.external_allowed(), providers=ai_advisor.list_providers(),
+        tool_rounds=ai_advisor.tool_rounds(),
+        tool_rounds_range=[ai_advisor.MIN_TOOL_ROUNDS, ai_advisor.MAX_TOOL_ROUNDS],
+        default_provider_key=ai_advisor.default_provider_key(),
+        connections=ai_advisor.connection_choices(),
+        log_sources=log_sources_svc.list_sources(),
+        log_source_kinds=log_sources_svc.KINDS)
+
+
+# -- Scout log sources (external SIEM, optional) -----------------------------
+
+@bp.route("/ai/logsource/save", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_save():
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    try:
+        log_sources_svc.save_source(
+            key=key, kind=body.get("kind", ""), label=body.get("label", ""),
+            base_url=(body.get("base_url") or "").strip(),
+            search_prefix=body.get("search_prefix", ""),
+            device_field=(body.get("device_field") or "").strip(),
+            verify_tls=bool(body.get("verify_tls", True)),
+            token=body.get("token") or None,
+            enabled=bool(body.get("enabled", True)),
+            time_field=(body.get("time_field") or "@timestamp").strip(),
+            auth=(body.get("auth") or "").strip())
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    # Where Scout reads logs from is the audit question; the token never is.
+    log_action('settings.ai_logsource_save', key, {
+        'kind': body.get("kind", ""), 'base_url': body.get("base_url", ""),
+        'search_prefix': body.get("search_prefix", ""),
+        'verify_tls': bool(body.get("verify_tls", True)),
+        'enabled': bool(body.get("enabled", True)),
+        'auth': body.get("auth", ""),
+        'token_set': bool(body.get("token"))})
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/logsource/<key>/delete", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_delete(key):
+    log_sources_svc.delete_source(key)
+    log_action('settings.ai_logsource_delete', key)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/logsource/<key>/test", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_logsource_test(key):
+    """One bounded search over the last 15 minutes, ``| head 1``: proves the
+    URL, the TLS chain, the token and the prefix together. An answer with no
+    rows is reported as such -- it is NOT a failure, and NOT a proof the
+    prefix matches anything either."""
+    from datetime import datetime, timedelta
+    src = log_sources_svc.get_source(key)
+    if src is None:
+        return jsonify(ok=False, error="unknown log source"), 404
+    end = datetime.utcnow()
+    rows, err, query = log_sources_svc.search(
+        src, query="", start=end - timedelta(minutes=15), end=end, limit=1,
+        timeout=15.0)
+    log_action('settings.ai_logsource_test', key, {'ok': err is None, 'rows': len(rows)})
+    if err:
+        return jsonify(ok=False, error=err, query=query)
+    return jsonify(ok=True, rows=len(rows), query=query,
+                   detail=("answered with a row" if rows else
+                           "answered, but nothing in the last 15 minutes matched the prefix"))
+
+
+@bp.route("/ai/flags", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_flags():
+    body = request.get_json(silent=True) or {}
+    kwargs = {}
+    if "enabled" in body:
+        kwargs["enabled_"] = bool(body["enabled"])
+    if "tools" in body:
+        kwargs["tools"] = bool(body["tools"])
+    if "external" in body:
+        kwargs["external"] = bool(body["external"])
+    extra = {}
+    if "tool_rounds" in body:
+        try:
+            extra["tool_rounds"] = ai_advisor.set_tool_rounds(body["tool_rounds"])
+        except ValueError as exc:
+            return jsonify(ok=False, error=str(exc)), 400
+    ai_advisor.set_flags(**kwargs)
+    log_action('settings.ai_flags', 'scout',
+               {k.rstrip('_'): v for k, v in kwargs.items()} | extra)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/provider/save", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_provider_save():
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    if not key:
+        return jsonify(ok=False, error="a provider key is required"), 400
+    try:
+        ai_advisor.save_provider(
+            key=key, kind=body.get("kind", ""), label=body.get("label", ""),
+            base_url=body.get("base_url", ""), model=body.get("model", ""),
+            api_key=body.get("api_key") or None,
+            connection=body.get("connection") or None)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    # Where the model calls go is the audit question; the key never is.
+    log_action('settings.ai_provider_save', key, {
+        'kind': body.get("kind", ""), 'base_url': body.get("base_url", ""),
+        'model': body.get("model", ""), 'api_key_set': bool(body.get("api_key")),
+        'connection': body.get("connection") or ""})
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/provider/<key>/delete", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_provider_delete(key):
+    ai_advisor.delete_provider(key)
+    log_action('settings.ai_provider_delete', key)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/default", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_default():
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    store.set_str(ai_advisor.K_DEFAULT_PROVIDER, key)
+    log_action('settings.ai_default', key)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/test", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_test():
+    """Fire one trivial chat call against the form's current values (which
+    may not be saved yet) so the operator can validate before committing a
+    provider row. Never persisted, never logged to the export log."""
+    from ..services.advisor_providers import send as provider_send
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind", "")
+    if body.get("connection"):
+        # Signs in through the connection exactly as a chat would: same
+        # token, same renewal, same one retry on a 401.
+        try:
+            prov = {"key": body.get("key") or "", "kind": kind, "base_url": body.get("base_url", ""),
+                    "model": body.get("model", ""),
+                    "connection": ai_advisor._check_connection(body.get("connection"), kind)}  # noqa: SLF001
+            result = ai_advisor.provider_send(
+                prov, system="Reply with exactly one word: ready.",
+                messages=[{"role": "user", "content": "ping"}], timeout=20.0)
+        except ValueError as exc:
+            return jsonify(ok=False, error=str(exc)), 400
+        except _AiProviderError as exc:
+            return jsonify(ok=False, error=str(exc)), 502
+        return jsonify(ok=True, reply=result.text[:200])
+    api_key = body.get("api_key") or ""
+    if not api_key and body.get("key"):
+        api_key = ai_advisor._provider_secret(body.get("key"))  # noqa: SLF001 — same-module test helper
+    try:
+        result = provider_send(
+            kind, base_url=body.get("base_url", ""), api_key=api_key,
+            model=body.get("model", ""), system="Reply with exactly one word: ready.",
+            messages=[{"role": "user", "content": "ping"}], timeout=20.0)
+    except _AiProviderError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+    return jsonify(ok=True, reply=result.text[:200])
+
+
+# ── Vault (external secret store) ─────────────────────────
+# This tab ADDS a place a credential can live. It never removes the local one:
+# ``local`` stays the default and every install that ignores this page keeps
+# behaving exactly as before. See ``services.secret_backend``.
+
+@bp.route('/vault', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_vault():
+    form = request.form.to_dict()
+    form['enabled'] = bool(request.form.get('enabled'))
+    form['verify_tls'] = bool(request.form.get('verify_tls'))
+    try:
+        cfg = secret_backend.save(form)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('settings.index') + '#tab-vault')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save vault settings: {exc}', 'danger')
+        return redirect(url_for('settings.index') + '#tab-vault')
+    log_action('settings.vault',
+               detail=f"enabled={cfg['enabled']} mode={cfg['mode']!r} addr={cfg['addr']!r}")
+    if cfg['enabled'] and cfg['mode'] == secret_backend.MODE_VAULT:
+        flash('Vault saved. The vault is now the ONLY store for new secrets — '
+              'existing local copies are untouched until you migrate.', 'warning')
+    else:
+        flash('Vault settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-vault')
+
+
+@bp.route('/vault/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_vault():
+    return jsonify(secret_backend.health())
+
+
+@bp.route('/vault/migrate', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def migrate_vault():
+    """Copy the local credentials into the vault. Dry-run by default.
+
+    Dry-run is the default because the honest failure here is silent: a
+    migration that copies 9 of 10 appliances and reports success leaves one
+    appliance unreachable the next time the vault becomes authoritative.
+    """
+    apply = request.form.get('apply') == '1'
+    result = secret_backend.migrate_local_to_vault(dry_run=not apply)
+    if apply:
+        log_action('settings.vault_migrate',
+                   detail=f"copied={result['copied']} failed={result['failed']}")
+    return jsonify(result)
+
+
+@bp.route('/vault/scrub', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def scrub_vault():
+    """Remove the local copies once the vault owns them. Dry-run by default.
+
+    Separate from the migration on purpose: copying is reversible and this is
+    not. Each secret is compared against its vault copy first, so a row the
+    vault does not actually hold keeps its local password and is reported.
+    """
+    apply = request.form.get('apply') == '1'
+    result = secret_backend.scrub_local_copies(dry_run=not apply)
+    if apply:
+        log_action('settings.vault_scrub',
+                   detail=f"scrubbed={result['scrubbed']} failed={result['failed']}")
+    return jsonify(result)
+
+
+# --------------------------------------------------------------------------- #
+#  Sentinel                                                                     #
+# --------------------------------------------------------------------------- #
+def _sentinel_form():
+    """The Sentinel settings render model, or [] if the module is absent.
+
+    A missing module must not 500 the whole Settings page: this view already
+    carries two dozen unrelated sections, and one optional feature taking all
+    of them down is the failure mode the AI tab was deliberately restructured
+    to avoid.
+    """
+    try:
+        from ..services.sentinel import config as sn_config
+        return sn_config.form_groups()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _sentinel_ui_hints() -> dict:
+    """The "?" text for the parts of the section that are NOT settings.
+
+    Same degradation posture as :func:`_sentinel_form`: an empty dict renders
+    a section with no question marks, never a page-wide 500. The macro emits
+    nothing for empty text, so a missing key is a missing icon rather than a
+    bare "?" that explains nothing when clicked.
+    """
+    try:
+        from ..services.sentinel import config as sn_config
+        return dict(sn_config.UI_HINTS)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _sentinel_health():
+    try:
+        from ..views.sentinel import _health
+        return _health()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _sentinel_view_context() -> dict:
+    """Everything the Sentinel section renders, for BOTH of its surfaces.
+
+    The section is drawn twice from one template -- inline in the Admin
+    Console pane and on its own URL -- so it is built once here. Two builders
+    would let the pane and the page disagree about the form they both draw,
+    and both would keep rendering.
+
+    Same failure posture as :func:`_sentinel_form`: a broken optional module
+    yields an empty section, never a 500 on a page carrying two dozen
+    unrelated ones.
+    """
+    health = _sentinel_health()
+    # Only the form, its hints and the health the form's prose reads. The
+    # demo lab, weights and bands left with the cards that drew them
+    # (Operations › Sentinel › Overview, views.sentinel.overview_context).
+    return {'sentinel_settings': _sentinel_form(),
+            'sentinel_ui_hints': _sentinel_ui_hints(),
+            'sentinel_health': health,
+            'health': health}
+
+
+def _sentinel_section_context(builder, health) -> dict:
+    """One Sentinel section's context, NAMESPACED, for the Admin Console.
+
+    Namespaced because the two sections want names this page already owns:
+    ``settings`` is read eighty-odd times in settings/index.html, and
+    ``catalog``, ``status`` and ``health`` are all taken too. A collision would
+    not fail — the section would render the WRONG object, quietly, which is
+    precisely the failure a template cannot report. The pane unpacks this dict
+    with ``{% with %}``, so the aliases exist only inside the include.
+
+    Same degradation posture as :func:`_sentinel_form`: a broken optional
+    module yields an empty section, never a 500 on a page carrying two dozen
+    unrelated ones.
+    """
+    try:
+        return builder(health)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _sentinel_context_context(health) -> dict:
+    """Trusted sources, maintenance windows, topology and the CVE mirror.
+
+    Takes ``health`` it does not use, so that all four Sentinel sections are
+    built through one signature: a builder with a different shape is the one
+    that gets called wrongly when a fifth is added.
+    """
+    from ..views.sentinel import context_context
+    return _sentinel_section_context(lambda _h: context_context(), health)
+
+
+def _sentinel_policy_context(health) -> dict:
+    """Per-action autonomy, and the operating modes that preset it."""
+    from ..views.sentinel import policies_context
+    return _sentinel_section_context(lambda _h: policies_context(), health)
+
+
+def _scout_form():
+    """Scout's SITE settings, rendered from the catalog its reader indexes.
+
+    Empty list on a broken import: the pane then renders its heading and no
+    fields, which is visibly wrong, rather than 500-ing every other section of
+    the Admin Console alongside it.
+    """
+    try:
+        from ..services import scout_config
+        return scout_config.form_groups()
+    except Exception:                                       # noqa: BLE001
+        return []
+
+
+def _scout_criteria():
+    """The read-only judgement constants, READ OFF the engine at render time."""
+    try:
+        from ..services import scout_config
+        return scout_config.criteria()
+    except Exception:                                       # noqa: BLE001
+        return []
+
+
+def _scout_docs_context() -> dict:
+    """The ladder as the engine defines it -- never a list typed into a page.
+
+    ``LADDER`` is the same tuple ``scout_ladder.run()`` walks, so a rung added,
+    renamed or reordered moves this document in the same commit. A reference
+    that disagrees with the engine is read to decide whether a report is
+    complete, which makes staleness here expensive rather than untidy.
+    """
+    try:
+        from ..services import scout_ladder as sl
+        return {
+            'ladder': [{'key': lay.key, 'title': lay.title,
+                        'question': lay.question, 'vantage': lay.vantage,
+                        'vantage_label': sl.VANTAGE_LABEL.get(lay.vantage,
+                                                              lay.vantage)}
+                       for lay in sl.LADDER],
+            'vantages': {'satom': sl.VANTAGE_LABEL.get(sl.V_SATOM, 'this node'),
+                         'device': sl.VANTAGE_LABEL.get(sl.V_DEVICE, 'the appliance'),
+                         'edge': sl.VANTAGE_LABEL.get(sl.V_EDGE, 'the border')},
+        }
+    except Exception:                                       # noqa: BLE001
+        return {'ladder': [], 'vantages': {'satom': '', 'device': '', 'edge': ''}}
+
+
+@bp.route('/sentinel', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)  # admin-only, like the pane (AD-19/MO-09)
+def save_sentinel():
+    """Persist the Sentinel settings posted by the generic form.
+
+    Every value goes through ``config.set_value``, which coerces and CLAMPS
+    against the same spec the form was rendered from — a hand-typed 9999 for a
+    percentage is corrected here rather than becoming a threshold that can
+    never fire.
+    """
+    from ..services import audit
+    from ..services.sentinel import config as sn_config
+
+    changed, clamped = [], []
+    for spec in sn_config.SPEC:
+        key = spec['key']
+        if spec['kind'] == 'bool':
+            # A checkbox that is OFF sends nothing. Without the companion
+            # __present marker an unchecked switch is indistinguishable from
+            # "this field was not on the form", and the setting could be turned
+            # on but never off.
+            if not request.form.get(key + '__present'):
+                continue
+            value = bool(request.form.get(key))
+        elif spec['kind'] == 'secret':
+            value = request.form.get(key, '')
+            if not value:
+                continue          # blank means "keep what is stored"
+        else:
+            if key not in request.form:
+                continue
+            value = request.form.get(key)
+        before = sn_config.get(key)
+        sn_config.set_value(key, value)
+        after = sn_config.get(key)
+        if after != before:
+            changed.append(key)
+        if spec['kind'] in ('int', 'float') and str(after) != str(value).strip():
+            clamped.append(f"{key} -> {after}")
+
+    errors = sn_config.protect_errors()
+    audit.log_action('sentinel.settings', target='settings',
+                     detail=', '.join(changed) or 'no change')
+    if changed:
+        flash(f'Sentinel settings saved: {len(changed)} changed.', 'success')
+    else:
+        flash('Sentinel settings unchanged.', 'info')
+    if clamped:
+        flash('Clamped to their allowed range: ' + ', '.join(clamped),
+              'warning')
+    if errors:
+        flash('These never-block entries are not valid CIDRs and protect '
+              'nothing: ' + ', '.join(errors), 'danger')
+    # Back where the form was: the pane posts `return_to=pane`, and an
+    # operator who never left the Admin Console must not be moved out of it
+    # by saving. Anything else (a deep link, a bookmark, a script) lands on
+    # the standalone section, which is the historical behaviour.
+    if request.form.get('return_to') == 'pane':
+        return redirect(url_for('settings.index') + '#tab-sentinel')
+    return redirect(url_for('settings.sentinel_section') + '#config')
+
+
+@bp.route('/scout', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)  # admin-only, like the pane (AD-19/MO-09)
+def save_scout():
+    """Persist Scout's SITE settings.
+
+    Only ``scout_config.SPEC`` is walked, so a POST carrying a criterion name
+    changes nothing: the judgement constants are not settings, and the endpoint
+    has to refuse them as flatly as the page does. A form that renders them
+    read-only while the handler happily wrote them would be a lock on the door
+    and none on the window.
+
+    Values go through ``set_value``, which coerces and CLAMPS against the same
+    spec the form was rendered from -- a hand-typed 99999-minute window is
+    corrected here rather than becoming a border query nobody survives.
+    """
+    from ..services import audit
+    from ..services import scout_config
+
+    changed, clamped = [], []
+    for spec in scout_config.SPEC:
+        key = spec['key']
+        if spec['kind'] == 'bool':
+            # An unchecked switch sends nothing. Without the companion marker
+            # it is indistinguishable from "this field was not on the form",
+            # and the setting could be turned on but never off.
+            if not request.form.get(key + '__present'):
+                continue
+            value = bool(request.form.get(key))
+        else:
+            if key not in request.form:
+                continue
+            value = request.form.get(key)
+        before = scout_config.get(key)
+        scout_config.set_value(key, value)
+        after = scout_config.get(key)
+        if after != before:
+            changed.append(key)
+        if spec['kind'] in ('int', 'float') and str(after) != str(value).strip():
+            clamped.append('%s -> %s' % (key, after))
+
+    audit.log_action('scout.settings', target='settings',
+                     detail=', '.join(changed) or 'no change')
+    if changed:
+        flash('Path Diagnostics settings saved: %d changed.' % len(changed), 'success')
+    else:
+        flash('Path Diagnostics settings unchanged.', 'info')
+    if clamped:
+        flash('Clamped to their allowed range: ' + ', '.join(clamped),
+              'warning')
+    return redirect(url_for('settings.index') + '#tab-scout')
+
+
+@bp.route('/sentinel', methods=['GET'])
+@login_required
+@require_permission(Permission.VIEW)
+def sentinel_section():
+    """Settings → Sentinel as a full section, not a pane.
+
+    The pane held the form and nothing else, so "what will this thing DO?"
+    was answered only by prose on another page. This page answers it in
+    escalating commitment: the pipeline drawn, the live weight table, and ten
+    scenarios runnable against the real engine — then the form. Same failure
+    posture as the pane (:func:`_sentinel_form`): a broken optional module
+    renders an empty section rather than a 500.
+    """
+    return render_template('settings/sentinel.html',
+                           sentinel_inline=False,
+                           # The Admin Console submenu comes with the page: it
+                           # is the SAME settings/_nav.html the console renders,
+                           # in `links` mode because this page has no panes to
+                           # switch. is_admin is what decides which groups the
+                           # menu offers at all -- without it the menu would
+                           # silently shrink to My Account on a page only an
+                           # operator with config rights ever reaches.
+                           is_admin=_is_admin(),
+                           nav_mode='links',
+                           nav_active='tab-sentinel',
+                           **_sentinel_view_context())
+
+
+@bp.route('/sentinel/demo/<slug>')
+@login_required
+@require_permission(Permission.VIEW)
+def sentinel_demo(slug):
+    """One scenario through the LIVE Sentinel engine, as JSON.
+
+    A GET on purpose: nothing mutates. The events live and die in the
+    request, the scorer is pure arithmetic, and the gate audit only READS
+    (policy rows, the hourly budget, the protected-network list). Keeping it
+    idempotent is what makes "press it as many times as you like" an honest
+    sentence on the page.
+    """
+    from ..services.sentinel import demo as sn_demo
+    try:
+        return jsonify(sn_demo.run(slug))
+    except KeyError:
+        abort(404)

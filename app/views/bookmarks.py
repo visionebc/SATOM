@@ -1,0 +1,793 @@
+"""**Bookmarks panel** — the right-hand rail and everything that mutates it.
+
+Two rules decide every route in this module, and both exist because the
+alternative is a permission leak rather than an untidy screen.
+
+1. **A by-id route NEVER touches ``Bookmark.query.get``.** Every id the browser
+   sends is resolved against :func:`services.bookmarks.visible_bookmarks` for
+   the person asking, so an id belonging to somebody else's personal bookmark,
+   or to a row stamped for another ADOM, is indistinguishable from an id that
+   does not exist. This product already shipped the other shape once: until
+   2026-08-06 every by-id appliance route served another ADOM's device to
+   anyone who guessed the number.
+
+2. **A refusal names the rule that refused it.** ``BookmarkDenied`` carries a
+   reason and it reaches the operator. A bare "not allowed" at 03:00 is what
+   sends people looking for a way around the rule instead of a way to satisfy
+   it.
+
+The panel is a TREE, the shape a browser sidebar has: folders with a folder
+icon and their name beside it, nested groups that collapse, and one search box
+instead of a grouping dropdown. Three consequences worth stating, because each
+replaced something that looked simpler:
+
+*   **There is ONE inventory lens, and its heading is its order.** The
+    reader picks the nesting — ``Department › Product › Line`` — on their own
+    profile page, and the root is named after it. A ``<select>`` could only
+    answer "how is this grouped right now" once you opened it; four fixed
+    roots answered a question nobody asked ("how *could* it be grouped").
+*   **The classification roots list the LIVE INVENTORY, not the bookmarks.**
+    Every device the reader may see is in the tree from the first render, so
+    the panel is useful before anybody has bookmarked anything, and a device
+    added to the fleet appears without a bookmark migration. Starring or
+    filing one *adopts* it — that, and only that, creates a row.
+*   **Search filters on the SERVER.** The tree the browser holds is already
+    the filtered one; a client-side ``display:none`` overlay would leave rows
+    in the DOM that the reader's permissions had removed from the answer.
+"""
+from __future__ import annotations
+
+import json
+
+from flask import (
+    Blueprint, render_template, request, abort, jsonify, url_for, g, session,
+    make_response, redirect,
+)
+from flask_login import login_required, current_user
+from flask_wtf.csrf import generate_csrf
+
+from ..branding import get_product
+
+from ..extensions import db
+from ..models import Appliance, UserSetting, visible_appliances
+from ..models_bookmarks import (
+    Bookmark, KIND_APPLIANCE, KIND_FOLDER, KIND_LINK, SCOPE_TEAM,
+)
+from ..services import bookmarks as svc
+from ..services import product_scope, settings_store
+from ..services.audit import log_action
+
+bp = Blueprint('bookmarks', __name__, url_prefix='/bookmarks')
+
+#: Per-user preference keys. ``open`` stores the set of EXPANDED nodes, never
+#: the collapsed one: the panel defaults to fully collapsed, and an empty set
+#: gives exactly that with no first-run flag. Storing the collapsed set would
+#: make "no preference yet" mean "expand everything", which on a hundred-device
+#: fleet is the one state nobody wants.
+K_OPEN = 'bookmarks.open'
+K_SHOWHIDDEN = 'bookmarks.showhidden'
+K_COLLAPSED = 'bookmarks.railclosed'
+
+#: Root keys. Stable strings, because they are what the stored open-set holds:
+#: deriving them from a translated label would collapse every operator's tree
+#: the day somebody switches language.
+ROOT_FAV = 'r:fav'
+ROOT_FOLDERS = 'r:folders'
+ROOT_SHARED = 'r:shared'
+#: Deliberately NOT derived from the chosen order. The stored open-set is
+#: keyed by node key, and a root whose key changed with the order would
+#: slam itself shut every time somebody re-ordered their own tree.
+ROOT_LENS = 'r:lens'
+#: Per-ADOM roots (2026-11-08, after Favourites/Folders/Shared since
+#: 2026-11-09): ``r:adom@<key>`` holds ``r:links@<key>`` and
+#: ``r:lens@<key>`` ('global' for Global). Stable,
+#: registry keys -- never the display name -- for the same open-set reason.
+ROOT_ADOM = 'r:adom'
+ROOT_LINKS = 'r:links'
+
+MAX_OPEN_KEYS = 400
+
+
+# ---------------------------------------------------------------------------
+# Preference helpers
+# ---------------------------------------------------------------------------
+
+def _open_nodes() -> set[str]:
+    raw = UserSetting.get(current_user.id, K_OPEN, '[]')
+    try:
+        data = json.loads(raw or '[]')
+    except (TypeError, ValueError):
+        return set()
+    return {str(x) for x in data} if isinstance(data, list) else set()
+
+
+def _show_hidden() -> bool:
+    return UserSetting.get(current_user.id, K_SHOWHIDDEN, '0') == '1'
+
+
+# ---------------------------------------------------------------------------
+# Resolution
+# ---------------------------------------------------------------------------
+
+def _visible_or_404(bid: int) -> Bookmark:
+    """The only way this module turns an id into a row."""
+    for bm in svc.visible_bookmarks(current_user):
+        if bm.id == bid:
+            return bm
+    abort(404)
+
+
+def _denied(exc: svc.BookmarkDenied):
+    return jsonify({'ok': False, 'reason': exc.reason, 'error': str(exc)}), 400
+
+
+# ---------------------------------------------------------------------------
+# Tree construction
+# ---------------------------------------------------------------------------
+
+def _label(bm: Bookmark) -> str:
+    """The name shown. For a device this is the LIVE appliance name unless the
+    author typed one — a stored copy of the name is the first field to go stale
+    after a rename."""
+    if bm.label:
+        return bm.label
+    if bm.kind == KIND_APPLIANCE and bm.appliance is not None:
+        return bm.appliance.name
+    return bm.url or '(untitled)'
+
+
+def _node(key, name, *, icon='', kind='group', item=None,
+          folder_id=None, droppable=False, sub='', note='', chip=False,
+          drop_into='', manual=False, container='', pos=0):
+    # ``manual`` = this node's children are in the reader's hand order (pos),
+    # not alphabetical; ``container`` = the list a row sits in, which the rail
+    # posts back on a drop above/below it ('fav', a folder id, '0' = root).
+    return {
+        'key': key, 'name': name, 'icon': icon, 'kind': kind, 'item': item,
+        'children': [], 'folder_id': folder_id, 'droppable': droppable,
+        'sub': sub, 'note': note, 'count': 0, 'chip': chip,
+        'drop_into': drop_into or (str(folder_id) if droppable else ''),
+        'manual': manual, 'container': container, 'pos': pos,
+    }
+
+
+def _prune(node: dict, q: str) -> bool:
+    """Keep *node* if it, or anything under it, matches *q*.
+
+    A group whose own name matches keeps its WHOLE subtree: searching for a
+    zone and being shown the zone with none of its devices would be a worse
+    answer than no answer. Matching is over the visible name plus the
+    subtitle — for a device that is its management address, which is what an
+    operator actually remembers at 03:00.
+    """
+    if not q:
+        return True
+    if node['kind'] == 'item':
+        return q in (node['name'] + ' ' + (node['sub'] or '')).lower()
+    if q in node['name'].lower():
+        return True
+    node['children'] = [c for c in node['children'] if _prune(c, q)]
+    return bool(node['children'])
+
+
+def _count(node: dict) -> int:
+    if node['kind'] == 'item':
+        node['count'] = 1
+    else:
+        node['count'] = sum(_count(c) for c in node['children'])
+    return node['count']
+
+
+def _sorted_children(node: dict) -> None:
+    """Groups before devices, each alphabetically. ``(unclassified)`` and the
+    other synthetic buckets sort LAST so they never push the real tree below
+    the fold — they are shown, never hidden, but they are not the headline.
+
+    Favourites and folders are the exception: they are in the order the
+    reader dragged them into (``svc.order_key``, the same key the move
+    renumbers with)."""
+    def rank(c):
+        synthetic = c['name'] in (svc.UNCLASSIFIED, svc.NO_SEGMENT, svc.NON_DEVICE)
+        return (0 if c['kind'] == 'group' else 1, 1 if synthetic else 0,
+                c['name'].lower())
+
+    def hand(c):
+        return svc.order_key(c['pos'], c['kind'] == 'group', c['name'])
+    node['children'].sort(key=hand if node.get('manual') else rank)
+    for c in node['children']:
+        _sorted_children(c)
+
+
+def _device_node(prefix: str, appl, item: dict | None) -> dict:
+    # A device nobody has bookmarked yet still gets its direct link: the link
+    # describes the DEVICE, and making it appear only after somebody stars the
+    # row would hide it on exactly the devices nobody is watching.
+    _dev = svc.device_link(appl)
+    return _node(
+        f'{prefix}|a{appl.id}', appl.name, icon='bi-hdd-network', kind='item',
+        item=item or {'bm': None, 'appliance_id': appl.id, 'label': appl.name,
+                      'fav': False, 'hidden': False, 'shared': False,
+                      'mine': False, 'may_edit': False, 'parent_id': None,
+                      'dev_url': _dev[0], 'dev_note': _dev[1]},
+        sub=appl.host or '',
+    )
+
+
+def build_panel(q: str = '') -> dict:
+    """Everything the template needs, in one pass over the visible rows."""
+    q = (q or '').strip().lower()
+    rows = svc.visible_bookmarks(current_user)
+    placed = svc.placements(current_user)
+    fav_pos = svc.favorite_positions(current_user)
+    favs = set(fav_pos)
+    current_adom = product_scope.session_product()
+    show_hidden = _show_hidden()
+    segments = settings_store.segments()
+
+    items: list[dict] = []
+    by_appliance: dict[int, dict] = {}
+    hidden_shown = 0
+
+    for bm in rows:
+        row = placed.get(bm.id)
+        is_hidden = bool(row is not None and row.hidden)
+        if is_hidden:
+            hidden_shown += 1
+            if not show_hidden:
+                continue
+        # Computed HERE, not in the template: the panel renders items
+        # through four roots, and a per-root expression is four authors of
+        # one truth. An item that is not a device carries (None, '').
+        dev_url, dev_note = (
+            svc.device_link(bm.appliance)
+            if bm.kind == KIND_APPLIANCE else (None, ''))
+        # A stored URL is re-checked on the way OUT as well as on the way
+        # in. `svc.create` is not the only writer that can reach this
+        # table, and a `javascript:` href in a TEAM bookmark is stored XSS
+        # in every colleague's sidebar -- including the read-only ones, who
+        # cannot delete it. Checking only at write time trusts every row
+        # this process did not write.
+        link_url, link_note = (
+            svc.safe_link_url(bm.url) if bm.kind == KIND_LINK
+            else (None, ''))
+        # The panel is general: a row of another ADOM opens through
+        # /bookmarks/<id>/open, which switches THIS tab to that ADOM first.
+        # The plain link would be a 404 there (visible_appliance_or_404).
+        switch = svc.opens_in(bm, current_adom) if (
+            bm.kind == KIND_APPLIANCE or link_url) else ''
+        item = {
+            'bm': bm,
+            'dev_url': dev_url,
+            'dev_note': dev_note,
+            'link_url': link_url,
+            'link_note': link_note,
+            'appliance_id': bm.appliance_id,
+            'label': _label(bm),
+            'fav': bm.id in favs,
+            'hidden': is_hidden,
+            'shared': bm.scope == SCOPE_TEAM,
+            'mine': bm.owner_user_id == current_user.id,
+            'may_edit': svc.may_edit(bm, current_user),
+            'parent_id': row.parent_id if row is not None else None,
+            'filed': row is not None,
+            'pos': row.position if row is not None else 0,
+            'switch': switch,
+            'switch_name': (get_product(switch) or {}).get('name', switch)
+                           if switch else '',
+            'open_url': url_for('bookmarks.open_bookmark', bid=bm.id)
+                        if switch else None,
+        }
+        items.append(item)
+        if bm.kind == KIND_APPLIANCE and bm.appliance_id is not None:
+            # A personal row wins over a team row for the star/eye controls
+            # shown next to a device in the inventory lenses: the acting user's
+            # own bookmark is the one their actions write to.
+            prev = by_appliance.get(bm.appliance_id)
+            if prev is None or (not prev['mine'] and item['mine']):
+                by_appliance[bm.appliance_id] = item
+
+    # ---- the roots, in this order (user, 2026-11-09) ------------------------
+    #   Favourites  -- ONE flat list of every star, whatever its ADOM, in the
+    #                  reader's hand order; a drop target (drop = star);
+    #   Folders     -- the reader's folders (a folder may mix ADOMs);
+    #   Shared      -- the team's tray;
+    #   one root per ADOM the reader may enter that holds anything (Global
+    #   first, then the ADOM registry's order), with:
+    #     Links     -- its unstarred rows that are not filed in a folder;
+    #     <lens>    -- its devices, nested in THIS reader's chosen order
+    #                  (profile; Line > Zone > Department by default).
+    # Only ADOMs the profile allows can appear: the rows passed
+    # visible_bookmarks and the devices the same gate (svc.visible_devices).
+    # A star of another ADOM keeps its ADOM chip and opens through the switch.
+    adom_rank = {'': 0}
+    adom_name = {'': 'Global'}
+    for i, (k, name) in enumerate(product_scope.device_products(), start=1):
+        adom_rank[k] = i
+        adom_name[k] = name
+
+    def _adom_of(key: str) -> str:
+        return key if key in adom_rank else ''
+
+    adoms: dict[str, dict] = {}
+
+    def _section(adom: str, part: str) -> dict:
+        a = adoms.get(adom)
+        if a is None:
+            a = {'node': _node(f'{ROOT_ADOM}@{adom or "global"}', adom_name[adom],
+                               icon='bi-boxes', manual=True,
+                               pos=adom_rank[adom])}
+            adoms[adom] = a
+        sec = a.get(part)
+        if sec is None:
+            tag = adom or 'global'
+            if part == 'links':
+                sec = _node(f'{ROOT_LINKS}@{tag}', 'Links',
+                            icon='bi-link-45deg', manual=True, pos=0)
+            else:
+                sec = _node(f'{ROOT_LENS}@{tag}', svc.lens_title(stack),
+                            icon='bi-diagram-3', pos=1)
+                sec['lens_head'] = True
+            a[part] = sec
+            a['node']['children'].append(sec)
+        return sec
+
+    stack = svc.lens_for(current_user)
+
+    fav_root = _node(ROOT_FAV, 'Favourites', icon='bi-star-fill',
+                     droppable=True, drop_into=svc.FAV, manual=True)
+    for it in items:
+        if it['fav'] and it['bm'].kind != KIND_FOLDER:
+            fav_root['children'].append(
+                _node(f'{ROOT_FAV}|b{it["bm"].id}', it['label'],
+                      icon=_icon_for(it), kind='item', item=it,
+                      sub=_sub_for(it), container=svc.FAV,
+                      pos=fav_pos.get(it['bm'].id, 0)))
+
+    # ---- root: personal folders ------------------------------------------
+    folders_root = _node(ROOT_FOLDERS, 'Folders', icon='bi-folder2',
+                         droppable=True, folder_id=0, manual=True)
+    by_parent: dict[int | None, list[dict]] = {}
+    for it in items:
+        by_parent.setdefault(it['parent_id'], []).append(it)
+
+    def _folder_children(parent_id, prefix, seen):
+        out = []
+        box = str(parent_id or 0)
+        for it in by_parent.get(parent_id, []):
+            bm = it['bm']
+            if bm.kind == KIND_FOLDER:
+                if bm.id in seen:
+                    continue
+                n = _node(f'{prefix}|f{bm.id}', it['label'], icon='bi-folder2',
+                          folder_id=bm.id, droppable=it['may_edit'],
+                          manual=True, container=box, pos=it['pos'])
+                n['children'] = _folder_children(bm.id, n['key'], seen | {bm.id})
+                n['item'] = it
+                out.append(n)
+            elif parent_id is not None or not it['shared'] or it['filed']:
+                # An unfiled TEAM bookmark belongs in the Shared tray, which is
+                # the default destination of a row nobody has placed yet — not
+                # a folder anybody can delete.
+                if parent_id is None:
+                    # Not in any folder: it lives under its ADOM (Links), in
+                    # the hand order of the root list it still belongs to.
+                    if not it['fav']:
+                        sec = _section(_adom_of(svc.adom_group(bm)), 'links')
+                        sec['children'].append(_node(
+                            f'{sec["key"]}|b{bm.id}', it['label'],
+                            icon=_icon_for(it), kind='item', item=it,
+                            sub=_sub_for(it), container=box, pos=it['pos']))
+                    continue
+                out.append(_node(f'{prefix}|b{bm.id}', it['label'],
+                                 icon=_icon_for(it), kind='item', item=it,
+                                 sub=_sub_for(it), container=box,
+                                 pos=it['pos']))
+        return out
+
+    folders_root['children'] = _folder_children(None, ROOT_FOLDERS, set())
+
+    # ---- root: shared tray ------------------------------------------------
+    shared_root = _node(ROOT_SHARED, 'Shared', icon='bi-inbox')
+    for it in items:
+        if it['shared'] and not it['filed']:
+            shared_root['children'].append(
+                _node(f'{ROOT_SHARED}|b{it["bm"].id}', it['label'],
+                      icon=_icon_for(it), kind='item', item=it,
+                      sub=_sub_for(it)))
+
+    # ---- each ADOM's devices, nested by the reader's lens ------------------
+    # Nested in the order this reader chose, and named after it: an operator
+    # wants one answer and wants to see which one without opening anything,
+    # so the order is the heading. Changing it is a per-user act on the
+    # profile page: nobody re-shapes anybody else's panel.
+    appliances = svc.visible_devices(current_user)
+    for appl in appliances:
+        adom = _adom_of(svc.appliance_adom(appl))
+        lens = _section(adom, 'lens')
+        cursor = lens
+        path = lens['key']
+        values = [svc.dimension_value(appl, d, segments) for d in stack]
+        # A device classified nowhere would otherwise sink three levels of
+        # "(unclassified) → (unclassified) → (unclassified)": depth with no
+        # information in it, on the half of the fleet that most needs to be
+        # noticed. The chain is truncated at the first empty level ONLY when
+        # every level below it is empty too — a device with no line but a
+        # real zone still gets "(unclassified) → internal", because that
+        # zone is a fact and the tree should not swallow it.
+        for i, value in enumerate(values):
+            if all(v == svc.UNCLASSIFIED for v in values[i:]):
+                values = values[:i + 1]
+                break
+        # The KEY is the raw stored value; only the NAME is the displayed one.
+        # Keying on the label would move every node the day a product is
+        # renamed in the ADOM registry, and the open/closed set is keyed on
+        # exactly that string -- a rename would silently collapse the tree of
+        # every user who had it open.
+        for dim, value in zip(stack, values):
+            path = f'{path}|{value}'
+            nxt = next((c for c in cursor['children']
+                        if c['kind'] == 'group' and c['key'] == path), None)
+            if nxt is None:
+                # The chip claims "this is a product". `(unclassified)` is a
+                # sentence about the record, not a product, so it is left as
+                # plain text -- a tinted pill reading "(unclassified)" would
+                # look like a device kind somebody had declared.
+                nxt = _node(path, svc.dimension_label(dim, value),
+                            icon='bi-folder2',
+                            chip=(dim == 'kind' and value != svc.UNCLASSIFIED))
+                cursor['children'].append(nxt)
+            cursor = nxt
+        item = by_appliance.get(appl.id)
+        if item is None:
+            # No bookmark behind it: the device's own switch, so a device of
+            # another ADOM is not a 404 in this console.
+            sw = svc.device_opens_in(appl, current_adom)
+            item = {'bm': None, 'appliance_id': appl.id, 'label': appl.name,
+                    'fav': False, 'hidden': False, 'shared': False,
+                    'mine': False, 'may_edit': False, 'parent_id': None,
+                    'switch': sw,
+                    'switch_name': (get_product(sw) or {}).get('name', sw)
+                                   if sw else '',
+                    'open_url': url_for('bookmarks.open_device', aid=appl.id)
+                                if sw else None}
+            item['dev_url'], item['dev_note'] = svc.device_link(appl)
+        cursor['children'].append(_device_node(cursor['key'], appl, item))
+
+    roots = [fav_root, folders_root, shared_root]
+    roots += [adoms[k]['node'] for k in sorted(adoms, key=lambda k: adom_rank[k])]
+    roots = [r for r in roots if _prune(r, q)]
+    for r in roots:
+        _count(r)
+        _sorted_children(r)
+
+    counts = svc.tray_counts(current_user)
+    # The chip wash follows the reader's own banner, resolved through the same
+    # store the top bar uses. Emitted as two custom properties on ONE element
+    # rather than a style= on every chip: the stylesheet keeps the rule, the
+    # server only supplies the colour.
+    _prod = get_product(getattr(g, 'product', None) or session.get('product'))
+    _tint = svc.reader_tint(current_user.id, _prod['key'])
+    return {
+        'roots': roots,
+        'type_fill': _tint['fill'],
+        'type_line': _tint['line'],
+        'row_hover': _tint['hover'],
+        'q': q,
+        # Searching expands what it found. Returning matches inside collapsed
+        # nodes would render as "no results" while holding them.
+        'force_open': bool(q),
+        'open_nodes': _open_nodes(),
+        'show_hidden': show_hidden,
+        'hidden_shown': hidden_shown,
+        'unplaced': counts['unplaced'],
+        'hidden_count': counts['hidden'],
+        'can_share': current_user.can(svc.SHARE_PERMISSION),
+        'root_shared': ROOT_SHARED,
+        'root_folders': ROOT_FOLDERS,
+        'lens': stack,
+        'lens_url': url_for('auth.profile') + '#bookmark-view',
+        'device_count': len(appliances),
+        # The sidebar stars read this, so the panel stays the one authority
+        # on what is starred -- a star removed here goes dark in the menu.
+        'menu_favs': sorted(svc.menu_favorite_urls(current_user, rows, favs)),
+    }
+
+
+def _icon_for(it: dict) -> str:
+    bm = it['bm']
+    if bm is None or bm.kind == KIND_APPLIANCE:
+        return 'bi-hdd-network'
+    if bm.kind == 'link':
+        return 'bi-link-45deg'
+    if bm.kind == KIND_FOLDER:
+        return 'bi-folder2'
+    return 'bi-funnel'
+
+
+def _sub_for(it: dict) -> str:
+    bm = it['bm']
+    if bm is None:
+        return ''
+    if bm.kind == KIND_APPLIANCE and bm.appliance is not None:
+        return bm.appliance.host or ''
+    return bm.url or ''
+
+
+def _render(q: str = ''):
+    """The panel fragment — and it SAYS it is the panel fragment.
+
+    A 200 is not consent to paint. The CSRF error handler answers a POST that
+    does not declare itself an XHR with a **302 to the referring page**, and
+    ``fetch`` follows redirects, so the rail used to receive a whole console
+    page with ``r.ok`` true and paste those 60 KB into a 300px column. Every
+    control in the rail died with it, on EVERY page and until a full reload,
+    because the element is ``data-turbo-permanent``. ``X-SATOM-Panel`` is the
+    marker the rail checks before rendering anything; sniffing the markup
+    would tie the contract to the first line of a template.
+
+    ``X-CSRF-Token`` exists for the same permanence. The token the rail was
+    born with is the only one it would ever hold, and ``WTF_CSRF_TIME_LIMIT``
+    is an hour — so an hour into any session the next click on any bookmark
+    control was refused. Every answer now hands the rail a fresh token, which
+    is why the refusal became rare rather than merely legible.
+    """
+    resp = make_response(
+        render_template('partials/bookmarks_panel.html', **build_panel(q)))
+    resp.headers['X-SATOM-Panel'] = 'bookmarks'
+    resp.headers['X-CSRF-Token'] = generate_csrf()
+    return resp
+
+
+@bp.route('/panel')
+@login_required
+def panel():
+    return _render(request.args.get('q', ''))
+
+
+@bp.route('/devices')
+@login_required
+def devices():
+    """The device picker for "add bookmark". Scoped through the SAME gate the
+    rest of the console uses, so the picker cannot enumerate devices the user
+    may not open -- and, like the lens, nothing without appliances.view."""
+    q = (request.args.get('q') or '').strip().lower()
+    rows = (visible_appliances(db.session.query(Appliance), user=current_user).all()
+            if svc.may_see_devices(current_user) else [])
+    out = [
+        {'id': a.id, 'name': a.name, 'host': a.host, 'kind': a.kind}
+        for a in rows if not q or q in a.name.lower() or q in (a.host or '').lower()
+    ]
+    return jsonify({'devices': sorted(out, key=lambda d: d['name'].lower())[:200]})
+
+
+# ---------------------------------------------------------------------------
+# Mutations — each answers with the re-rendered panel
+# ---------------------------------------------------------------------------
+
+def _q() -> str:
+    """The search term in force while a mutation happens. Answering a starred
+    device with the UNFILTERED tree would silently drop the operator out of
+    their search."""
+    return request.form.get('q', '')
+
+
+@bp.route('/create', methods=['POST'])
+@login_required
+def create():
+    f = request.form
+    parent = f.get('parent_id', type=int)
+    try:
+        svc.create(
+            current_user, (f.get('kind') or KIND_APPLIANCE).strip(),
+            appliance_id=f.get('appliance_id', type=int),
+            url=f.get('url', ''), label=f.get('label', ''),
+            view_query=f.get('view_query', ''), parent_id=parent,
+        )
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+@bp.route('/adopt', methods=['POST'])
+@login_required
+def adopt():
+    """Turn a device shown in an inventory lens into a bookmark this user owns.
+
+    Idempotent on purpose: starring a device that already has a bookmark must
+    not mint a second one. Two rows for one device is how a panel starts
+    showing the same appliance twice with different stars.
+    """
+    try:
+        bm = svc.adopt(current_user, request.form.get('appliance_id', type=int),
+                       parent_id=request.form.get('parent_id', type=int))
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    if request.form.get('favorite') == '1':
+        svc.set_favorite(current_user, bm, True)
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/place', methods=['POST'])
+@login_required
+def place(bid):
+    bm = _visible_or_404(bid)
+    parent = request.form.get('parent_id', type=int)
+    try:
+        if 'position' in request.form:
+            svc.place(current_user, bm, parent_id=parent,
+                      position=request.form.get('position', 0, type=int))
+        else:
+            # Dropped on a folder heading: to the END of that folder. Position
+            # 0 would tie with the folder's first row and leave the spot to
+            # the alphabet.
+            svc.move(current_user, bm, parent or 0)
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/move', methods=['POST'])
+@login_required
+def move(bid):
+    """Drag to reorder: put the row in ``container`` ('fav', a folder id, or
+    0 = the Folders root) right before ``before`` / after ``after`` — another
+    row of that list — or at its end. Writes only the acting user's own
+    placements and stars."""
+    bm = _visible_or_404(bid)
+    f = request.form
+    raw = (f.get('container') or '').strip()
+    if raw == svc.FAV:
+        container = svc.FAV
+    else:
+        try:
+            container = int(raw or 0)
+        except ValueError:
+            return _denied(svc.BookmarkDenied('bad_container', 'no such list'))
+    try:
+        svc.move(current_user, bm, container,
+                 before_id=f.get('before', type=int),
+                 after_id=f.get('after', type=int))
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+def _switch_and_go(adom: str, target: str):
+    """Write the ADOM switch and redirect, ``_adom`` pinned on the target so
+    a stale per-tab header cannot win the first request."""
+    if adom and product_scope.adom_allowed(adom):
+        session['product'] = adom
+        session.permanent = True
+        base, hsh, frag = target.partition('#')
+        target = (base + ('&' if '?' in base else '?') + '_adom=' + adom
+                  + hsh + frag)
+    return redirect(target)
+
+
+@bp.route('/device/<int:aid>/open')
+@login_required
+def open_device(aid):
+    """A device of ANOTHER ADOM listed under that ADOM's classification, with
+    no bookmark behind it: switch this tab's ADOM, then open the device."""
+    from .product import _is_prefetch
+    if _is_prefetch(request):
+        return '', 204
+    if aid not in svc._visible_appliance_ids(current_user):
+        abort(404)
+    appl = db.session.get(Appliance, aid)
+    return _switch_and_go(svc.appliance_adom(appl),
+                          url_for('appliances.detail', id=aid))
+
+
+@bp.route('/<int:bid>/open')
+@login_required
+def open_bookmark(bid):
+    """Open a bookmark of ANOTHER ADOM: switch this tab's ADOM, then go.
+
+    The panel is general (2026-11-08), so it lists rows whose page only exists
+    in another console. This is the explicit ADOM switch for them, like
+    ``product.enter`` (which also writes the session): the rail sets the tab's
+    own ADOM on click (``data-adom-switch``, turbo-boot.js), and ``_adom`` on
+    the target pins the first request even if a stale header comes along.
+    """
+    from .product import _is_prefetch
+    if _is_prefetch(request):
+        # A hover prefetch must never switch the ADOM.
+        return '', 204
+    bm = _visible_or_404(bid)
+    if bm.kind == KIND_APPLIANCE and bm.appliance_id is not None:
+        target = url_for('appliances.detail', id=bm.appliance_id)
+    elif bm.kind == KIND_LINK:
+        safe, _why = svc.safe_link_url(bm.url)
+        if not safe or not svc.internal_path(safe):
+            abort(404)           # not a page of this console: nothing to switch
+        target = safe
+    else:
+        abort(404)
+    return _switch_and_go(svc.home_adom(bm), target)
+
+
+@bp.route('/<int:bid>/favorite', methods=['POST'])
+@login_required
+def favorite(bid):
+    bm = _visible_or_404(bid)
+    svc.set_favorite(current_user, bm, request.form.get('favorite') == '1')
+    return _render(_q())
+
+
+@bp.route('/menu-favorite', methods=['POST'])
+@login_required
+def menu_favorite():
+    """The star on a sidebar entry. Keyed by the page's path, not an id: the
+    menu knows its links, not which bookmark (if any) already points there."""
+    f = request.form
+    try:
+        svc.set_menu_favorite(current_user, f.get('url', ''),
+                              f.get('label', ''), f.get('favorite') == '1')
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/hidden', methods=['POST'])
+@login_required
+def hidden(bid):
+    bm = _visible_or_404(bid)
+    try:
+        svc.set_hidden(current_user, bm, request.form.get('hidden') == '1')
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/share', methods=['POST'])
+@login_required
+def share(bid):
+    bm = _visible_or_404(bid)
+    try:
+        svc.share(bm, current_user)
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    # Publishing changes what every operator sees. An unaudited change of
+    # visibility is a change nobody can attribute afterwards.
+    log_action('bookmark.share', target=f'bookmark:{bm.id}',
+               detail=f'{bm.kind} "{_label(bm)}" shared with the team')
+    return _render(_q())
+
+
+@bp.route('/<int:bid>/delete', methods=['POST'])
+@login_required
+def delete(bid):
+    bm = _visible_or_404(bid)
+    shared, label, kind = bm.scope == SCOPE_TEAM, _label(bm), bm.kind
+    try:
+        svc.delete(bm, current_user)
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
+    if shared:
+        log_action('bookmark.delete', target=f'bookmark:{bid}',
+                   detail=f'shared {kind} "{label}" removed')
+    return _render(_q())
+
+
+@bp.route('/prefs', methods=['POST'])
+@login_required
+def prefs():
+    f = request.form
+    if 'open' in f:
+        try:
+            nodes = json.loads(f.get('open') or '[]')
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'reason': 'bad_open'}), 400
+        if not isinstance(nodes, list):
+            return jsonify({'ok': False, 'reason': 'bad_open'}), 400
+        UserSetting.set(current_user.id, K_OPEN,
+                        json.dumps([str(n) for n in nodes][:MAX_OPEN_KEYS]))
+    if 'showhidden' in f:
+        UserSetting.set(current_user.id, K_SHOWHIDDEN,
+                        '1' if f.get('showhidden') == '1' else '0')
+    if 'railclosed' in f:
+        UserSetting.set(current_user.id, K_COLLAPSED,
+                        '1' if f.get('railclosed') == '1' else '0')
+    db.session.commit()
+    return _render(_q())

@@ -1,0 +1,45 @@
+/* Shared Studio example browser — menu + submenu + search + collapsible code.
+   Self-contained light theme so it looks identical over the fw-light Lua/Plugin
+   editors AND the bootstrap-dark Python console. */
+.exb-modal{position:fixed;inset:0;background:rgba(16,32,52,.5);backdrop-filter:blur(3px);z-index:1050;display:none;align-items:stretch;justify-content:center;padding:32px 16px}
+.exb-panel{background:#fff;color:#1e293b;border-radius:14px;max-width:1120px;width:100%;max-height:calc(100vh - 64px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(2,6,23,.4)}
+.exb-head{display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #e5e9f0}
+.exb-head h2{font-size:16px;margin:0;font-weight:600;color:#0f172a;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.exb-head h2 .bi{color:#3b82f6}
+.exb-search{flex:1;border:1px solid #d7dde8;border-radius:8px;padding:8px 12px;font-size:14px;color:#1e293b;background:#f8fafc}
+.exb-search:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15);background:#fff}
+.exb-close{border:1px solid #d7dde8;background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;cursor:pointer;color:#475569;line-height:1;flex:0 0 auto}
+.exb-close:hover{background:#f1f5f9}
+.exb-body{display:grid;grid-template-columns:250px 1fr;flex:1;min-height:0}
+.exb-nav{border-right:1px solid #e5e9f0;overflow:auto;padding:10px;background:#f8fafc}
+.exb-cards{overflow:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-content:start}
+.exb-navitem,.exb-ghead,.exb-sub{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:none;background:none;cursor:pointer;border-radius:7px;font-size:13px;color:#334155;padding:7px 9px;font-family:inherit}
+.exb-ghead{font-weight:600;color:#0f172a;margin-top:2px}
+.exb-ghead .bi{font-size:11px;color:#94a3b8;flex:0 0 auto}
+.exb-sub{padding-left:26px;color:#475569;font-size:12.5px}
+.exb-navitem:hover,.exb-ghead:hover,.exb-sub:hover{background:#eef2f8}
+.exb-navitem.active,.exb-ghead.active,.exb-sub.active{background:linear-gradient(90deg,rgba(59,130,246,.14),rgba(139,92,246,.10));color:#1d4ed8;font-weight:600}
+.exb-all{font-weight:600;color:#0f172a}
+.exb-gname{flex:1;overflow:hidden;text-overflow:ellipsis}
+.exb-badge{margin-left:auto;background:#e2e8f0;color:#475569;border-radius:20px;font-size:11px;padding:1px 8px;font-weight:600;flex:0 0 auto}
+.exb-navitem.active .exb-badge,.exb-ghead.active .exb-badge,.exb-sub.active .exb-badge{background:#3b82f6;color:#fff}
+.exb-card{border:1px solid #e5e9f0;border-radius:11px;padding:13px;background:#fff;display:flex;flex-direction:column;gap:7px}
+.exb-card-h{display:flex;align-items:flex-start;gap:8px}
+.exb-title{font-weight:600;font-size:13.5px;color:#0f172a;flex:1;line-height:1.3}
+.exb-title .bi{color:#3b82f6;margin-right:4px}
+.exb-ins{flex:0 0 auto;border:none;background:linear-gradient(90deg,#3b82f6,#8b5cf6);color:#fff;border-radius:7px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer}
+.exb-ins:hover{filter:brightness(1.08)}
+.exb-desc{font-size:12px;color:#64748b;line-height:1.45}
+.exb-meta{font-size:11px;color:#94a3b8}
+.exb-ds{display:flex;flex-wrap:wrap;gap:4px}
+.exb-ds code{background:rgba(59,130,246,.1);color:#2563eb;border-radius:5px;padding:1px 6px;font-size:11px}
+.exb-tags{display:flex;flex-wrap:wrap;gap:4px}
+.exb-tags span{background:#f1f5f9;color:#64748b;border-radius:20px;padding:1px 8px;font-size:10.5px}
+.exb-codewrap{margin-top:2px}
+.exb-codewrap summary{cursor:pointer;font-size:11.5px;color:#3b82f6;user-select:none;list-style:none}
+.exb-codewrap summary::-webkit-details-marker{display:none}
+.exb-codewrap summary::before{content:"\25B8 ";color:#94a3b8}
+.exb-codewrap[open] summary::before{content:"\25BE "}
+.exb-code{margin:6px 0 0;background:#0b1220;color:#a5b4fc;border-radius:8px;padding:10px;font-size:11px;line-height:1.5;overflow:auto;max-height:280px;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace}
+.exb-empty{grid-column:1/-1;color:#94a3b8;font-size:14px;text-align:center;padding:48px 12px}
+@media(max-width:760px){.exb-body{grid-template-columns:1fr}.exb-nav{max-height:160px;border-right:none;border-bottom:1px solid #e5e9f0}}

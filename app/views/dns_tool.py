@@ -1,0 +1,313 @@
+"""DNS & LB Lookup page (Global → Fleet → DNS Lookup, mirrored per ADOM).
+
+The Global ADOM sees the whole fleet; a concrete ADOM (fortiweb / fortiadc)
+gets the SAME tool with the LB output cut to its own product — that scoping
+is inherited from ``visible_appliances()`` inside ``dns_tool.fleet_lb_rows``.
+DNS servers are variable, managed on their own admin page,
+Administrator › Objects › DNS Resolvers (``resolvers`` below). The list was a
+Settings pane until 2026-10-23, then briefly a card at the foot of the lookup
+page; the operator moved it to Objects the same day.
+"""
+from __future__ import annotations
+
+import json
+
+from flask import Blueprint, render_template, request, jsonify
+from flask_login import login_required, current_user
+
+from ..services import appids
+from ..services import dns_tool
+from ..services import dns_providers
+from ..services import dns_decommission
+from ..services.dns_providers import DnsRecord, ProviderError
+from ..services.product_scope import session_product
+from ..services.audit import log_action
+from ..auth.decorators import require_permission
+from ..models import Permission, visible_appliance_or_404
+
+bp = Blueprint("dns_tool", __name__, url_prefix="/dns-lookup")
+
+
+@bp.route("/", methods=["GET", "POST"])
+@login_required
+@require_permission('network.view')
+def index():
+    # The page and its plugin (Plugin Studio steps dns_page_context and
+    # dns_lb_lookup) are the same two calls: dns_tool.page_context / search.
+    # "appid" was an option until SA-0029: the AppID is always in the details.
+    # Exact match and Show TTL were options until SA-0029 (the operator
+    # removed them): matching is never exact, no TTL is shown. Quick LB stays.
+    # SA-0028: how each entry is looked up -- detected per entry (auto) or
+    # forced: element (config text), ip (address fields), fqdn (resolve,
+    # then the addresses). Applied here, on the server, never in the browser.
+    ctx = dns_tool.page_context(current_user)
+    ctx.update({"opts": {"lb": True, "quick": False}, "mode": "auto", "entries_raw": "",
+                "results": [], "not_found": [], "clip_dns": "", "clip_lb": "",
+                "searched": False, "lb_error": None})
+    if request.method == "POST":
+        ctx.update(dns_tool.search(request.form))
+    return render_template("dns_lookup/index.html", adom=session_product() or "global", **ctx)
+
+
+# ------------------------------------------------------------- SPO Regex
+# SA-0029: how this site's server policy / virtual server names become the
+# FQDN they publish. Everyone who can use the lookup sees the rules and can
+# try them; changing them is the resolvers' permission (console-wide data).
+
+@bp.route("/spo-regex", methods=["GET"])
+@login_required
+@require_permission('network.view')
+def spo_regex_get():
+    return jsonify(ok=True, rules=dns_tool.spo_rules(), max=dns_tool.SPO_RULES_MAX)
+
+
+@bp.route("/spo-regex", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def spo_regex_save():
+    body = request.get_json(silent=True) or {}
+    rows = body.get("rules")
+    if not isinstance(rows, list):
+        return jsonify(ok=False, error="rules must be a list"), 400
+    try:
+        saved = dns_tool.save_spo_rules(rows)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    log_action("dns_tool.spo_regex", target="dnstool.spo_regex",
+               detail=json.dumps(saved)[:400])
+    return jsonify(ok=True, rules=saved)
+
+
+@bp.route("/spo-regex/test", methods=["POST"])
+@login_required
+@require_permission('network.view')
+def spo_regex_test():
+    """Preview the rules in the dialog (saved or not) on names the operator
+    types or the page already shows. Nothing is stored, no device is read."""
+    body = request.get_json(silent=True) or {}
+    names = [str(n).strip()[:dns_tool.SPO_NAME_MAX] for n in (body.get("names") or [])
+             if str(n).strip()][:50]
+    rules = body.get("rules")
+    if rules is None:
+        rules = dns_tool.spo_rules()
+    if not isinstance(rules, list):
+        return jsonify(ok=False, error="rules must be a list"), 400
+    rules = [c for c in (dns_tool._clean_rule(r) for r in rules) if c][:dns_tool.SPO_RULES_MAX]
+    return jsonify(ok=True, results=dns_tool.spo_test(names, rules))
+
+
+@bp.route("/resolvers", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def resolvers():
+    """Administrator › Objects › DNS Resolvers: the console-wide resolver list
+    (AppSetting ``dnstool.servers``) every ADOM's lookup queries. The FULL
+    list, disabled rows too; ``index`` only queries the enabled ones. Saving
+    stays ``settings.save_dns_tool`` (POST /settings/dns-tool), which lands
+    back here."""
+    return render_template("dns_lookup/resolvers.html",
+                           dns_tool_servers=dns_tool.dns_servers())
+
+
+# ---------------------------------------------------------- Decommission
+# Retire a whole service from the row the operator is looking at: the LB
+# object and its exclusively-owned dependencies, the SNI member, the
+# certificate, the WAF profile, the carve-outs and the DNS records.
+#
+# Two endpoints, never one. ``/plan`` reads and returns what WOULD go;
+# ``/apply`` re-plans, checks the operator confirmed THAT plan by
+# fingerprint, and only then executes. A single endpoint with a `confirm`
+# flag would let a caller skip the preview entirely, and the preview is the
+# feature.
+
+
+def _decommission_args():
+    body = request.get_json(silent=True) or request.form or {}
+    try:
+        aid = int(body.get("appliance_id") or 0)
+    except (TypeError, ValueError):
+        aid = 0
+    return (aid, str(body.get("policy") or "").strip(),
+            str(body.get("hostname") or "").strip(), body)
+
+
+@bp.route("/decommission/plan", methods=["POST"])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def decommission_plan():
+    aid, policy, hostname, _body = _decommission_args()
+    if not aid or not policy:
+        return jsonify(ok=False,
+                       error="appliance_id and policy are required"), 400
+    appliance = visible_appliance_or_404(aid)
+    res = dns_decommission.plan(appliance, policy=policy, hostname=hostname)
+    return jsonify(**res), (200 if res.get("ok") else 400)
+
+
+@bp.route("/decommission/apply", methods=["POST"])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def decommission_apply():
+    aid, policy, hostname, body = _decommission_args()
+    if not aid or not policy:
+        return jsonify(ok=False,
+                       error="appliance_id and policy are required"), 400
+    appliance = visible_appliance_or_404(aid)
+    res = dns_decommission.apply(
+        appliance, policy=policy, hostname=hostname,
+        confirm=str(body.get("confirm") or ""),
+        acknowledge=bool(body.get("acknowledge")),
+        actor=getattr(current_user, "username", "") or "")
+    # Audited whichever way it went: a refused decommission is exactly the
+    # event an operator will look for afterwards.
+    log_action("dns_decommission.apply",
+               target="%s:%s" % (appliance.name, policy),
+               appliance_id=appliance.id,
+               detail=("ok=%s %s" % (res.get("ok"),
+                                     res.get("error") or
+                                     (res.get("summary") or {})))[:400])
+    return jsonify(**res), (200 if res.get("ok") else res.get("code", 400))
+
+
+# ------------------------------------------------------------- DNS Records
+# CRUD against a CHOSEN DNS backend (EfficientIP / phpIPAM / NetBox), driven
+# by the +DNS Records modal. Admin-only (USER_MANAGE); every write is audited.
+# Backends are configured in Settings → DNS Records, and the modal adapts to
+# whichever one is selected (capabilities from schema()).
+#
+# The backend is part of every request rather than a server-side "current"
+# one. A selection remembered in the session would be a second author of the
+# same decision, and the record the operator was looking at could be written
+# to a different system from the one whose records they had just listed.
+
+
+def _records_backend():
+    """The backend this request acts on, or a 400 explaining why there isn't one.
+
+    An explicit ``backend_id`` always wins. With exactly ONE DNS backend
+    configured the choice is made without asking — that is not a guess, it is
+    the only answer. With two or more and nothing named, the request is
+    REFUSED: picking the first row would write into whichever zone happened to
+    sort first, which is the failure this whole module was restructured to
+    make impossible.
+    """
+    rows = dns_providers.enabled_backends("dns")
+    if not rows:
+        return None, (jsonify(
+            error="No backend carries the DNS role. Configure one in "
+                  "Settings -> DNS Records."), 400)
+    body = request.get_json(silent=True) or {}
+    raw = (request.args.get("backend_id")
+           or body.get("backend_id")
+           or request.form.get("backend_id") or "")
+    raw = str(raw).strip()
+    if raw:
+        for row in rows:
+            if str(row.id) == raw:
+                return row, None
+        return None, (jsonify(
+            error="That DNS backend is gone, disabled, or no longer carries "
+                  "the DNS role."), 400)
+    if len(rows) == 1:
+        return rows[0], None
+    return None, (jsonify(
+        error="%d DNS backends are configured — say which one this record "
+              "belongs to." % len(rows),
+        backends=[{"id": r.id, "name": r.name} for r in rows]), 400)
+
+
+def _provider_or_400():
+    """Kept as the single call shape the five handlers below use."""
+    row, err = _records_backend()
+    if err:
+        return None, None, err
+    return row, row.instance(), None
+
+
+@bp.route("/records/schema", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_schema():
+    """The chosen backend's capabilities — the modal renders itself from this."""
+    row, prov, err = _provider_or_400()
+    if err:
+        return err
+    try:
+        caps = prov.capabilities().as_dict()
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    return jsonify(capabilities=caps, backend={"id": row.id, "name": row.name,
+                                               "zones": row.zone_list()})
+
+
+@bp.route("/records/list", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_list():
+    _row, prov, err = _provider_or_400()
+    if err:
+        return err
+    name = (request.args.get("name") or "").strip()
+    zone = (request.args.get("zone") or "").strip()
+    try:
+        records = prov.list_records(name=name, zone=zone)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    return jsonify(records=[r.as_dict() for r in records])
+
+
+@bp.route("/records", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_create():
+    row, prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.name or not rec.value:
+        return jsonify(error="Name and value are required."), 400
+    try:
+        saved = prov.create_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.create",
+               target=f"{row.name}:{rec.type} {rec.name}")
+    return jsonify(record=saved.as_dict()), 201
+
+
+@bp.route("/records", methods=["PUT"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_update():
+    row, prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.id:
+        return jsonify(error="Record id is required."), 400
+    try:
+        saved = prov.update_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.update",
+               target=f"{row.name}:{rec.type} {rec.name}")
+    return jsonify(record=saved.as_dict())
+
+
+@bp.route("/records", methods=["DELETE"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_delete():
+    row, prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.id:
+        return jsonify(error="Record id is required."), 400
+    try:
+        prov.delete_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.delete",
+               target=f"{row.name}:{rec.type} {rec.name}")
+    return jsonify(ok=True)

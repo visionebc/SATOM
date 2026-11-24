@@ -1,0 +1,322 @@
+# SATOM — Web Edition
+
+A multi-user **Flask web platform for managing fleets of Fortinet appliances**
+— **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), **FortiAnalyzer**
+(logs & analytics), **FortiAuthenticator** (identity) and **FortiGate**
+(read live, with dry-run-first object edits) — over their REST/JSON-RPC APIs and
+SSH/CLI, with a local, queryable copy of every device's configuration (FortiGate
+excepted: it is always read live) so the UI stays fast even when the appliances
+are slow, unreachable, or license-locked.
+
+> **Not a firewall manager.** SATOM manages application-delivery, identity and
+> analytics appliances. Its FortiGate workspace reads a FortiGate's
+> configuration live and can edit it one object at a time: the pages drawn
+> from the unit's measured GUI layout save `cmdb` objects (dry run first, then
+> an audited apply that is read back and verified, `config_write`), and the
+> FortiGate API console sends `POST`/`PUT`/`DELETE` to `/api/v2/cmdb/` only,
+> dry-run by default (`registry.execute_write` to apply). It never calls the
+> monitor tree's actions (reboot, restore, firmware) and keeps no FortiGate
+> configuration copy, backups, templates or fleet rollouts: it is **not** a
+> FortiManager or a FortiGate/NGFW policy tool. See
+> [docs/fortigate.md](docs/fortigate.md).
+
+- **Version:** see [`VERSION`](VERSION) · **Status:** production · **License:** [Elastic License 2.0](LICENSE) · [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release pipeline](docs/release-pipeline.md)
+- **~60 Flask blueprints · ~80 service modules · ~24,000 unit/integration tests · 500 tracked files**
+
+> ⚠️ **Trademark:** SATOM is an independent source-available project, **not
+> affiliated with or endorsed by Fortinet, Inc.** "Fortinet", "FortiWeb",
+> "FortiADC", "FortiAnalyzer" and related marks belong to Fortinet, Inc. and are
+> used here only nominatively to describe interoperability. See [NOTICE](NOTICE).
+>
+> Provided **AS IS, without warranty** (Elastic License 2.0, *No Liability*). You
+> are responsible for how you deploy and operate it. See [SECURITY.md](SECURITY.md).
+
+> 📜 **Licensing:** SATOM is **source-available** under the
+> [Elastic License 2.0](LICENSE), not an OSI open-source license. You may use,
+> modify and run it inside your own organisation — including in production and
+> for commercial purposes — at no cost. You may **not** provide it to third
+> parties as a hosted or managed service. For a commercial license covering
+> that, contact **licensing@visionebc.com**.
+
+---
+
+## What it does
+
+| Area | Highlights |
+|---|---|
+| **Server Policy management** | FortiWeb-style policy table + editable detail form, minimal-diff saves, guided **clone / migrate** across devices (pre-flight checklist, dummy-VIP rules, WPP handling), safe cascade delete |
+| **Web Protection (WAF)** | Full mirror of the FortiWeb 7.6 GUI menu — Signatures editor (category / details / per-signature exceptions), 166 curated object kinds ported from the desktop app, guided WAF exceptions with template locks and lifecycle tracking |
+| **Generic object editor** | Any of ~500 registry endpoints editable through one spec-driven form engine (`objedit`) — stacked slide-over panels, create-references-in-place, sub-tables, dry-run previews on every write |
+| **Device operations** | Discovery / rediscovery, deep capture, config backups (REST with SSH fallback), restore vault, firmware upgrade runbooks, boot-partition management, SSH console with read-only presets |
+| **Fleet visibility** | Architecture network diagram (SVG, DB-first), fleet-wide object search, FortiView analysis + packet capture, DNS & LB lookup tool, metrics dashboard, certificate inventory |
+| **Certificates** | Central Certificate Manager — issuance via **ADCS or ACME** (switchable), lifecycle policy (revoke-on-supersede, expiry sweeps), SNI policies, key upload over SSH, REST deploy to FortiADC |
+| **Automation** | Scheduled actions (cron-style catalog: backups, syncs, cert scans, upgrades), **Change Requests** (maintenance-window approval gates for risky work), background jobs with pause / resume / stop |
+| **Multi-product (ADOMs)** | Three workspaces — **Global** `/`, **FortiWeb** `/web/`, **FortiADC** `/adc/` — with per-browser-tab product context and strict data scoping between products |
+| **Integration API** | Versioned `/api/v1` with scoped bearer tokens (`read ⊂ write ⊂ admin`, owner-capped, product-bound) — deliberately narrow and read-biased |
+| **Reporting** | Report Builder (no-SQL wizard + 7 built-in reports), live ER diagram of the schema, system backup/restore bundles |
+
+## Feature catalog
+
+The complete list, grouped by area. Everything below ships in this repository today.
+
+### Policy & WAF management (FortiWeb)
+- Server Policy table mirroring the FortiWeb GUI, with an editable detail form and **minimal-diff saves** (only changed fields are written to the device).
+- Guided **policy clone / migrate across devices**: pre-flight checklist, dummy-VIP rules, Web Protection Profile handling, reference resolution.
+- Safe **cascade delete** with dependency preview before anything is removed.
+- Full **Signatures editor** — category view, per-signature details, and per-signature exception management.
+- **Guided WAF exceptions** with template locks and lifecycle tracking (detect → inject → review).
+- Web Protection area mirroring the FortiWeb 7.6 GUI menu, with 166 curated object kinds ported from the original desktop app.
+
+### Generic object management
+- **Spec-driven form engine (`objedit`)** that makes ~500 registry endpoints editable through one engine: stacked slide-over panels, create-references-in-place, sub-tables, and a **dry-run preview on every write**.
+- **Endpoint registry in the database** (per product and API version) — when a firmware upgrade moves a REST URI, the operator fixes it from the UI instead of waiting for a code release.
+- **Live API consoles** for each product (FortiWeb, FortiADC, FortiAnalyzer) with audited, permission-gated writes.
+- Fleet-wide **object search** across every device's cached configuration.
+- Naming-convention rules, section catalog / taxonomy, field catalogs, and datasheets.
+
+### Multi-product workspaces (ADOMs)
+- Three scoped workspaces — **Global** `/`, **FortiWeb** `/web/`, **FortiADC** `/adc/` — with per-browser-tab product context and strict data scoping.
+- **FortiADC**: load-balancer objects, virtual servers, real-server pools, LB lookup, certificate deploy over REST.
+- **FortiAnalyzer**: full JSON-RPC integration speaking **both API dialects** (legacy envelope and `apiver: 3`), live menu bound to the endpoint registry, Device Manager (dvmdb) views.
+
+### Device operations
+- Discovery / rediscovery and **deep capture** of whole device configurations into a normalized local cache (DB-first reads, refresh-live escape hatch).
+- Config **backups over REST with automatic SSH/CLI fallback**, and a restore **vault** (device-level restore is dry-run gated).
+- **Firmware upgrade runbooks** and boot-partition management.
+- Built-in **SSH console** with read-only command presets.
+- Provisioning workflows, hardware inventory, and capacity views.
+
+### Source of truth & backups
+- **Configuration source of truth**: every appliance's config is harvested into per-device JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and recorded as a hashed, versioned snapshot in a local content-addressed store (`data/sot/`, index in PostgreSQL); an unchanged config writes no new version. The store is replicated to the standby, carried in every system backup bundle and pushed off-box to the backup server. Git no longer carries device configuration. A naming note: this "source of truth" is the history of the **actual** configuration — in the terms of the NAF Framework it is *Observability*, not *Intent* (see [docs/naf-alignment.md](docs/naf-alignment.md)).
+- **System Backup & Restore page**: database bundles (pg_dump), device vault, application-code versions with **one-click code rollback**, and an embedded recovery runbook.
+- **Backup coverage matrix**: every backup stream (code, live DB, DB bundles, device SoT, vault, appliance-pushed configs, firmware) with format, destinations, cadence, and a **live state badge**, plus a per-device SoT freshness strip.
+- **External backup server integration** (SFTP): inventory of configs the appliances push on their own schedule, with per-device **browse / compare / search / download** modals — including a parser for FortiWeb's multi-file backup container format.
+- **Firmware library**: every image indexed in the database with its sha256, binaries on the node (`data/firmware/`) and inside every backup bundle, retired images archived on the backup server, and a **pull into the console** from the backup server for restore/upgrade.
+- **A→B diff** between any two recorded versions of a device's configuration, served from the local SoT store (no git involved).
+- Peer backup inventory over an unauthenticated health probe, so each node renders the other's inventory without SSH.
+
+### High availability
+- **Two-node HA**: primary + standby with **PostgreSQL streaming replication** and a role-guarded 5-minute data sync (vault, bundles, runtime data).
+- Replication is **TLS-enforced with mutual certificate verification** against an internal CA; plain or cert-less connections are refused.
+- Git-driven **reconciler** keeps deployments converged with the repository (manual mode supported).
+- Cluster status page and node-to-node **HTTPS probes authenticated with a shared identity key**.
+
+### Security
+- Local user management with **two-factor authentication**, directory/LDAP auth, and granular RBAC permissions.
+- **Audit log** on every write path; change history preserved.
+- **Change Requests**: maintenance-window approval gates for risky operations.
+- **Scoped API tokens** for the versioned `/api/v1` (`read ⊂ write ⊂ admin`, owner-capped, product-bound, deliberately read-biased).
+- Secrets encrypted at rest (Fernet); nonce-based CSP; rate limiting; object locks.
+- **Node TLS manager** in Settings: import a certificate or issue one from the built-in **internal CA**, with automatic nightly renewal and `nginx -t` + auto-rollback on bad imports.
+- **PostgreSQL TLS policy** (min protocol / ciphers) tunable from the UI.
+- **Encryption-in-transit monitoring**: per-channel cards (app↔app, app↔DB, replication, git) where every badge is backed by a **live probe** — protocol, cipher, enforced, authenticated.
+
+### Automation & self-management
+- **Scheduled actions** catalog (cron-style): config syncs, backups, certificate scans, deep captures, nightly device inspections — per-product targeting.
+- Background **jobs with pause / resume / stop**.
+- **Self-update from the UI**: the web tier only enqueues; a privileged systemd runner performs the update with a per-step log (expandable in the UI) and health verification.
+- **Library manager**: PyPI update checks (cached, off the render path) plus per-package **pip upgrade / rollback buttons** — curated allowlist only, import-smoke test, health check, and automatic rollback on failure; `requirements.txt` is bumped and pushed automatically on success.
+
+### Certificates
+- Central **Certificate Manager** with issuance via **ADCS or ACME** (switchable).
+- Lifecycle policy: revoke-on-supersede, expiry sweeps, SNI policies.
+- Private-key upload over SSH and **REST deploy to FortiADC**; certificate inventory and live probes across the fleet.
+
+### Observability & analysis
+- Monitoring dashboard, metrics, infrastructure health, and system health/info pages.
+- **FortiView traffic analysis** and packet capture.
+- **DNS & LB lookup tool**, log collection, flash reports, capacity planning.
+- Notifications with e-mail delivery; release-notes tracker; in-app documentation viewer.
+
+### Reporting
+- **Report Builder**: no-SQL wizard plus 7 built-in reports.
+- Live **ER diagram** of the schema and database introspection views.
+
+### Developer & power tools
+- **Lua Studio** and **Regex Lab** with curated example libraries.
+- **Plugin system** with a sandboxed runtime and examples.
+- API explorer, import-from-backup, structure / segments / classification tooling, baselines, and built-in bug reporting.
+
+### Deployment
+- **Interactive Linux installer** — online (any major distro family), or fully **air-gapped offline bundles** per family: Debian 12 (.deb closure) and RHEL/Rocky/Alma 9 (local dnf repository), each with the Python wheels included.
+- Installs **standalone or as a 2-node cluster**: the primary generates a join key; the secondary pastes it and replication, shared keys, and its own locally-minted certificate are set up automatically.
+- systemd units, nginx TLS front, gunicorn app server, PKI bootstrap — plus a sysadmin manual (`docs/INSTALL.md`) covering requirements, sudo/sudoers, hardening, and uninstall.
+- ~24,000 unit/integration tests.
+
+## Architecture at a glance
+
+```
+Browser (Turbo Drive, nonce-based CSP, per-tab ADOM header)
+   │ HTTPS
+Edge reverse proxy (nginx: TLS, gzip, static cache)
+   │
+Gunicorn (4 workers × 8 threads) ── Flask app factory (app/)
+   │            │                        │
+PostgreSQL      Redis                 Scheduler sidecar (systemd)
+(source of      (rate-limit +
+ truth + device  shared cache)
+ config cache)
+   │
+   ├── httpx REST clients ───► FortiWeb / FortiADC appliances
+   └── paramiko SSH ─────────► CLI-only tasks (backups, captures, cert upload)
+```
+
+The defining design choice is **DB-first reads**: pages render from a
+normalized local cache of each device's whole configuration
+(`device_objects`, populated by rediscovery / deep capture) with an explicit
+*refresh-live* escape hatch — instead of hammering the appliance management
+plane on every page load. See [docs/engineering.md](docs/engineering.md).
+
+### Where SATOM sits in the NAF Framework
+
+SATOM is **conformant to the NAF Framework** (self-assessed; the forum
+issues no certification) — the Network Automation Forum's vendor-neutral
+reference model of six functional blocks (Intent, Executor, Collector,
+Observability, Orchestrator, Presentation) around the network
+infrastructure — at its pinned commit `da82b12`
+(https://reference.networkautomation.forum/Framework/Framework/, CC0 1.0).
+The mapping translates SATOM's names into the framework's (what SATOM calls
+the *Source of Truth* is the framework's *Observability*, not its *Intent*)
+and records, requirement by requirement, what is met, what is partial and
+what is deliberately not pursued. Every MUST requirement is met; three
+SHOULD/MAY rows stay partial by design (single vendor). The status line and
+the matrix live in one place and are checked by a test:
+[docs/naf-alignment.md](docs/naf-alignment.md).
+
+## Quick start
+
+**Guided install** (Debian/Ubuntu, RHEL/Rocky/Alma 9, openSUSE/SLES 15): download
+`satom-setup.sh` from the [release](https://github.com/visionebc/SATOM/releases)
+and run `sudo bash satom-setup.sh`. It checks the machine, then installs natively
+(systemd, through `install-satom.sh`) or as a Docker stack — the Docker variant
+disables the four host-only web actions (Software Update & HA, service control,
+certificate activation, systemd unit health). See
+[docs/INSTALL.md §2](docs/INSTALL.md).
+
+Manual install — requires a Debian-family host with Python 3.11+ and PostgreSQL.
+
+```bash
+# put the source at /opt/satom (git clone / tarball)
+cd /opt/satom
+sudo ./scripts/install.sh          # online install
+# or, air-gapped:
+./scripts/build_offline_bundle.sh  # on a connected twin host
+sudo ./scripts/install.sh --offline
+```
+
+The installer provisions PostgreSQL, generates `SECRET_KEY` / `FERNET_KEY`
+into `.env`, runs Alembic migrations, installs the systemd unit, **issues a TLS
+certificate and puts nginx in front** — gunicorn binds loopback only, the
+console answers on `https://<host>/`, and plain `http://` redirects to it with
+a `301`.
+
+The certificate is self-signed by a per-node internal CA, so the browser warns
+on the first visit. That is deliberate: the node works on day zero and you
+replace the certificate when you are ready, with
+
+```bash
+sudo ./deploy/tls-bootstrap.sh import-cert --cert fullchain.pem --key privkey.pem
+sudo systemctl reload nginx
+```
+
+An imported certificate is never overwritten by re-running the installer.
+First login: user `admin`. There is no default password — pass your own with
+`--admin-password=…` (or `SATOM_ADMIN_PASSWORD`), or let the installer generate
+one: it is written only to `/opt/satom/initial-admin-password` (root-only,
+`0600`) and the installer prints that path when it finishes. **Change it after
+the first login and delete the file.** Re-running the installer never changes
+an existing admin's password (the app also supports per-account lockout, TOTP
+2FA, and LDAP/RADIUS directory auth).
+
+Full install/upgrade/backup notes: [docs/INSTALL.md](docs/INSTALL.md).
+
+## Documentation
+
+Three levels, written for three audiences:
+
+| Manual | Audience | Contents |
+|---|---|---|
+| [**User Guide**](docs/user-guide.md) | Operators & engineers using the UI | Every screen and workflow: devices, policies, WAF, exceptions, certificates, automation, troubleshooting |
+| [**Engineering Manual**](docs/engineering.md) | Developers & platform admins | Architecture, data layer, registry, clients, jobs framework, security engineering, testing, deployment, conventions & gotchas |
+| [**Management Overview**](docs/management-overview.md) | Non-technical stakeholders | What it is, business value, risk posture, costs, roadmap — no jargon |
+| [**Safeguards**](docs/safeguards.md) | Operators, auditors, reviewers | Every protection in one page: what it prevents, where it lives, and the commands to verify it is armed |
+
+Reference documents (deep dives):
+
+- [docs/overview.md](docs/overview.md) — project overview & operational rules
+- [docs/safeguards.md](docs/safeguards.md) — the guard-rail catalog (anti-reset, verified updates, single-writer HA, alerts)
+- [docs/privilege-model.md](docs/privilege-model.md) — service account, sudo allowlist, privileged runner, HA trust
+- [docs/git-backup-and-outage.md](docs/git-backup-and-outage.md) — surviving a git-server outage; repository bundles
+- [docs/encryption-and-node-tls.md](docs/encryption-and-node-tls.md) — TLS in transit, node identity, enforced Postgres SSL
+- [docs/acme-certificate-manager.md](docs/acme-certificate-manager.md) — ACME issuance & the DNS-provider catalog
+- [docs/api_v1.md](docs/api_v1.md) — API v1 integration manual (tokens, endpoints, examples)
+- [docs/server_policy.md](docs/server_policy.md) — Server Policy object model, field-level
+- [docs/web_protection_profile.md](docs/web_protection_profile.md) — WPP / WAF dependency graph
+- [docs/wpp_exceptions.md](docs/wpp_exceptions.md) — WAF exceptions workflow & data model
+- [docs/naf-alignment.md](docs/naf-alignment.md) — SATOM mapped to the NAF Framework: naming table and conformance matrix
+- [docs/source-of-truth-spec.md](docs/source-of-truth-spec.md) — device cache / source-of-truth spec
+- [docs/fortiadc.md](docs/fortiadc.md) — FortiADC REST conventions
+- [docs/fortigate.md](docs/fortigate.md) — the FortiGate workspace
+- [docs/release_notes.md](docs/release_notes.md) — vendor release-notes corpus (from signed packs) & upgrade planning
+- [docs/knowledge-harvester.md](docs/knowledge-harvester.md) — where the API and knowledge packs come from
+- [docs/upgrading-to-3.0.md](docs/upgrading-to-3.0.md) — what 3.0 changes and what to do when you update
+- [docs/INSTALL.md](docs/INSTALL.md) — install & migrate
+
+## Tech stack
+
+Python 3.11+ · Flask 3 · SQLAlchemy 3 / Alembic · PostgreSQL · Redis ·
+gunicorn · httpx · paramiko · cryptography (Fernet) · Flask-Login /
+Flask-WTF / Flask-Limiter · ldap3, pyotp, pyrad (directory auth + 2FA) ·
+Hotwire Turbo (no SPA framework, CSP-safe vanilla JS) · reportlab / pdfplumber
+(reports).
+
+## Testing
+
+```bash
+# in a development checkout, never on a production node
+TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q tests/test_<module>.py
+```
+
+About 24,000 tests across 775 files run without a device, a display, or
+network — clients are duck-typed and faked. Run the files of the modules you
+changed; the full suite is a separate, deliberate run. See the testing chapter
+of the [Engineering Manual](docs/engineering.md#10-testing).
+
+## Security model (summary)
+
+- RBAC (readonly / operator / admin profiles) + per-permission gates on every write
+- Every device write goes through a **dry-run-first** pipeline with snapshot,
+  audit log and change history; destructive actions sit behind approval
+  workflows (Change Requests)
+- Strict CSP (`script-src-attr 'none'`, nonce-based scripts/styles), CSRF
+  everywhere, per-account lockout, Redis-backed rate limiting
+- Appliance credentials Fernet-encrypted at rest; `.env` holds the only
+  non-regenerable secret (`FERNET_KEY`)
+- Hardened systemd unit (non-root user, `ProtectSystem=strict`, `PrivateTmp`)
+
+Details: [Engineering Manual §8](docs/engineering.md#8-security-engineering).
+
+## Repository layout
+
+```
+app/
+  __init__.py        app factory, blueprint registry, product (ADOM) gate
+  models*.py         SQLAlchemy models (users, appliances, cache, certs, jobs…)
+  clients/           REST clients (FortiWeb, FortiADC) + platform factory
+  registry/          versioned endpoint catalog (DB-backed, YAML seed)
+  services/          ~80 business-logic modules (no Flask views inside)
+  views/             ~60 blueprints (thin HTTP layer over services)
+  api_v1/            the public token API
+  templates/ static/ Jinja templates + CSP-safe JS
+docs/                the manuals you are reading
+migrations/          Alembic
+scripts/             install.sh, offline bundle builder, operational scripts
+tests/               ~24,000 pytest tests (no device needed)
+deploy/              systemd units and deployment artifacts
+```
+
+## Credits
+
+Developed and maintained by **Vision EBC**. Portions of this project were
+built with AI-assisted development tooling; all changes are reviewed, tested
+(about 24,000 automated tests) and validated on real appliances before release.

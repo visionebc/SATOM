@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% block title %}{{ _('Review the recognition') }} — {{ _('Diagram Studio') }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('diagram_studio.index') }}">{{ _('Diagram Studio') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('diagram_studio.import_page') }}">{{ _('Import') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Review') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<ol class="ds-stepper" aria-label="{{ _('Import steps') }}">
+  <li class="ds-step done" data-step="1">{{ _('Import') }}</li>
+  <li class="ds-step done" data-step="2">{{ _('Recognition') }}</li>
+  <li class="ds-step" data-step="3" aria-current="step">{{ _('Review') }}</li>
+  <li class="ds-step" data-step="4">{{ _('Editor') }}</li>
+  <li class="ds-step" data-step="5">{{ _('Export') }}</li>
+</ol>
+
+<div class="ds-review" id="dsReview">
+  <div class="ds-center">
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+      <div class="ds-pages me-auto" id="rvTabs" role="tablist" aria-label="{{ _('Pages') }}"></div>
+      <div class="ds-toolbar" role="toolbar" aria-label="{{ _('Review tools') }}">
+        <button type="button" id="rvUndo" class="btn btn-sm ds-tb" title="{{ _('Undo (Ctrl+Z)') }}" aria-label="{{ _('Undo') }}" disabled><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+        <button type="button" id="rvGroup" class="btn btn-sm ds-tb" title="{{ _('Group the selected shapes (Shift+click to select several)') }}" aria-label="{{ _('Group selection') }}"><i class="bi bi-collection" aria-hidden="true"></i></button>
+        <button type="button" id="rvUngroup" class="btn btn-sm ds-tb" title="{{ _('Ungroup') }}" aria-label="{{ _('Ungroup') }}"><i class="bi bi-grid-3x3" aria-hidden="true"></i></button>
+        <button type="button" id="rvZoomOut" class="btn btn-sm ds-tb" title="{{ _('Zoom out') }}" aria-label="{{ _('Zoom out') }}"><i class="bi bi-zoom-out" aria-hidden="true"></i></button>
+        <button type="button" id="rvFit" class="btn btn-sm ds-tb" title="{{ _('Fit the drawing') }}" aria-label="{{ _('Fit the drawing') }}"><i class="bi bi-aspect-ratio" aria-hidden="true"></i></button>
+        <button type="button" id="rvZoomIn" class="btn btn-sm ds-tb" title="{{ _('Zoom in') }}" aria-label="{{ _('Zoom in') }}"><i class="bi bi-zoom-in" aria-hidden="true"></i></button>
+      </div>
+    </div>
+    <div class="ds-canvas-wrap" id="rvWrap">
+      <svg id="rvCanvas" tabindex="0" role="img" aria-label="{{ _('Recognised diagram. Flagged items are listed on the right.') }}"></svg>
+      <div id="rvPick" class="ds-pickmode fw-badge fw-badge-info ds-badge" hidden role="status" aria-live="assertive"></div>
+    </div>
+    <ul class="ds-legend small list-inline mt-1 mb-0" aria-label="{{ _('Legend') }}">
+      <li class="list-inline-item"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> {{ _('dashed amber outline: low confidence') }}</li>
+      <li class="list-inline-item"><i class="bi bi-question-circle" aria-hidden="true"></i> {{ _('dotted violet outline: unclassified') }}</li>
+      <li class="list-inline-item"><i class="bi bi-plug" aria-hidden="true"></i> {{ _('dotted line: dangling connector') }}</li>
+      <li class="list-inline-item"><i class="bi bi-bezier2" aria-hidden="true"></i> {{ _('amber halo and "!": low-confidence connector') }}</li>
+      <li class="list-inline-item"><i class="bi bi-cursor" aria-hidden="true"></i> {{ _('click any shape or connector to edit it; S and T mark the two ends of a connector') }}</li>
+    </ul>
+  </div>
+
+  <aside class="ds-right">
+    <section class="fw-card ds-panel" aria-labelledby="rvIssuesTitle">
+      <div class="ds-panel-head"><i class="bi bi-clipboard-check" aria-hidden="true"></i><h2 id="rvIssuesTitle" class="me-auto">{{ _('To review') }}</h2>
+        <span id="rvCount" class="small ds-muted" role="status" aria-live="polite"></span></div>
+      <div class="ds-panel-body">
+        <div id="rvSelected" class="ds-selected-box mb-2" hidden aria-live="polite" aria-label="{{ _('Selected item') }}"></div>
+        <div id="rvSummary" class="mb-2"></div>
+        <button type="button" id="rvAcceptHigh" class="btn btn-sm btn-fw-secondary mb-2" title="{{ _('Accept every flagged item whose recognition confidence is high') }}"><i class="bi bi-check2-all me-1" aria-hidden="true"></i>{{ _('Accept all high-confidence') }}</button>
+        <div id="rvIssues"></div>
+      </div>
+    </section>
+    <section class="fw-card ds-panel" aria-labelledby="rvSaveTitle">
+      <div class="ds-panel-head"><i class="bi bi-save" aria-hidden="true"></i><h2 id="rvSaveTitle">{{ _('Create the diagram') }}</h2></div>
+      <div class="ds-panel-body">
+        <label for="rvName" class="form-label small mb-1">{{ _('Name') }}</label>
+        <input type="text" id="rvName" class="form-control form-control-sm" maxlength="200" required>
+        <label for="rvFolder" class="form-label small mb-1 mt-2">{{ _('Folder') }}</label>
+        <select id="rvFolder" class="form-select form-select-sm"><option value="">{{ _('Unfiled') }}</option></select>
+        <div class="ds-btnrow mt-3">
+          <button type="button" id="rvAccept" class="btn btn-sm btn-fw-primary" disabled><i class="bi bi-check-lg me-1" aria-hidden="true"></i>{{ _('Accept and open the editor') }}</button>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index')}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_routing.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_render.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_review.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

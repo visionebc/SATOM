@@ -1,0 +1,853 @@
+{% extends "base.html" %}
+{% block title %}{{ policy.name or policy_name }} — Server Policy{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">{{ _('Server Policy') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}">{{ appliance.name if appliance else 'Appliance' }}</a>
+  <span class="separator">/</span><span>{{ policy.name or policy_name }}</span>
+</div>
+{% endblock %}
+
+{% from "workspace/_fields.html" import fld, savebar, switch %}
+{% from "_not_in_gui.html" import nig_editable %}
+
+{% block content %}
+{% if not current_user.can('config_write') %}
+{# Read-only viewer: every save/create route behind these controls needs
+   config_write. Hidden with CSS rather than removed, so the page script that
+   binds them keeps finding its elements. #}
+<style nonce="{{ csp_nonce }}">
+.fw-save, .fw-cr-save, .fw-cr-delete, .fw-create, .fw-edit-ref,
+[data-js="cr-new-open"], [data-js="cr-add-row"], [data-js="save-scope"],
+[data-js="pool-new-open"], [data-js="apply-pending"] { display: none !important; }
+</style>
+<div class="fw-alert fw-alert-info mb-2" data-readonly-note>{{ _('Read-only: changing this policy needs the config_write permission.') }}</div>
+{% elif appliance %}
+{# Edit leases (lock.js): one per object this page writes, so a second user --
+   or this user in another tab -- sees who holds it and cannot overwrite it.
+   Each section names its lease with data-lease-key. #}
+<div class="fw-lock-guards">
+  <div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key(eps.policy, policy_name) }}"></div>
+  {% if pool_name %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key(eps.pool, pool_name) }}"></div>{% endif %}
+  {% if vserver_name %}<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ lease_key('server-policy/vserver', vserver_name) }}"></div>{% endif %}
+</div>
+{% endif %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-shield-fill-check me-2 text-accent"></i>{{ policy.name or policy_name }}
+      <span class="fw-badge fw-badge-secondary" title="{{ _('The server-policy name is the object key and cannot be changed') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('name locked') }}</span>
+    </h1>
+    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+      {% if policy %}
+        {% if policy_on %}<span class="fw-status fw-status-online"><span class="fw-status-dot"></span>{{ _('Enabled') }}</span>
+        {% else %}<span class="fw-status fw-status-offline"><span class="fw-status-dot"></span>{{ _('Disabled') }}</span>{% endif %}
+        {% if policy.get('deployment-mode') %}<span class="fw-badge fw-badge-secondary">{{ policy.get('deployment-mode') }}</span>{% endif %}
+        {% if policy.get('protocol') %}<span class="fw-badge fw-badge-info">{{ policy.get('protocol') }}</span>{% endif %}
+      {% endif %}
+      <span class="text-muted" style="font-size:12px;">on {{ appliance.name if appliance else '' }}</span>
+    </div>
+  </div>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}" class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back to Policies') }}
+  </a>
+</div>
+
+{% if cache_freshness %}<div class="mb-2"><span class="fw-badge fw-badge-success" title="{{ _('Served from the local source of truth (PostgreSQL deep capture). Use \'Refresh from device\' on the policy list to pull live config.') }}"><i class="bi bi-database me-1"></i>{{ cache_freshness }}</span></div>{% endif %}
+{% if error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ error }}</div>{% endif %}
+{% if not policy and not error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ _('The device returned no data for this policy.') }}</div>{% endif %}
+
+{% if policy_links %}
+<!-- ─────────────── Dynamic Policy Links (Settings → Policy Links) ─────────────── -->
+<div class="fw-card mb-3">
+  <div class="fw-card-body d-flex align-items-center flex-wrap" style="gap:8px;">
+    <span class="text-muted me-1" style="font-size:12px;"><i class="bi bi-link-45deg me-1"></i>{{ _('Links') }}</span>
+    {% for l in policy_links %}
+    <a href="{{ l.url }}" class="btn btn-sm btn-fw-outline"{% if l.new_tab %} target="_blank" rel="noopener noreferrer"{% endif %}>
+      <i class="bi bi-box-arrow-up-right me-1"></i>{{ l.label }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ─────────────── Service Topology & Backend Health ─────────────── -->
+<div class="fw-card mb-3" id="topoCard">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3-fill me-2 text-accent"></i>Service Topology &amp; Backend Health</span>
+    {% if appliance and appliance.kind == 'fortiweb' %}
+    <button type="button" class="btn btn-sm btn-fw-outline" id="fwHealthBtn"
+            data-url="{{ url_for('workspace.policy_health', appliance_id=appliance.id, name=policy_name) }}"
+            title="{{ _('Query the device live (policy status monitor) for the REAL per-backend health-check state') }}">
+      <i class="bi bi-heart-pulse me-1"></i>{{ _('Check live health') }}</button>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    {% set st_colors = {'enable':'#10b981','enabled':'#10b981','disable':'#ef4444','disabled':'#ef4444','maintain':'#fbbf24','maintenance':'#fbbf24'} %}
+    {% set pcol = '#10b981' if policy_on else '#ef4444' %}
+    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+      <span class="fw-topo-node" title="Server policy — {{ 'Enabled' if policy_on else 'Disabled' }}" style="border-color:{{ pcol }};">
+        <span class="fw-topo-dot" style="background:{{ pcol }};"></span><i class="bi bi-shield-fill-check me-1"></i>{{ policy.name or policy_name }}</span>
+      {% set vip_ip = (vips|map(attribute='effective_ip')|select|list|join(', ')) %}
+      {% if vip_ip %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      <span class="fw-topo-node font-monospace" title="{{ _('Virtual server VIP') }}"><i class="bi bi-hdd-network me-1"></i>{{ vip_ip }}</span>
+      {% endif %}
+      {% if pool_name %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      <span class="fw-topo-node" title="{{ _('Server pool') }}"><i class="bi bi-diagram-3 me-1"></i>{{ pool_name }}</span>
+      {% endif %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      {% for b in backends %}
+      {% set bcol = st_colors.get((b.get('status')|string)|lower, '#94a3b8') %}
+      <span class="fw-topo-node fw-topo-be font-monospace"
+            data-hk="{{ (b.get('ip') or b.get('domain') or '') }}:{{ b.get('port') or '' }}"
+            title="Back-end · configured status: {{ b.get('status') or 'unknown' }}" style="border-color:{{ bcol }};">
+        <span class="fw-topo-dot" style="background:{{ bcol }};"></span>{{ b.get('ip') or b.get('domain') or '—' }}{% if b.get('port') %}:{{ b.get('port') }}{% endif %}<span class="fw-topo-hc"></span></span>
+      {% else %}
+      <span class="text-muted fst-italic">{{ _('no back-ends in cache') }}</span>
+      {% endfor %}
+    </div>
+    <div class="mt-2 d-flex align-items-center flex-wrap" style="gap:14px; font-size:11px;">
+      <span class="text-muted">{{ _('Dots =') }} <strong>{{ _('configured') }}</strong> {{ _('status (green enabled · red disabled · amber maintenance).') }}</span>
+      <span id="fwHealthLegend" class="d-none text-muted">
+        <span class="me-2">{{ _('Live health:') }}</span>
+        <span class="me-2"><span class="fw-topo-dot" style="background:#10b981;"></span>UP</span>
+        <span class="me-2"><span class="fw-topo-dot" style="background:#ef4444;"></span>DOWN</span>
+        <span><span class="fw-topo-dot" style="background:#94a3b8;"></span>{{ _('N/A (no health check)') }}</span>
+      </span>
+      <span id="fwHealthMsg"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── Virtual Server / VIP ───────────────────────── -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Virtual Server') }} <span class="mono text-muted">{{ vserver_name or '—' }}</span></span>
+    {% if vserver_name %}
+    <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/vserver" data-mkey="{{ vserver_name }}" data-label="Virtual Server"
+            title="{{ _('Open the virtual server in the full editor (add / remove VIP rows)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Manage VIP rows…') }}</button>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    {% if vips %}
+      {% for v in vips %}
+      <div class="fw-scope fw-row-card" data-endpoint="{{ eps.viplist }}" data-mkey="{{ vserver_name }}" data-child-id="{{ v.get('id') }}" data-lease-key="{{ lease_key('server-policy/vserver', vserver_name) }}">
+        <div class="fw-vip-ip">
+          <span class="text-muted" style="font-size:12px;">{{ _('Answers on') }}</span>
+          <span class="fw-vip-addr mono">{{ v.get('effective_ip') or '— (no IP resolved)' }}</span>
+          {% if v.get('ip_source') %}<span class="fw-badge fw-badge-secondary">{{ v.get('ip_source') }}</span>{% endif %}
+        </div>
+        <div class="fw-fld-grid">
+          <div class="fw-fld">
+            <label class="fw-fld-label">{{ _('Interface') }} <span class="fw-key">{{ _('interface') }}</span></label>
+            <select class="form-select form-select-sm fw-input fw-ref-select" data-key="interface" data-orig="{{ v.get('interface') }}" data-ref="system/interface">
+              <option value="">{{ _('— none —') }}</option>
+              {% if v.get('interface') %}<option value="{{ v.get('interface') }}" selected>{{ v.get('interface') }}</option>{% endif %}
+            </select>
+          </div>
+          <div class="fw-fld">
+            <label class="fw-fld-label">{{ _('Use Interface IP') }} <span class="fw-key">{{ _('use-interface-ip') }}</span></label>
+            {{ switch('use-interface-ip', (v.get('use-interface-ip')|string).lower() in ['enable','enabled','1','true']) }}
+          </div>
+          <div class="fw-fld">
+            <label class="fw-fld-label">{{ _('Virtual IP') }} <span class="fw-key">{{ _('vip') }}</span></label>
+            <div class="fw-ref">
+              <select class="form-select form-select-sm fw-input fw-ref-select" data-key="vip" data-orig="{{ v.get('vip') }}" data-ref="system/vip">
+                <option value="">{{ _('— use interface IP —') }}</option>
+                {% if v.get('vip') %}<option value="{{ v.get('vip') }}" selected>{{ v.get('vip') }}</option>{% endif %}
+              </select>
+              <button type="button" class="btn btn-sm btn-fw-outline fw-edit-ref" data-ref="system/vip" data-key="vip" title="{{ _('Edit the selected VIP object') }}">✎</button>
+              <button type="button" class="btn btn-sm btn-fw-outline fw-create" data-ref="system/vip" data-key="vip" title="{{ _('Create a new VIP from scratch') }}">＋</button>
+            </div>
+          </div>
+          <div class="fw-fld">
+            <label class="fw-fld-label">{{ _('Status') }} <span class="fw-key">{{ _('status') }}</span></label>
+            {{ switch('status', (v.get('status')|string).lower() in ['enable','enabled']) }}
+          </div>
+        </div>
+        {{ savebar('Save VIP') }}
+      </div>
+      {% endfor %}
+    {% else %}<span class="text-muted">{{ _('No virtual IP rows.') }}</span>{% endif %}
+  </div>
+</div>
+
+<!-- ───────────────────────── Server Policy config ───────────────────────── -->
+<div class="fw-card mb-3 fw-scope" id="policyConfig" data-endpoint="{{ eps.policy }}" data-mkey="{{ policy_name }}" data-lease-key="{{ lease_key(eps.policy, policy_name) }}">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Server Policy Configuration') }}</span>
+    {{ savebar('Save policy') }}
+  </div>
+  <div class="fw-card-body">
+    {% for sec in policy_sections %}
+      <section class="fw-psec">
+        <div class="fw-psec-head">{{ sec.title }}</div>
+        <div class="fw-fld-grid">
+          {% for f in sec.fields %}{{ fld(f) }}{% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+    {{ nig_editable(policy_nig, false, '', 'server-policy/policy') }}
+    <a class="small" href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='server-policy/policy', mkey=policy_name) }}" data-nig-link>
+      <i class="bi bi-terminal me-1"></i>{{ _('Open in the object editor (reads and writes CLI-only fields)') }} →</a>
+  </div>
+</div>
+
+<!-- ───────────── Content Routing (only in HTTP Content Routing mode) ───────────── -->
+<div class="fw-card mb-3" id="crCard" data-mode-vis='{"t":"mode","modes":["http-content-routing"]}'>
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('Content Routing') }}</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:12px;margin:0 0 10px;">{{ _('Each rule routes matching requests to a back-end pool. Use') }} <strong>{{ _('New routing policy…') }}</strong> {{ _('to create one (default pool + Web Protection Profile, then its Match Conditions), or') }} <strong>{{ _('Add rule') }}</strong> {{ _('to bind an existing one.') }} <strong>{{ _('Conditions…') }}</strong> {{ _('edits a policy\'s match conditions and pool.') }}</p>
+    <div class="table-responsive">
+    <table class="table table-sm align-middle" style="font-size:12.5px;">
+      <thead><tr><th style="width:60px">#</th><th>{{ _('Routing Policy') }}</th><th>{{ _('Server Pool') }}</th><th style="width:120px">{{ _('Default') }}</th><th style="width:280px"></th></tr></thead>
+      <tbody id="crBody">
+        {% for e in cr_entries %}
+        <tr data-cr-id="{{ e.get('id') }}">
+          <td class="mono text-muted">{{ e.get('id') or loop.index }}</td>
+          <td>
+            <select class="form-select form-select-sm fw-input fw-ref-select fw-cr-policy" data-key="content-routing-policy-name" data-ref="{{ eps.crpolicy and 'server-policy/http-content-routing-policy' }}" data-orig="{{ e.get('content-routing-policy-name') }}">
+              <option value="">{{ _('— none —') }}</option>
+              {% if e.get('content-routing-policy-name') %}<option value="{{ e.get('content-routing-policy-name') }}" selected>{{ e.get('content-routing-policy-name') }}</option>{% endif %}
+            </select>
+          </td>
+          <td>
+            {% if e.get('pool') %}
+              <span class="fw-topo-node" title="{{ _('Back-end pool bound to this routing rule') }}"><i class="bi bi-diagram-3 me-1"></i>{{ e.get('pool') }}</span>
+              {% if e.get('backends') %}<span class="text-muted mono" style="font-size:11px;">({{ e.get('backends')|length }})</span>{% endif %}
+              <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ e.get('pool') }}" data-label="Server Pool" title="{{ _('Open this pool in the full editor (add / remove back-end members)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Members…') }}</button>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ switch('', (e.get('is-default')|string).lower() in ['enable','enabled','yes'], 'Default', '—', 'fw-toggle-sw-sm', 'fw-cr-default') }}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="{{ e.get('content-routing-policy-name') }}" title="{{ _('Edit this rule\'s match conditions and pool') }}">{{ _('Conditions…') }}</button>
+            <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">{{ _('Save') }}</button>
+            <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">{{ _('Delete') }}</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="cr-new-open"><i class="bi bi-plus-square me-1"></i>{{ _('New routing policy…') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" data-js="cr-add-row"><i class="bi bi-plus-lg me-1"></i>{{ _('Add rule') }}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── Server Pool ───────────────────────── -->
+<div class="fw-card mb-3" id="poolCard" data-mode-vis='{"t":"mode","modes":["server-pool","offline-protection","transparent-servers","wccp-servers"]}'>
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Server Pool') }} <span class="mono text-muted">{{ pool_name or '—' }}</span></span>
+    {% if pool_name %}
+    <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ pool_name }}" data-label="Server Pool"
+            title="{{ _('Open the pool in the full editor (add / remove back-end members)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Manage members…') }}</button>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    {% if pool %}
+      <div class="fw-scope" data-endpoint="{{ eps.pool }}" data-mkey="{{ pool_name }}" data-lease-key="{{ lease_key(eps.pool, pool_name) }}">
+        {% for sec in pool_groups %}
+          <details class="fw-group" open>
+            <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+            <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f) }}{% endfor %}</div>
+          </details>
+        {% endfor %}
+        {{ nig_editable(pool_nig, false, '', 'server-policy/server-pool') }}
+        {{ savebar('Save pool') }}
+      </div>
+
+      {% if backends %}
+      <div class="mt-3">
+        <div class="text-muted mb-2" style="font-size:12px;">Back-end servers ({{ backends|length }}) — edit a row and save</div>
+        <div class="table-responsive">
+        <table class="table table-sm align-middle" style="font-size:12.5px;">
+          <thead><tr><th>{{ _('Type') }}</th><th>{{ _('IP / Domain') }}</th><th>{{ _('Port') }}</th><th>{{ _('Weight') }}</th><th>SSL</th><th>{{ _('Status') }}</th><th></th></tr></thead>
+          <tbody>
+          {% for b in backends %}
+          <tr class="fw-scope" data-endpoint="{{ eps.pserver }}" data-mkey="{{ pool_name }}" data-child-id="{{ b.get('id') }}" data-lease-key="{{ lease_key(eps.pool, pool_name) }}">
+            <td><select class="form-select form-select-sm fw-input" data-key="server-type" data-orig="{{ b.get('server-type') }}">
+              {% for o in ['physical','domain','sdn-connector'] %}<option value="{{o}}" {{ 'selected' if o==b.get('server-type') }}>{{o}}</option>{% endfor %}
+            </select></td>
+            <td><input type="text" class="form-control form-control-sm fw-input" data-key="{{ 'domain' if b.get('server-type')=='domain' else 'ip' }}" data-orig="{{ b.get('ip') or b.get('domain') }}" value="{{ b.get('ip') or b.get('domain') }}"></td>
+            <td style="width:80px"><input type="number" class="form-control form-control-sm fw-input" data-key="port" data-orig="{{ b.get('port') }}" value="{{ b.get('port') }}"></td>
+            <td style="width:80px"><input type="number" class="form-control form-control-sm fw-input" data-key="weight" data-orig="{{ b.get('weight') }}" value="{{ b.get('weight') }}"></td>
+            <td>{{ switch('ssl', (b.get('ssl')|string).lower() in ['enable','enabled'], 'On', 'Off', 'fw-toggle-sw-sm') }}</td>
+            <td>{{ switch('status', (b.get('status')|string).lower() in ['enable','enabled'], 'Up', 'Down', 'fw-toggle-sw-sm') }}</td>
+            <td><button type="button" class="btn btn-sm btn-fw-outline" data-js="save-scope">{{ _('Save') }}</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      {% endif %}
+    {% else %}<span class="text-muted">{{ _('Not configured') }}</span>{% endif %}
+  </div>
+</div>
+
+<!-- Raw -->
+<details class="fw-card">
+  <summary class="fw-card-header" style="cursor:pointer;"><span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Raw Configuration') }}</span></summary>
+  <div class="fw-card-body p-0"><pre class="fw-code-block m-0" id="rawConfig">{{ policy_clean | tojson(indent=2) if policy_clean else '{}' }}</pre></div>
+</details>
+
+<!-- New content-routing policy modal -->
+<div class="modal fade" id="crNewModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('New Content Routing Policy') }}</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="text-muted" style="font-size:12px;">{{ _('Create the routing policy with its default server pool. Its Match Conditions (and per-condition pool / Web Protection Profile) are added in the editor right after.') }}</p>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Name') }} <span class="fw-key">{{ _('name') }}</span></label>
+      <input type="text" class="form-control form-control-sm" id="crNewName" placeholder="{{ _('content-routing policy name') }}"></div>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Default Server Pool') }} <span class="fw-key">{{ _('server-pool') }}</span></label>
+      <div class="input-group input-group-sm">
+        <select class="form-select form-select-sm" id="crNewPool"><option value="">{{ _('— none —') }}</option></select>
+        <button type="button" class="btn btn-fw-outline" data-js="pool-new-open" title="{{ _('Create a new server pool on the device') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New pool') }}</button>
+      </div></div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="cr-new-submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
+  </div>
+</div></div></div>
+
+<!-- New server-pool modal (opened from the New Content Routing Policy modal) -->
+<div class="modal fade" id="poolNewModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('New Server Pool') }}</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="text-muted" style="font-size:12px;">{{ _('Create the pool now; its real-server members (back-ends) are added in the editor right after. The new pool is selected back into the routing policy.') }}</p>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Name') }} <span class="fw-key">{{ _('name') }}</span></label>
+      <input type="text" class="form-control form-control-sm" id="poolNewName" placeholder="{{ _('server pool name') }}"></div>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Type') }} <span class="fw-key">{{ _('type') }}</span></label>
+      <select class="form-select form-select-sm" id="poolNewType">
+        <option value="reverse-proxy" selected>{{ _('reverse-proxy') }}</option>
+        <option value="true-transparent-proxy">{{ _('true-transparent-proxy') }}</option>
+        <option value="transparent-inspection">{{ _('transparent-inspection') }}</option>
+        <option value="offline-protection">{{ _('offline-protection') }}</option>
+        <option value="wccp">{{ _('wccp') }}</option>
+      </select></div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="pool-new-submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
+  </div>
+</div></div></div>
+
+<!-- Confirm / diff modal -->
+<div class="modal fade" id="diffModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-exclamation-octagon me-2 text-warning"></i>{{ _('Confirm change to the live device') }}</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="diffBody"></div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="apply-pending"><i class="bi bi-lightning-charge me-1"></i>{{ _('Apply to device') }}</button>
+  </div>
+</div></div></div>
+
+<!-- Referenced objects (the ✎ on a dropdown) open in the FortiWeb-style
+     slide-over panel (objedit_drawer.js) — no modal, no page navigation. -->
+
+<!-- Create-new object modal (kept ONLY for the WPP '+', which offers
+     clone-from-an-existing-profile; every other ＋ opens the slide-over) -->
+<div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-2 text-accent"></i><span id="createTitle">{{ _('Create object') }}</span></h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="createBody"></div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="submit-create"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
+  </div>
+</div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<style nonce="{{ csp_nonce }}">
+.fw-fld-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 16px;padding:10px 2px;}
+.fw-fld{display:flex;flex-direction:column;gap:3px;}
+.fw-fld-label{font-size:11.5px;color:#94a3b8;display:flex;justify-content:space-between;gap:6px;align-items:baseline;}
+.fw-key{font-family:ui-monospace,monospace;font-size:9.5px;color:#475569;opacity:.7;}
+.fw-input.fw-dirty{border-color:#fbbf24 !important;box-shadow:0 0 0 2px rgba(251,191,36,.18);}
+.fw-ref{display:flex;gap:6px;} .fw-ref .fw-input{flex:1;}
+.fw-group{border:1px solid rgba(148,163,184,.1);border-radius:10px;margin-bottom:10px;padding:4px 12px;}
+.fw-group-head{cursor:pointer;font-weight:600;font-size:13px;padding:6px 2px;color:#cbd5e1;}
+.fw-psec{border-top:1px solid rgba(148,163,184,.1);margin-top:6px;padding-top:4px;}
+.fw-psec:first-child{border-top:0;margin-top:0;}
+.fw-psec-head{font-weight:600;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:#8b5cf6;padding:8px 2px 2px;}
+.fw-savebar{display:flex;align-items:center;gap:12px;justify-content:flex-end;}
+.fw-savebar .fw-dirty-note{font-size:11.5px;}
+.fw-row-card{border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;margin-bottom:12px;}
+.fw-vip-ip{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.fw-vip-addr{font-size:16px;font-weight:700;color:#e2e8f0;}
+.fw-topo-node{display:inline-flex;align-items:center;padding:3px 10px;border-radius:10px;border:1.5px solid var(--fw-border,#dee2e6);background:#fff;color:var(--fw-text-primary,#212529);white-space:nowrap;font-size:12px;}
+.fw-topo-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:6px;flex-shrink:0;}
+.fw-topo-arrow{color:#94a3b8;}
+.fw-topo-hc{font-size:10.5px;margin-left:2px;}
+</style>
+<script nonce="{{ csp_nonce }}">
+var APPL_ID = {{ appliance.id }};
+// The FortiWeb-style slide-over panels (objedit_drawer.js) need the appliance id.
+window.OBJEDIT_AID = APPL_ID;
+var POLICY_NAME = {{ policy_name|tojson }};
+var POLICY_LEASE = {{ lease_key(eps.policy, policy_name)|tojson }};
+var CREATE_FIELDS = {{ create_fields|tojson }};
+var diffModal = (window.bootstrap && document.getElementById('diffModal')) ? new bootstrap.Modal(document.getElementById('diffModal')) : null;
+var pendingApply = null;
+var createModal = (window.bootstrap && document.getElementById('createModal')) ? new bootstrap.Modal(document.getElementById('createModal')) : null;
+var createCtx = null;
+
+var esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function dirtyInputs(scope){ return [...scope.querySelectorAll('.fw-input')].filter(el => el.value !== (el.dataset.orig ?? '')); }
+function refreshDirty(scope){
+  const n = dirtyInputs(scope).length;
+  const note = scope.querySelector('.fw-dirty-note');
+  if(note) note.textContent = n ? (n + ' unsaved change' + (n>1?'s':'')) : 'No unsaved changes';
+}
+document.addEventListener('input', e => onChange(e));
+document.addEventListener('change', e => onChange(e));
+function onChange(e){
+  const el = e.target;
+  if(!el.classList || !el.classList.contains('fw-input')) return;
+  el.classList.toggle('fw-dirty', el.value !== (el.dataset.orig ?? ''));
+  const scope = el.closest('.fw-scope'); if(scope) refreshDirty(scope);
+  // a driver may have changed → re-evaluate conditional visibility live
+  if(el.closest('#policyConfig')) refreshVis();
+}
+
+async function postJSON(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  return r.json();
+}
+
+// ── live conditional visibility (mirrors the desktop _refresh_conditionals) ──
+function driverVal(key){
+  const el = document.querySelector(`#policyConfig [data-key="${key}"]`);
+  return el ? String(el.value||'') : '';
+}
+var isOn = k => driverVal(k) === 'enable';
+var isSet = k => driverVal(k).trim() !== '';
+var curMode = () => driverVal('deployment-mode');
+function evalVis(rule){
+  if(!rule) return true;
+  switch(rule.t){
+    case 'always': return true;
+    case 'mode':   return (rule.modes||[]).includes(curMode());
+    case 'on':     return isOn(rule.key);
+    case 'set':    return isSet(rule.key);
+    case 'https':  return isSet('https-service') || isOn('ssl');
+    case 'all':    return (rule.of||[]).every(evalVis);
+    default:       return true;
+  }
+}
+function refreshVis(){
+  document.querySelectorAll('#policyConfig .fw-fld[data-vis]').forEach(el => {
+    let rule=null; try{ rule = JSON.parse(el.getAttribute('data-vis')); }catch(_){}
+    el.style.display = evalVis(rule) ? '' : 'none';
+  });
+  document.querySelectorAll('#policyConfig .fw-psec').forEach(sec => {
+    const anyVis = [...sec.querySelectorAll('.fw-fld')].some(f => f.style.display !== 'none');
+    sec.style.display = anyVis ? '' : 'none';
+  });
+  document.querySelectorAll('[data-mode-vis]').forEach(card => {
+    let rule=null; try{ rule = JSON.parse(card.getAttribute('data-mode-vis')); }catch(_){}
+    card.style.display = evalVis(rule) ? '' : 'none';
+  });
+}
+
+// Edit lease (lock.js): "" when this section may save, else why not.
+function leaseBlocked(node){ return window.fwLockBlocked ? window.fwLockBlocked(node) : ''; }
+function leaseToken(){ return window.fwLeaseToken ? window.fwLeaseToken() : ''; }
+// A save the device refused as stale (it changed since this page loaded):
+// say what it holds now and let the operator choose; true = overwrite.
+function confirmOverwrite(res){
+  const lines = Object.keys(res.conflict || {}).map(k => {
+    const c = res.conflict[k] || {};
+    return `${k}: you loaded "${c.loaded}", the device now has "${c.device}", yours is "${c.yours}"`;
+  });
+  return confirm('Changed on the device since you opened this page. Nothing was sent.\n\n'
+    + lines.join('\n') + '\n\nOK = overwrite the device with your values. Cancel = keep the device values (reload the page to see them).');
+}
+async function saveScope(btn, overwrite){
+  const scope = btn.closest('.fw-scope');
+  const blocked = leaseBlocked(scope);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
+  const dirty = dirtyInputs(scope);
+  if(!dirty.length){ window.FW.toast('No changes in this section', 'info'); return; }
+  const fields = {}, expected = {};
+  dirty.forEach(el => { fields[el.dataset.key] = el.value; expected[el.dataset.key] = el.dataset.orig ?? ''; });
+  const base = {endpoint: scope.dataset.endpoint, mkey: scope.dataset.mkey, fields, expected,
+                lease_token: leaseToken()};
+  if(overwrite) base.overwrite = true;
+  if(scope.dataset.childId !== undefined && scope.dataset.childId !== '') base.child_id = parseInt(scope.dataset.childId);
+  const dry = await postJSON(`/workspace/${APPL_ID}/save`, base);
+  if(!dry.ok && dry.conflict){ if(confirmOverwrite(dry)) saveScope(btn, true); else location.reload(); return; }
+  if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
+  let html = `<p class="text-muted">Sending to <code>${esc(scope.dataset.mkey)}</code> via <code>${esc(scope.dataset.endpoint)}</code>:</p>`;
+  html += '<table class="table table-sm"><thead><tr><th>Field</th><th>Was</th><th>New</th></tr></thead><tbody>';
+  dirty.forEach(el => { html += `<tr><td class="mono">${esc(el.dataset.key)}</td><td class="mono text-muted">${esc(el.dataset.orig)}</td><td class="mono">${esc(el.value)}</td></tr>`; });
+  html += '</tbody></table>';
+  html += `<details><summary class="text-muted" style="cursor:pointer;font-size:12px;">Raw request</summary><pre class="fw-code-block">${esc(JSON.stringify(dry.request, null, 2))}</pre></details>`;
+  document.getElementById('diffBody').innerHTML = html;
+  pendingApply = {scope, base};
+  if(diffModal) diffModal.show(); else if(confirm('Apply this change to the device?')) applyPending();
+}
+
+async function applyPending(){
+  if(!pendingApply) return;
+  const {scope, base} = pendingApply;
+  const res = await postJSON(`/workspace/${APPL_ID}/save`, Object.assign({}, base, {apply:true}));
+  if(diffModal) diffModal.hide();
+  if(!res.ok && res.conflict){
+    pendingApply = null;
+    if(confirmOverwrite(res)){ pendingApply = {scope, base: Object.assign({}, base, {overwrite: true})}; applyPending(); }
+    else location.reload();
+    return;
+  }
+  if(res.ok){
+    window.FW.toast('Saved to device', 'success');
+    scope.querySelectorAll('.fw-input').forEach(el => { el.dataset.orig = el.value; el.classList.remove('fw-dirty'); });
+    refreshDirty(scope);
+  } else { window.FW.toast('Save failed: ' + (res.error||''), 'danger'); }
+  pendingApply = null;
+}
+
+// ── reference selects: load the names configured on the box, once per endpoint ──
+function fillRef(sel, names){
+  const cur = sel.dataset.orig || '';
+  const noneLabel = sel.querySelector('option') ? sel.querySelector('option').textContent : '— none —';
+  let opts = `<option value="">${esc(noneLabel)}</option>`;
+  let has = false;
+  names.forEach(n => { if(n === cur) has = true; opts += `<option value="${esc(n)}">${esc(n)}</option>`; });
+  if(cur && !has) opts += `<option value="${esc(cur)}">${esc(cur)}</option>`;
+  sel.innerHTML = opts; sel.value = cur;
+}
+async function preloadRefs(root){
+  const scope = root || document;
+  const sels = [...scope.querySelectorAll('.fw-ref-select')];
+  const eps = [...new Set(sels.map(s => s.dataset.ref).filter(Boolean))];
+  await Promise.all(eps.map(async ep => {
+    let names = [];
+    try { names = (await (await fetch(`/workspace/${APPL_ID}/cmdb-options?endpoint=${encodeURIComponent(ep)}`)).json()).names || []; } catch(e){}
+    sels.filter(s => s.dataset.ref === ep).forEach(s => fillRef(s, names));
+  }));
+}
+
+// ── create-new for a reference field (＋) ──────────────────────────────────────
+// FortiWeb-style: the ＋ opens the object's FULL create form in a slide-over
+// panel; on create the panel promotes to the object's editor (fill sub-tables)
+// and the name is selected back here. The WPP ＋ keeps its bespoke modal (it
+// offers cloning the settings of an existing profile — the drawer create doesn't).
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.fw-create'); if(!btn) return;
+  if (btn.closest('[data-fw-objedit]')) return;   // drawer fragments handle their own
+  const sel = btn.parentElement.querySelector('.fw-ref-select');
+  if (btn.dataset.key === 'web-protection-profile' || !window.FWDrawer){
+    openCreate(btn.dataset.key, btn.dataset.ref, sel);
+    return;
+  }
+  FWDrawer.openCreate((btn.dataset.ref||'').split('|')[0], {title: btn.dataset.key, opener: sel});
+});
+
+function openCreate(key, refEp, sel){
+  const primary = (refEp||'').split('|')[0];
+  const spec = CREATE_FIELDS[primary] || [];
+  createCtx = {key, refEp, primary, sel, spec};
+  document.getElementById('createTitle').textContent = `Create ${key}`;
+  let html = `<div class="fw-fld mb-2"><label class="fw-fld-label">Name <span class="fw-key">name</span></label>
+              <input type="text" class="form-control form-control-sm" id="createName" placeholder="object name"></div>`;
+  spec.forEach((f, i) => {
+    html += `<div class="fw-fld mb-2"><label class="fw-fld-label">${esc(f.label)} <span class="fw-key">${esc(f.key)}</span></label>`;
+    if(f.options){
+      html += `<select class="form-select form-select-sm createf" data-key="${esc(f.key)}">` +
+              f.options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('') + `</select>`;
+    } else if(f.ref){
+      html += `<select class="form-select form-select-sm createf fw-ref-select" data-key="${esc(f.key)}" data-ref="${esc(f.ref)}" data-orig=""><option value="">— none —</option></select>`;
+    } else {
+      html += `<input type="text" class="form-control form-control-sm createf" data-key="${esc(f.key)}" placeholder="${esc(f.placeholder||'')}">`;
+    }
+    html += `</div>`;
+  });
+  if(key === 'web-protection-profile'){
+    html += `<div class="fw-fld mb-2"><label class="fw-fld-label">Clone settings from <span class="fw-key">optional</span></label>
+             <input type="text" class="form-control form-control-sm" id="createClone" placeholder="existing profile name (blank = empty)" value="${esc(sel ? sel.value : '')}"></div>`;
+  }
+  document.getElementById('createBody').innerHTML = html;
+  if(createModal){ createModal.show(); preloadRefs(document.getElementById('createBody')); }
+  else { submitCreate(); }
+}
+
+async function submitCreate(){
+  if(!createCtx) return;
+  const name = (document.getElementById('createName').value || '').trim();
+  if(!name){ window.FW.toast('Name is required', 'info'); return; }
+  const fields = {};
+  document.querySelectorAll('#createBody .createf').forEach(el => { if(el.value) fields[el.dataset.key] = el.value; });
+  const cloneEl = document.getElementById('createClone');
+  const clone_from = cloneEl ? (cloneEl.value||'').trim() : '';
+  const body = {endpoint: createCtx.refEp, name, fields, clone_from};
+  const dry = await postJSON(`/workspace/${APPL_ID}/create-ref`, body);
+  if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
+  const res = await postJSON(`/workspace/${APPL_ID}/create-ref`, Object.assign({}, body, {apply:true}));
+  if(res.ok){
+    const sel = createCtx.sel;
+    if(sel){
+      const o = document.createElement('option'); o.value = name; o.textContent = name;
+      sel.appendChild(o); sel.value = name; sel.dispatchEvent(new Event('change'));
+    }
+    if(createModal) createModal.hide();
+    window.FW.toast('Created ' + name, 'success');
+  } else { window.FW.toast('Create failed: ' + (res.error||''), 'danger'); }
+}
+
+// ── edit (✎) the selected referenced object — FortiWeb-style slide-over ──
+// Opens the full generic editor (fields + sub-tables, cache fallback, deeper
+// references stack more panels) instead of the old flat modal. The WPP too:
+// its ~34 sub-policies render in the same panel (template-managed profiles are
+// save-locked server-side with a clear message).
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.fw-edit-ref'); if(!btn) return;
+  if (btn.closest('[data-fw-objedit]')) return;   // drawer fragments handle their own
+  const key = btn.dataset.key, ep = (btn.dataset.ref||'').split('|')[0];
+  const sel = btn.parentElement.querySelector('.fw-ref-select');
+  const name = sel ? (sel.value||'').trim() : '';
+  if(!name){ window.FW.toast('Pick an object first, then edit it', 'info'); return; }
+  if (window.FWDrawer){ FWDrawer.openEdit(ep, name, {title: key, opener: sel}); return; }
+  // fallback (drawer script missing): the full editor page in a new tab
+  window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent(ep)}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent(key)}`, '_blank');
+});
+
+// ── Content Routing rules (by-parent rows on the policy) ──────────────────────
+function crFields(tr){
+  const pol = tr.querySelector('.fw-cr-policy');
+  const def = tr.querySelector('.fw-cr-default');
+  const f = {};
+  if(pol) f['content-routing-policy-name'] = pol.value;
+  if(def) f['is-default'] = def.value;
+  return f;
+}
+async function saveCrRow(btn){
+  const tr = btn.closest('tr');
+  const fields = crFields(tr);
+  if(!fields['content-routing-policy-name']){ window.FW.toast('Pick a routing policy first', 'info'); return; }
+  const sub_id = tr.dataset.crId || null;
+  const blocked = leaseBlocked(POLICY_LEASE);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
+  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, fields,
+                lease_token: leaseToken()};
+  const dry = await postJSON(`/objedit/${APPL_ID}/save-row`, body);
+  if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
+  if(!confirm(`Apply content-routing rule to ${POLICY_NAME}?`)) return;
+  const res = await postJSON(`/objedit/${APPL_ID}/save-row`, Object.assign({}, body, {apply:true}));
+  if(res.ok){ window.FW.toast('Saved', 'success'); setTimeout(()=>location.reload(), 600); }
+  else window.FW.toast('Save failed: ' + (res.error||''), 'danger');
+}
+async function deleteCrRow(btn){
+  const tr = btn.closest('tr');
+  const sub_id = tr.dataset.crId || '';
+  if(!sub_id){ tr.remove(); return; }   // unsaved new row
+  const blocked = leaseBlocked(POLICY_LEASE);
+  if(blocked){ window.FW.toast(blocked, 'warning'); return; }
+  if(!confirm('Delete this content-routing rule?')) return;
+  const body = {collection:'server-policy/policy/http-content-routing-list', parent:POLICY_NAME, sub_id, apply:true,
+                lease_token: leaseToken()};
+  const res = await postJSON(`/objedit/${APPL_ID}/delete-row`, body);
+  if(res.ok){ window.FW.toast('Deleted', 'success'); setTimeout(()=>location.reload(), 600); }
+  else window.FW.toast('Delete failed: ' + (res.error||''), 'danger');
+}
+function editCrPolicy(btn){
+  const name = (btn.dataset.name||'').trim() || (btn.closest('tr').querySelector('.fw-cr-policy')||{}).value;
+  if(!name){ window.FW.toast('Pick/save a routing policy first', 'info'); return; }
+  if (window.FWDrawer){ FWDrawer.openEdit('server-policy/http-content-routing-policy', name, {title: 'Content Routing'}); return; }
+  window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent('server-policy/http-content-routing-policy')}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent('Content Routing · '+name)}`, '_blank');
+}
+function addCrRow(){
+  const tb = document.getElementById('crBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="mono text-muted">new</td>
+    <td><select class="form-select form-select-sm fw-ref-select fw-cr-policy" data-ref="server-policy/http-content-routing-policy" data-orig=""><option value="">— none —</option></select></td>
+    <td><label class="fw-toggle-sw fw-toggle-sw-sm"><input type="checkbox" class="fw-cr-default fw-toggle" value="disable" data-orig="disable" data-on="Default" data-off="—"><span class="fw-toggle-sw-track" aria-hidden="true"></span><span class="fw-toggle-sw-text">—</span></label></td>
+    <td><button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="">Conditions…</button>
+        <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">Save</button>
+        <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">Remove</button></td>`;
+  tb.appendChild(tr);
+  const tgl = tr.querySelector('.fw-cr-default');
+  if(tgl){
+    tgl.addEventListener('input', function (event) { fwSync(this); });
+    tgl.addEventListener('change', function (event) { fwSync(this); });
+  }
+  preloadRefs(tr);
+}
+
+// ── New content-routing policy: create the object, then bind a rule for it ──
+var crNewModal = (window.bootstrap && document.getElementById('crNewModal')) ? new bootstrap.Modal(document.getElementById('crNewModal')) : null;
+var poolNewModal = (window.bootstrap && document.getElementById('poolNewModal')) ? new bootstrap.Modal(document.getElementById('poolNewModal')) : null;
+// Closing the pool modal (Cancel or after Create) returns to the CR policy modal.
+(function(){ const el=document.getElementById('poolNewModal');
+  if(el) el.addEventListener('hidden.bs.modal', () => { if(crNewModal) crNewModal.show(); }); })();
+// ── Inline create of a server pool from the New Content Routing Policy modal ──
+function openNewPool(){
+  document.getElementById('poolNewName').value='';
+  document.getElementById('poolNewType').value='reverse-proxy';
+  if(crNewModal) crNewModal.hide();
+  if(poolNewModal) poolNewModal.show();
+}
+async function submitNewPool(){
+  const name=(document.getElementById('poolNewName').value||'').trim();
+  if(!name){ window.FW.toast('Pool name is required','info'); return; }
+  const fields={ type: document.getElementById('poolNewType').value };
+  const body={collection:'server-policy/server-pool', mkey:name, fields};
+  const dry=await postJSON(`/objedit/${APPL_ID}/create-object`, body);
+  if(!dry.ok){ window.FW.toast('Preview failed: '+(dry.error||''),'danger'); return; }
+  const res=await postJSON(`/objedit/${APPL_ID}/create-object`, Object.assign({},body,{apply:true}));
+  if(!res.ok){ window.FW.toast('Create failed: '+(res.error||''),'danger'); return; }
+  window.FW.toast('Created pool '+name,'success');
+  // Select the new pool back into the CR policy modal's dropdown.
+  const sel=document.getElementById('crNewPool');
+  if(sel){ let o=Array.from(sel.options).find(x=>x.value===name);
+    if(!o){ o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o); }
+    sel.value=name; }
+  if(poolNewModal) poolNewModal.hide();   // hidden.bs.modal re-shows the CR modal
+  if(confirm(`Add real-server members to ${name} now?`)){
+    if (window.FWDrawer) FWDrawer.openEdit('server-policy/server-pool', name, {title: 'Server Pool'});
+    else window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent('server-policy/server-pool')}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent('Server Pool · '+name)}`, '_blank');
+  }
+}
+async function crLoadOptions(sel, coll){
+  try{
+    const names = (await (await fetch(`/objedit/${APPL_ID}/ref-options?endpoint=${encodeURIComponent(coll)}`)).json()).names || [];
+    names.forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+  }catch(e){}
+}
+function openNewCrPolicy(){
+  const nm=document.getElementById('crNewName'); nm.value='';
+  const pool=document.getElementById('crNewPool');
+  pool.innerHTML='<option value="">— none —</option>';
+  crLoadOptions(pool,'server-policy/server-pool');
+  if(crNewModal) crNewModal.show();
+}
+async function submitNewCrPolicy(){
+  const name=(document.getElementById('crNewName').value||'').trim();
+  if(!name){ window.FW.toast('Name is required','info'); return; }
+  const fields={};
+  const pool=document.getElementById('crNewPool').value; if(pool) fields['server-pool']=pool;
+  const body={collection:'server-policy/http-content-routing-policy', mkey:name, fields};
+  const dry=await postJSON(`/objedit/${APPL_ID}/create-object`, body);
+  if(!dry.ok){ window.FW.toast('Preview failed: '+(dry.error||''),'danger'); return; }
+  const res=await postJSON(`/objedit/${APPL_ID}/create-object`, Object.assign({},body,{apply:true}));
+  if(!res.ok){ window.FW.toast('Create failed: '+(res.error||''),'danger'); return; }
+  if(crNewModal) crNewModal.hide();
+  window.FW.toast('Created '+name,'success');
+  addCrRow();
+  const rows=document.querySelectorAll('#crBody tr');
+  const tr=rows[rows.length-1];
+  const sel=tr.querySelector('.fw-cr-policy');
+  if(sel){ const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o); sel.dataset.orig=name; sel.value=name; }
+  const cond=tr.querySelector('button.fw-cr-edit'); if(cond) cond.dataset.name=name;
+  if(confirm(`Add Match Conditions to ${name} now?`) && cond) editCrPolicy(cond);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  preloadRefs().then(refreshVis);
+  refreshVis();
+  const pre = document.getElementById('rawConfig');
+  if(pre){ try { pre.textContent = JSON.stringify(JSON.parse(pre.textContent), null, 2); } catch(_){} }
+});
+
+// ── CSP: bindings that replace the former inline on* attributes ──
+(function () {
+  const crBody = document.getElementById('crBody');
+  if (crBody) {
+    crBody.addEventListener('click', function (event) {
+      const btn = event.target.closest('button');
+      if (!btn || !crBody.contains(btn)) return;
+      if (btn.classList.contains('fw-cr-edit')) editCrPolicy(btn);
+      else if (btn.classList.contains('fw-cr-save')) saveCrRow(btn);
+      else if (btn.classList.contains('fw-cr-delete')) deleteCrRow(btn);
+    });
+  }
+  function bind(name, fn) {
+    document.querySelectorAll('[data-js="' + name + '"]').forEach(function (el) {
+      el.addEventListener('click', fn);
+    });
+  }
+  bind('cr-new-open',     function (event) { openNewCrPolicy(); });
+  bind('cr-add-row',      function (event) { addCrRow(); });
+  bind('pool-new-open',   function (event) { openNewPool(); });
+  bind('cr-new-submit',   function (event) { submitNewCrPolicy(); });
+  bind('pool-new-submit', function (event) { submitNewPool(); });
+  bind('apply-pending',   function (event) { applyPending(); });
+  bind('submit-create',   function (event) { submitCreate(); });
+  bind('save-scope',      function (event) { saveScope(this); });
+  // "Manage VIP rows… / Manage members…" — the linked object's FULL editor
+  // (add/edit/delete its sub-table rows) in a FortiWeb-style slide-over panel.
+  document.querySelectorAll('.fw-open-obj').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (window.FWDrawer) FWDrawer.openEdit(el.dataset.coll, el.dataset.mkey, {title: el.dataset.label});
+      else window.open('/objedit/' + APPL_ID + '/edit?collection=' + encodeURIComponent(el.dataset.coll)
+                       + '&mkey=' + encodeURIComponent(el.dataset.mkey), '_blank');
+    });
+  });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  const btn = document.getElementById('fwHealthBtn');
+  if(!btn) return;
+  const HCOL = {up:'#10b981', down:'#ef4444', na:'#94a3b8'};
+  const HLBL = {up:'UP', down:'DOWN', na:'N/A'};
+  btn.addEventListener('click', async function(){
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking…';
+    const msg = document.getElementById('fwHealthMsg');
+    const legend = document.getElementById('fwHealthLegend');
+    const bes = document.querySelectorAll('.fw-topo-be');
+    try{
+      const r = await fetch(btn.dataset.url, {headers:{'Accept':'application/json'}});
+      const j = await r.json();
+      if(!j || !j.ok){
+        msg.className = 'text-danger';
+        msg.textContent = 'Live probe failed: ' + ((j && j.error) || ('HTTP ' + r.status));
+        return;
+      }
+      const byKey = {};
+      (j.members||[]).forEach(m => { byKey[(m.ip||'')+':'+(m.port||'')] = m; });
+      let hit = 0;
+      bes.forEach(node => {
+        const m = byKey[node.dataset.hk];
+        const hc = node.querySelector('.fw-topo-hc');
+        const dot = node.querySelector('.fw-topo-dot');
+        if(m){
+          hit++;
+          const col = HCOL[m.health] || '#94a3b8';
+          if(dot) dot.style.background = col;
+          node.style.borderColor = col;
+          if(hc){ hc.textContent = ' · ' + HLBL[m.health]; hc.style.color = col; hc.style.fontWeight = '700'; }
+          node.title = 'Back-end · live health check: ' + (m.raw || m.health);
+        } else if(hc){
+          hc.textContent = ' · (not in status)';
+        }
+      });
+      legend.classList.remove('d-none');
+      msg.className = 'text-muted';
+      msg.textContent = hit + ' of ' + bes.length + ' back-end(s) matched live status.';
+    }catch(e){
+      msg.className = 'text-danger';
+      msg.textContent = 'Live probe error: ' + e;
+    }finally{
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  });
+})();
+</script>
+<script src="{{ asset('js/lock.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

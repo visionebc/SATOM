@@ -1,0 +1,12 @@
+{# Badges that say who an article is published to. #}
+{% macro audience(a, adom_names) -%}
+{% set ad = a.adoms %}
+{% if ad %}{% for k in ad %}<span class="fw-badge fw-badge-info">{{ adom_names.get(k, k) }}</span> {% endfor %}
+{% else %}<span class="fw-badge fw-badge-primary">{{ _('Global') }}</span>{% endif %}
+{% if a.audience_restricted %}
+<span class="fw-badge fw-badge-danger"><i class="bi bi-lock-fill"></i> {{ _('Restricted') }}</span>
+{% for p in a.profiles %}<span class="fw-badge fw-badge-secondary">{{ _('Profile') }}: {{ p.name }}</span> {% endfor %}
+{% for gr in a.groups %}<span class="fw-badge fw-badge-secondary">{{ _('Group') }}: {{ gr.name }}</span> {% endfor %}
+{% if not a.profiles and not a.groups %}<span class="fw-badge fw-badge-warning">{{ _('Its profiles and groups were deleted: only the author and moderators can read it') }}</span>{% endif %}
+{% endif %}
+{%- endmacro %}

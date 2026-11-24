@@ -1,0 +1,38 @@
+{# The DNS Lookup resolver list (AppSetting dnstool.servers), drawn by
+   dns_lookup/resolvers.html = Administrator › Objects › DNS Resolvers. It
+   lived in Settings > Network & DNS > DNS Lookup until 2026-10-23, then at the
+   foot of the lookup page; the operator moved it to Objects the same day.
+   Admin-only: the page and the save route both ask user_manage. #}
+<div class="fw-card mt-3" id="resolvers">
+  <div class="fw-card-header"><i class="bi bi-globe2 me-1"></i>{{ _('DNS Lookup — resolver servers') }}</div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The DNS servers the') }} <a href="{{ url_for('dns_tool.index') }}">DNS &amp; LB Lookup</a> {{ _('tool queries. The list is variable — add or remove rows at any time (blank rows are dropped). Every enabled server becomes one column in the lookup results; all ADOMs share this list.') }}
+    </p>
+    <form method="POST" action="{{ url_for('settings.save_dns_tool') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table class="table fw-table align-middle" style="font-size:13px;">
+        <thead>
+          <tr><th style="width:32%;">{{ _('Name') }}</th><th>{{ _('Server (IP / hostname)') }}</th><th style="width:90px;" class="text-center">{{ _('Enabled') }}</th></tr>
+        </thead>
+        <tbody>
+          {% for s in dns_tool_servers %}
+          <tr>
+            <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" value="{{ s.name }}"></td>
+            <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" value="{{ s.server }}"></td>
+            <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ loop.index0 }}" {{ 'checked' if s.enabled }}></td>
+          </tr>
+          {% endfor %}
+          {% for i in range(3) %}
+          <tr>
+            <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" placeholder="{{ _('e.g. Extern') }}"></td>
+            <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" placeholder="{{ _('e.g. 192.0.2.53') }}"></td>
+            <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ (dns_tool_servers|length) + i }}" checked></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save DNS servers') }}</button>
+    </form>
+  </div>
+</div>

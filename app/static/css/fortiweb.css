@@ -1,0 +1,3182 @@
+/* ============================================================
+   SATOM Web — FortiWeb 7.6 Style Sheet
+   ============================================================ */
+
+/* The console typeface, served from vendor/inter/ (SIL OFL 1.1, see
+   vendor/MANIFEST.json). Declared under the family name the stylesheets
+   already ask for, so every page that names 'Inter' — base, sign-in, error
+   pages, the SVG maps — gets the same font on every workstation instead of
+   whatever system font the browser falls back to. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../vendor/inter/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../vendor/inter/InterVariable-Italic.woff2") format("woff2");
+}
+
+/* CSS Custom Properties */
+:root {
+  /* enable height:0 -> auto transition for the sub-menu accordion (2026-07-06) */
+  interpolate-size: allow-keywords;
+  --fw-sidebar-bg: #0A3F9F;
+  --fw-sidebar-active: #F3B52F;
+  --fw-sidebar-text: #C7D6F5;
+  --fw-sidebar-text-hover: #FFFFFF;
+  --fw-sidebar-section: #9FB6E0;
+  --fw-topbar-bg: #041F5A;
+  --fw-topbar-text: #FFFFFF;
+  --fw-content-bg: #F3F6FC;
+  --fw-surface: #FFFFFF;
+  --fw-surface-alt: #F8FAFE;
+  --fw-accent: #0A3F9F;
+  --fw-accent-hover: #041F5A;
+  --fw-accent-light: rgba(10, 63, 159, 0.10);
+  --fw-border: #DCE4F3;
+  --fw-border-light: #EAEFF9;
+  --fw-card-shadow: 0 1px 2px rgba(16,32,52,0.06), 0 3px 12px rgba(16,32,52,0.06);
+  --fw-card-shadow-hover: 0 4px 10px rgba(16,32,52,0.10), 0 12px 30px rgba(16,32,52,0.10);
+  --fw-text-primary: #0C1B33;
+  --fw-text-secondary: #51607F;
+  --fw-success: #28A745;
+  --fw-danger: #DC3545;
+  --fw-warning: #F3B52F;
+  --fw-info: #17A2B8;
+  --fw-sidebar-width: 264px;
+  --fw-topbar-height: 50px;
+  --fw-radius: 4px;
+  --fw-radius-lg: 8px;
+  --fw-gradient-brand: linear-gradient(135deg, #041F5A 0%, #0A3F9F 35%, #12B8FF 75%, #39D4FF 100%);
+  --fw-gradient-accent: linear-gradient(135deg, #C98A11 0%, #F3B52F 45%, #FFD45A 100%);
+  --fw-glow: #12B8FF;
+  --fw-glow-accent: #FFD45A;
+  --fw-glow-strength: 0.3;
+  --fw-transition: 0.2s ease;
+  --fw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--fw-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fw-text-primary);
+  background: var(--fw-content-bg);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+a { color: var(--fw-accent); text-decoration: none; }
+a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
+
+/* ============================================================
+   Layout Shell
+   ============================================================ */
+.fw-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.fw-body {
+  display: flex;
+  flex: 1;
+  padding-top: var(--fw-topbar-height);
+}
+
+.fw-main {
+  flex: 1;
+  margin-left: var(--fw-sidebar-width);
+  padding: 24px;
+  min-width: 0;
+  transition: margin-left var(--fw-transition);
+}
+
+/* ============================================================
+   Top Bar
+   ============================================================ */
+.fw-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--fw-topbar-height);
+  background: var(--fw-topbar-bg);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 2px solid transparent;
+  border-image: var(--fw-gradient-brand) 1;
+  z-index: 1000;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.fw-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fw-topbar-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-right: 60px;
+  flex-shrink: 0;
+}
+
+.fw-topbar-brand:hover { color: var(--fw-topbar-text); text-decoration: none; }
+
+.fw-logo-mark {
+  width: 28px;
+  height: 28px;
+  background: var(--fw-accent);
+  border-radius: var(--fw-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+}
+
+.fw-topbar-spacer { flex: 1; }
+
+.fw-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fw-topbar-btn {
+  /* Explicit box. The search button is a direct flex child of
+     .fw-topbar-actions (so it gets blockified) while the bell lives inside
+     .dropdown and would otherwise stay display:inline -- two buttons in the
+     same toolbar with different hit areas, and an absolutely positioned
+     child anchored to a box that does not match the glyph. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--fw-topbar-text);
+  padding: 6px 10px;
+  border-radius: var(--fw-radius);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background var(--fw-transition);
+}
+
+.fw-topbar-btn:hover { background: rgba(255,255,255,0.1); }
+
+/* Unread-count bubble on the topbar bell.
+   Pinned to the bell GLYPH, not to the button's padded hit area: the button
+   is 34x28 while the icon is 14x16, so Bootstrap's .top-0/.start-100/
+   .translate-middle put the bubble against the topbar's top edge, clear of
+   the bell and overlapping the user menu. Defined here once and consumed by
+   both the server-rendered markup and the poller in base.html -- two
+   definitions would drift. */
+.fw-notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--fw-danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+  /* Ring in the bar colour so the bubble reads as separate from the bell. */
+  box-shadow: 0 0 0 2px var(--fw-topbar-bg);
+  pointer-events: none;
+}
+
+.fw-user-menu .dropdown-toggle {
+  color: var(--fw-topbar-text);
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--fw-radius);
+  font-size: 14px;
+}
+
+.fw-user-menu .dropdown-toggle:hover { background: rgba(255,255,255,0.1); }
+.fw-user-menu .dropdown-toggle::after { border-top-color: var(--fw-topbar-text); }
+
+.fw-avatar {
+  width: 28px;
+  height: 28px;
+  background: var(--fw-accent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.fw-sidebar-toggle {
+  background: transparent;
+  border: none;
+  color: var(--fw-topbar-text);
+  font-size: 18px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: var(--fw-radius);
+  margin-right: 8px;
+}
+.fw-sidebar-toggle:hover { background: rgba(255,255,255,0.1); }
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.fw-sidebar {
+  width: var(--fw-sidebar-width);
+  min-height: calc(100vh - var(--fw-topbar-height));
+  background-color: var(--fw-sidebar-bg);
+  background-image: linear-gradient(180deg, transparent 40%,
+                    color-mix(in srgb, var(--fw-glow) 16%, transparent) 100%);
+  color: var(--fw-sidebar-text);
+  position: fixed;
+  top: var(--fw-topbar-height);
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  z-index: 900;
+  transition: width var(--fw-transition), transform var(--fw-transition);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.fw-sidebar::-webkit-scrollbar { width: 4px; }
+.fw-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+.fw-sidebar.collapsed {
+  width: 0;
+  transform: translateX(-100%);
+}
+
+.fw-nav { padding: 12px 0; }
+
+/* First-level menu heads (Operations, Administrator, Device, Plugin Studio):
+   the same 13.5px type, 14px icon and 37px row as every entry below them —
+   they were 10px uppercase, so a menu read smaller than its own submenus.
+   The head is told apart by weight alone (and the gap above it). */
+.fw-nav-section {
+  margin-top: 6px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  line-height: 21px;
+  font-weight: 600;
+  color: var(--fw-sidebar-text);
+  white-space: nowrap;
+}
+.fw-nav-section-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-right: 4px;
+  opacity: 0.9;
+}
+.fw-nav-section.fw-nav-context-label,
+div.fw-nav-section.fw-nav-context-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+
+.fw-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  color: var(--fw-sidebar-text);
+  text-decoration: none;
+  font-size: 13.5px;
+  /* = the 14px icon's line box, so a row is 37px with or without an icon
+     (the iconless "Select a device" placeholders came out 0.7px short). */
+  line-height: 21px;
+  transition: background var(--fw-transition), color var(--fw-transition);
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+  position: relative;
+}
+
+.fw-nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--fw-sidebar-text-hover);
+  text-decoration: none;
+  border-left-color: color-mix(in srgb, var(--fw-sidebar-active) 40%, transparent);
+}
+
+/* The current page. The old background (accent at 15 %) was the sidebar's
+   own blue, so only the 3px rail marked it: a white wash reads on any
+   sidebar colour, and the label goes bold. */
+.fw-nav-item.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+  border-left-color: var(--fw-sidebar-active);
+  font-weight: 600;
+}
+.fw-nav-item.active:hover { background: rgba(255, 255, 255, 0.20); }
+
+/* Every menu and submenu that holds the current page stays marked too, so
+   the path to it reads at a glance even with the branch folded. */
+.fw-nav-group:has(.fw-nav-item.active) > .fw-nav-toggle,
+.fw-nav-context:has(.fw-nav-item.active) > .fw-nav-context-label,
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle,
+details:has(.fw-nav-item.active) > summary.fw-nav-item,
+.fw-so-nav-group:has(.fw-nav-item.active) > .fw-so-nav-head {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.fw-nav-group:has(.fw-nav-item.active) > .fw-nav-toggle .fw-nav-section-icon,
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle .fw-nav-icon,
+.fw-so-nav-group:has(.fw-nav-item.active) > .fw-so-nav-head .fw-so-nav-gicon {
+  opacity: 1;
+  color: var(--fw-sidebar-active) !important;
+}
+.fw-nav-subgroup:has(.fw-nav-item.active) > .fw-nav-subtoggle,
+details:has(.fw-nav-item.active) > summary.fw-nav-item:not(.active) {
+  border-left-color: color-mix(in srgb, var(--fw-sidebar-active) 55%, transparent);
+}
+
+.fw-nav-item .fw-nav-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.fw-nav-item.active .fw-nav-icon { opacity: 1; }
+/* Image icons (the ADOM marks) take the same 18px column and 21px line as the
+   14px glyph icons — at 16x16 the row came out 0.7px short and its label sat
+   2px left of every other label. */
+.fw-nav-item img.fw-nav-icon { height: 16px; margin: 2.5px 0; object-fit: contain; }
+/* smaller inline text (the device row's "· change") must not grow the 21px line */
+.fw-nav-item small { line-height: 1; }
+/* A label longer than the rail (Agentless VPN Personal Bookmarks, a long
+   Plugin Studio app name) was cut mid-letter at the sidebar edge: it now ends
+   in an ellipsis. A plain entry may run to 4px from the edge, as it visibly
+   did before (the 16px right padding only mattered for the caret, which
+   keeps it), so no label that used to fit gains an ellipsis. */
+.fw-nav-item > span:not(.fw-nav-star),
+.fw-nav-section > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fw-nav-item { padding-right: 4px; }
+.fw-nav-subtoggle,
+summary.fw-nav-item { padding-right: 16px; }
+/* A Plugin Studio app is named by its author, up to 120 characters: it
+   stays on one line and ends in the ellipsis like every other entry, the
+   link title holds the whole name, and the right padding keeps the
+   favourite star clear of the text instead of over its last letters. */
+.fw-nav-app { padding-right: 24px; }
+/* A menu group of Plugins (partials/nav_apps_entries.html): the author's
+   name, up to 48 characters, ends in the ellipsis before the caret. */
+.fw-nav-appgroup > .fw-so-parent-head > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Diagrams menu (partials/nav_diagrams.html): published diagrams in their
+   folder tree. One level = 14px, the step of the Plugins groups (head 16px,
+   apps inside 30px); the bookmarks tree (.bm-d*) steps 13px from its own 8px
+   rail. A folder of depth N (fw-nav-dgdN) heads at 16 + 14N; a diagram of
+   depth N (fw-nav-dgiN: N = its folder's depth + 1, 0 at the top) sits at
+   16 + 14N, so a diagram lines up under its folder's label. Depth is a class,
+   never an inline style (CSP). */
+/* The live diagrams of the group (Architecture, Service Diagram): a compact
+   marker after the label -- the broadcast icon, titled "Live data", with the
+   word "Live" for screen readers (icon + accessible text, never colour
+   alone). A text pill left "Service Diagr..." at the desktop width. The
+   favourite star is out of the flow over the row's right end (right 6px,
+   about 16px wide), so the row keeps that room free like a Plugin Studio app
+   (.fw-nav-app) and the marker ends left of it; a long (translated) label
+   ends in its ellipsis before the marker, never under it. */
+.fw-nav-livediag { padding-right: 26px; }
+.fw-nav-livediag > span:not(.fw-nav-star) { flex: 1 1 auto; }
+.fw-nav-live { flex: 0 0 auto; margin-left: auto; font-size: 12px; opacity: .85; }
+.fw-nav-dgfolder.fw-nav-dgd0 > .fw-so-parent-head { padding-left: 16px; }
+.fw-nav-dgfolder.fw-nav-dgd1 > .fw-so-parent-head { padding-left: 30px; }
+.fw-nav-dgfolder.fw-nav-dgd2 > .fw-so-parent-head { padding-left: 44px; }
+.fw-nav-dgfolder.fw-nav-dgd3 > .fw-so-parent-head { padding-left: 58px; }
+.fw-nav-dgfolder.fw-nav-dgd4 > .fw-so-parent-head { padding-left: 72px; }
+.fw-nav-dgfolder.fw-nav-dgd5 > .fw-so-parent-head { padding-left: 86px; }
+.fw-nav-dgfolder.fw-nav-dgd6 > .fw-so-parent-head { padding-left: 100px; }
+.fw-nav-dgfolder.fw-nav-dgd7 > .fw-so-parent-head { padding-left: 114px; }
+.fw-nav-dgfolder.fw-nav-dgd8 > .fw-so-parent-head { padding-left: 128px; }
+.fw-nav-dgitem.fw-nav-dgi0 { padding-left: 16px !important; }
+.fw-nav-dgitem.fw-nav-dgi1 { padding-left: 30px !important; }
+.fw-nav-dgitem.fw-nav-dgi2 { padding-left: 44px !important; }
+.fw-nav-dgitem.fw-nav-dgi3 { padding-left: 58px !important; }
+.fw-nav-dgitem.fw-nav-dgi4 { padding-left: 72px !important; }
+.fw-nav-dgitem.fw-nav-dgi5 { padding-left: 86px !important; }
+.fw-nav-dgitem.fw-nav-dgi6 { padding-left: 100px !important; }
+.fw-nav-dgitem.fw-nav-dgi7 { padding-left: 114px !important; }
+.fw-nav-dgitem.fw-nav-dgi8 { padding-left: 128px !important; }
+.fw-nav-dgitem.fw-nav-dgi9 { padding-left: 142px !important; }
+/* the rail is as wide on a phone; deep levels step 10px there so a name keeps room */
+@media (max-width: 768px) {
+  .fw-nav-dgfolder.fw-nav-dgd3 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi3 { padding-left: 52px !important; }
+  .fw-nav-dgfolder.fw-nav-dgd4 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi4 { padding-left: 62px !important; }
+  .fw-nav-dgfolder.fw-nav-dgd5 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi5 { padding-left: 72px !important; }
+  .fw-nav-dgfolder.fw-nav-dgd6 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi6 { padding-left: 82px !important; }
+  .fw-nav-dgfolder.fw-nav-dgd7 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi7 { padding-left: 92px !important; }
+  .fw-nav-dgfolder.fw-nav-dgd8 > .fw-so-parent-head, .fw-nav-dgitem.fw-nav-dgi8 { padding-left: 102px !important; }
+  .fw-nav-dgitem.fw-nav-dgi9 { padding-left: 112px !important; }
+}
+
+/* FortiWeb config sections — indented sub-items under "Configuration" */
+.fw-nav-subitem {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: 40px;
+  font-size: 12.5px;
+  color: var(--fw-sidebar-section);
+}
+.fw-nav-subitem .fw-nav-emoji {
+  width: 18px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.fw-nav-subitem:hover { color: var(--fw-sidebar-text-hover); }
+.fw-nav-subitem.active .fw-nav-emoji { opacity: 1; }
+
+/* Favourite star on a menu entry (drawn by the bookmarks rail script).
+   Outline only on hover, so forty rows of empty stars do not compete with the
+   labels; a starred entry keeps its filled star in the sidebar's active
+   amber. Devices with no hover show the outline faintly, or it could never
+   be reached. */
+/* Out of the flow: the star sits over the row's right end, so a hidden star
+   never takes the room of the label it decorates (it is on every link). */
+.fw-nav-item .fw-nav-star {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+  color: var(--fw-sidebar-section);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--fw-transition), color var(--fw-transition);
+}
+.fw-nav-item:hover .fw-nav-star,
+.fw-nav-item .fw-nav-star:focus-visible { opacity: .7; }
+.fw-nav-item .fw-nav-star:hover { opacity: 1; color: var(--fw-sidebar-active); }
+.fw-nav-item .fw-nav-star.on { opacity: 1; color: var(--fw-sidebar-active); }
+.fw-nav-item .fw-nav-star.busy { opacity: .4; pointer-events: none; }
+@media (hover: none) { .fw-nav-item .fw-nav-star { opacity: .45; } }
+
+/* ============================================================
+   Server Objects sidebar sub-menu — collapsible groups under
+   the "Server Objects" nav item (GUI-faithful tree). 2026-07-04
+   ============================================================ */
+.fw-so-nav { padding: 2px 0 4px; }
+.fw-so-nav-group { border: 0; }
+.fw-so-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 16px 8px 30px;
+  /* the 3px rail every .fw-nav-item carries — without it a group head sat
+     3px left of its flat peers (Cookie Security, Data Loss Prevention) */
+  border-left: 3px solid transparent;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fw-sidebar-section);
+  user-select: none;
+}
+.fw-so-nav-head::-webkit-details-marker { display: none; }
+.fw-so-nav-head:hover { color: var(--fw-sidebar-text-hover); background: rgba(255,255,255,0.04); }
+.fw-so-nav-gicon { width: 18px; text-align: center; font-size: 14px; opacity: 0.8; flex-shrink: 0; }
+.fw-so-nav-head > span { flex: 1 1 auto; }
+.fw-so-nav-caret {
+  font-size: 9px; opacity: .6; flex-shrink: 0;
+  transition: transform .22s cubic-bezier(.4,0,.2,1);
+}
+.fw-so-nav-group[open] > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-so-nav-group:not([open]) > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(-90deg); }
+/* leaves: indent deeper than group heads so the hierarchy reads clearly */
+/* Same 13.5px type and 14px icon as every other sidebar item: depth reads
+   from the indent alone, so a nested row is never a smaller row. */
+.fw-so-nav-item { padding-left: 46px !important; }
+/* Flat top-level WP groups (Cookie Security, Data Loss Prevention): they have
+   NO children, so they render as a direct link — but they are TOP-LEVEL menu
+   entries (peers of Access / Input Validation / Advanced Protection), so they
+   must sit at the GROUP-HEAD indent (30px), not the deep child indent (46px). */
+.fw-so-nav-flat { padding-left: 30px !important; }
+.fw-so-nav-ro { margin-left: auto; font-size: 11px; opacity: .55; flex-shrink: 0; }
+/* Server Objects PARENT — the whole section collapses as one unit */
+.fw-so-parent { border: 0; }
+.fw-so-parent-head { list-style: none; cursor: pointer; user-select: none; }
+.fw-so-parent-head::-webkit-details-marker { display: none; }
+.fw-so-parent-head .fw-so-nav-caret { margin-left: auto; }
+.fw-so-parent[open] > .fw-so-parent-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-so-parent:not([open]) > .fw-so-parent-head .fw-so-nav-caret { transform: rotate(-90deg); }
+
+/* ============================================================
+   Configuration sidebar tree — each section (System, Network…)
+   collapses as a unit; its GUI groups nest below (reusing the
+   Server Objects .fw-so-nav group/leaf styles). 2026-07-05
+   ============================================================ */
+.fw-cfg-section { border: 0; }
+.fw-cfg-section-head { list-style: none; cursor: pointer; user-select: none; }
+.fw-cfg-section-head::-webkit-details-marker { display: none; }
+.fw-cfg-section-head .fw-so-nav-caret { margin-left: auto; }
+.fw-cfg-section[open] > .fw-cfg-section-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-cfg-section:not([open]) > .fw-cfg-section-head .fw-so-nav-caret { transform: rotate(-90deg); }
+.fw-cfg-section-body { padding-bottom: 2px; }
+/* ============================================================
+   Smooth expand/collapse for the sidebar sub-menus. Native
+   <details> snaps open/closed (its content is display:none when
+   closed), so animate ::details-content height — this eases BOTH
+   a manual open AND the sibling-accordion auto-close (main.js)
+   at every nesting depth. interpolate-size enables the
+   height:0 -> auto transition; browsers without ::details-content
+   support just snap as before (graceful, no regression). 2026-07-06
+   ============================================================ */
+.fw-so-parent::details-content,
+.fw-so-nav-group::details-content,
+.fw-cfg-section::details-content {
+  height: 0;
+  overflow: clip;
+  transition: height .24s cubic-bezier(.4,0,.2,1),
+              content-visibility .24s allow-discrete;
+}
+.fw-so-parent[open]::details-content,
+.fw-so-nav-group[open]::details-content,
+.fw-cfg-section[open]::details-content {
+  height: auto;
+}
+
+
+.fw-nav-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 8px 0;
+}
+
+/* ============================================================
+   Content Area
+   ============================================================ */
+.fw-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.fw-page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin: 0;
+}
+
+.fw-breadcrumb {
+  font-size: 12px;
+  color: var(--fw-text-secondary);
+  margin-bottom: 4px;
+}
+
+.fw-breadcrumb a { color: var(--fw-text-secondary); }
+.fw-breadcrumb a:hover { color: var(--fw-accent); }
+.fw-breadcrumb .separator { margin: 0 6px; }
+
+/* ============================================================
+   Cards
+   ============================================================ */
+.fw-card {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.fw-card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--fw-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--fw-surface-alt);
+}
+
+.fw-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin: 0;
+}
+
+.fw-card-body { padding: 20px; }
+.fw-card-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--fw-border-light);
+  background: var(--fw-surface-alt);
+}
+
+.fw-card-link {
+  display: block;
+  text-decoration: none;
+  transition: box-shadow var(--fw-transition), transform var(--fw-transition);
+}
+
+.fw-card-link:hover {
+  box-shadow: var(--fw-card-shadow-hover);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn-fw-primary, .fw-btn-primary {
+  background: var(--fw-accent);
+  border-color: var(--fw-accent);
+  color: #FFFFFF;
+  font-weight: 500;
+  border-radius: var(--fw-radius);
+  transition: background var(--fw-transition), border-color var(--fw-transition);
+}
+
+.btn-fw-primary:hover, .btn-fw-primary:focus,
+.fw-btn-primary:hover, .fw-btn-primary:focus {
+  background: var(--fw-accent-hover);
+  border-color: var(--fw-accent-hover);
+  color: #FFFFFF;
+}
+
+.btn-fw-outline {
+  background: transparent;
+  border: 1px solid var(--fw-accent);
+  color: var(--fw-accent);
+  font-weight: 500;
+  border-radius: var(--fw-radius);
+  transition: all var(--fw-transition);
+}
+
+.btn-fw-outline:hover {
+  background: var(--fw-accent);
+  color: #FFFFFF;
+}
+
+.btn-fw-danger {
+  background: var(--fw-danger);
+  border-color: var(--fw-danger);
+  color: #FFFFFF;
+}
+
+/* Secondary (neutral) button — back/cancel/close actions. Added 2026-07-11:
+   was used by 5 templates (cert_manager, provisioning, docs) + plugin/lua
+   studio but never defined, so it fell back to an unstyled .btn. */
+/* fw-btn-primary / fw-btn-secondary: 93 buttons in the templates used this
+   spelling while only btn-fw-* existed, so they rendered as bare text. */
+.btn-fw-secondary, .fw-btn-secondary {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  color: var(--fw-text-secondary);
+  font-weight: 500;
+  border-radius: var(--fw-radius);
+  transition: all var(--fw-transition);
+}
+.btn-fw-secondary:hover, .btn-fw-secondary:focus,
+.fw-btn-secondary:hover, .fw-btn-secondary:focus {
+  background: var(--fw-border-light);
+  color: var(--fw-text-primary);
+  border-color: var(--fw-text-secondary);
+}
+
+
+.btn-sm-icon {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: var(--fw-radius);
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+.fw-table-wrapper {
+  overflow-x: auto;
+  border-radius: var(--fw-radius-lg);
+  border: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+  box-shadow: var(--fw-card-shadow);
+}
+
+/* Actions dropdown must escape the horizontal-scroll clip of the table wrapper.
+   overflow-x:auto forces overflow-y to auto too, trapping the menu inside the
+   div (internal scrollbar). Un-clip only while a row dropdown is open. */
+.fw-table-wrapper:has(.dropdown-menu.show) { overflow: visible; }
+
+
+.fw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.fw-table thead th {
+  background: var(--fw-surface-alt);
+  color: var(--fw-text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--fw-border);
+  white-space: nowrap;
+}
+
+.fw-table tbody tr {
+  border-bottom: 1px solid var(--fw-border-light);
+  transition: background var(--fw-transition);
+}
+
+.fw-table tbody tr:nth-child(even) { background: var(--fw-surface-alt); }
+.fw-table tbody tr:hover { background: color-mix(in srgb, var(--fw-accent) 5%, transparent); }
+
+.fw-table td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  color: var(--fw-text-primary);
+}
+
+.fw-table tbody tr:last-child { border-bottom: none; }
+
+.fw-table .actions-col { white-space: nowrap; width: 1%; }
+
+/* ROW ACTIONS STAY ON ONE LINE (2026-10-24).
+   A cell holding two or more controls is an action cluster: at 1280-1366 px
+   the browser squeezed the column and stacked the icons three rows high
+   (API Tokens, Settings > Hypervisors). nowrap on the cell keeps them one
+   row; the table makes room elsewhere. .table covers the Bootstrap tables. */
+.fw-table .actions-col, .table .actions-col,
+.fw-table td:has(> .btn + .btn), .table td:has(> .btn + .btn),
+.fw-table td:has(> .btn + form), .table td:has(> .btn + form),
+.fw-table td:has(> form + .btn), .table td:has(> form + .btn),
+.fw-table td:has(> form + form), .table td:has(> form + form) { white-space: nowrap; width: 1%; }
+.fw-table td.actions-col > form, .table td.actions-col > form,
+.fw-table td:has(> .btn + form) > form, .table td:has(> .btn + form) > form,
+.fw-table td:has(> form + .btn) > form, .table td:has(> form + .btn) > form,
+.fw-table td:has(> form + form) > form, .table td:has(> form + form) > form { display: inline-block; margin: 0; }
+/* The explicit cluster: one row, a fixed 4px gap (no me-1 per button),
+   right-aligned in the Actions column. */
+.fw-row-actions { display: inline-flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
+.fw-row-actions > form { display: inline-flex; margin: 0; }
+.fw-row-actions > .btn, .fw-row-actions > form > .btn, .fw-row-actions > .dropdown > .btn { margin: 0 !important; }
+/* Secondary actions go behind a "..." menu so the cluster stays narrow. */
+.fw-row-more .dropdown-menu { font-size: 13px; min-width: 210px; }
+.fw-row-more .dropdown-item { display: flex; align-items: center; gap: 8px; }
+.fw-row-more .dropdown-item > i { width: 16px; text-align: center; }
+.fw-row-more form { margin: 0; }
+
+/* TABLES THAT FIT THEIR CONTAINER (2026-10-24).
+   Opt-in on the wrapper: .fw-table-fit makes it a size container, and
+   columns marked .fw-col-opt-{xl,lg,md} drop out when the wrapper is
+   narrower than 1100/900/720 px - least useful first - so the Actions
+   column is never pushed behind a horizontal scroll. Opt-in because a
+   size container inside a shrink-to-fit parent collapses to zero width. */
+.fw-table-fit { container-type: inline-size; container-name: fwtable; }
+@container fwtable (max-width: 1100px) { .fw-col-opt-xl { display: none; } }
+@container fwtable (max-width: 900px)  { .fw-col-opt-lg { display: none; } }
+@container fwtable (max-width: 720px)  { .fw-col-opt-md { display: none; } }
+/* A name/title column that must not collapse to one word per line. */
+.fw-table .fw-col-name { min-width: 180px; }
+/* Long unbroken tokens (hosts, slugs, URLs) may break instead of widening. */
+.fw-table .fw-col-break { overflow-wrap: anywhere; }
+
+/* GLOBAL TABLE FIT (main.js "Tables fit their container", 2026-10-24).
+   main.js marks a table that overflows its box with .fw-fit-wrap and its
+   cells with .fw-fit-nw / .fw-fit-clip / .fw-fit-hide; nothing here applies
+   to a table that already fits. #fw-main raises the specificity above the
+   per-page nowrap rules (.fwg-satom .fw-table td, .fw-table thead th);
+   an inline style or .text-nowrap / .actions-col on a cell still wins.
+   Opt a table out with data-fit="off" on it or on an ancestor. */
+#fw-main table.fw-fit-wrap > * > tr > th:not(.fw-fit-nw):not(.actions-col):not(.text-nowrap),
+#fw-main table.fw-fit-wrap > * > tr > td:not(.fw-fit-nw):not(.fw-fit-1tok):not(.actions-col):not(.text-nowrap) {
+  white-space: normal; overflow-wrap: normal; word-break: normal;
+}
+/* last resort, set only when hiding columns could not make it fit */
+#fw-main table.fw-fit-break > * > tr > td:not(.fw-fit-nw):not(.fw-fit-clip):not(.actions-col):not(.text-nowrap) { overflow-wrap: anywhere; }
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-nw { white-space: nowrap; }
+/* one word (a hyphenated object name) / the words main.js wrapped in
+   .fw-fit-tok: never broken after a hyphen, except in the last resort */
+#fw-main table.fw-fit-wrap > * > tr > td.fw-fit-1tok, #fw-main table.fw-fit-wrap .fw-fit-tok { white-space: nowrap; }
+#fw-main table.fw-fit-break > * > tr > td.fw-fit-1tok, #fw-main table.fw-fit-break .fw-fit-tok { white-space: normal; overflow-wrap: anywhere; }
+#fw-main table.fw-fit-wrap .badge, #fw-main table.fw-fit-wrap .fw-badge,
+#fw-main table.fw-fit-wrap .fw-status { white-space: nowrap; }
+#fw-main table.fw-fit-wrap .fw-fit-wrapbadge { white-space: normal; text-align: left; }
+/* A pathological value (PEM, base64, a message body): one line, an
+   ellipsis, the full value in title. width + max-width: Chrome caps an
+   auto-layout cell only when both are set. */
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip {
+  width: var(--fw-fit-clip, 320px); max-width: var(--fw-fit-clip, 320px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip * { white-space: nowrap; }
+#fw-main table.fw-fit-wrap > * > tr > .fw-fit-clip > :is(pre, div, code) {
+  display: inline; margin: 0; padding: 0; border: 0; background: none;
+}
+#fw-main table .fw-fit-hide { display: none !important; }
+/* A badge or status pill in a table cell is one unit: never two lines
+   ("not published" wrapped even at 1920 px). Long ones (> 40 characters)
+   still wrap through .fw-fit-wrapbadge above, which is more specific. */
+#fw-main table .fw-badge, #fw-main table .badge { white-space: nowrap; }
+/* A bare table that overflowed is moved into this box: it scrolls inside
+   its card (show-all mode) and never widens the page. */
+.fw-fit-scrollbox { max-width: 100%; overflow-x: auto; }
+.fw-fit-scrollbox:has(.dropdown-menu.show) { overflow: visible; }
+/* "N columns hidden · Show all" above the table. */
+.fw-fit-bar { display: flex; justify-content: flex-end; align-items: center; padding: 2px 8px; min-height: 26px; }
+.fw-fit-bar .btn-link { font-size: 12px; padding: 1px 4px; color: var(--fw-text-secondary); text-decoration: none; }
+.fw-fit-bar .btn-link:hover, .fw-fit-bar .btn-link:focus-visible { color: var(--fw-accent); text-decoration: underline; }
+.fwg-satom .fw-fit-bar { padding: 4px 20px 0; }
+
+/* TABLE EDGES AND FRAME (2026-10-25).
+   Bootstrap's .table-sm pads a cell 4px, so the first column's text sat
+   against the card edge (Change Management Types, Scripts, Triggers...).
+   Every data table gets the .fw-table edge: 14px before the first column
+   and after the last. main.js adds .fw-tbl-frame to a table whose left
+   edge is not on a card or wrapper border (a table floating in a card
+   body, the dashboard's Fleet list): an inset outline, so a scroll box
+   cannot clip it, and border-collapse (the row lines) stays as it is.
+   Opt out with data-frame="off" on the table or an ancestor. */
+#fw-main :is(.table, .an-table, .ana-tbl, .dp-ptbl, table.fw-tbl-frame) > :not(caption) > tr > :first-child { padding-left: 14px; }
+#fw-main :is(.table, .an-table, .ana-tbl, .dp-ptbl, table.fw-tbl-frame) > :not(caption) > tr > :last-child { padding-right: 14px; }
+#fw-main table.fw-tbl-frame {
+  outline: 1px solid var(--fw-border); outline-offset: -1px;
+  border-radius: var(--fw-radius-lg); overflow: hidden;
+}
+#fw-main table.fw-tbl-frame:has(.dropdown-menu.show) { overflow: visible; }
+
+/* ============================================================
+   Status Indicators
+   ============================================================ */
+.fw-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+.fw-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fw-status-online {
+  background: rgba(40,167,69,0.12);
+  color: #1A7A34;
+}
+.fw-status-online .fw-status-dot { background: var(--fw-success); }
+
+.fw-status-offline {
+  background: rgba(220,53,69,0.12);
+  color: #9B1C2A;
+}
+.fw-status-offline .fw-status-dot { background: var(--fw-danger); }
+
+.fw-status-unknown {
+  background: rgba(108,117,125,0.12);
+  color: var(--fw-text-secondary);
+}
+.fw-status-unknown .fw-status-dot { background: var(--fw-text-secondary); }
+
+.fw-status-warning {
+  background: rgba(255,193,7,0.15);
+  color: #856404;
+}
+.fw-status-warning .fw-status-dot { background: var(--fw-warning); }
+
+/* ============================================================
+   Badges
+   ============================================================ */
+.fw-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.fw-badge-primary { background: var(--fw-accent-light); color: var(--fw-accent); }
+.fw-badge-success { background: rgba(40,167,69,0.12); color: #1A7A34; }
+.fw-badge-warning { background: rgba(255,193,7,0.12); color: #856404; }
+.fw-badge-danger { background: rgba(220,53,69,0.12); color: #9B1C2A; }
+.fw-badge-info { background: rgba(23,162,184,0.12); color: #0A6978; }
+.fw-badge-secondary { background: rgba(108,117,125,0.12); color: #495057; }
+
+/* ============================================================
+   Forms
+   ============================================================ */
+.fw-form-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fw-text-primary);
+  margin-bottom: 4px;
+}
+
+.fw-form-control {
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius);
+  padding: 7px 10px;
+  font-size: 13.5px;
+  transition: border-color var(--fw-transition), box-shadow var(--fw-transition);
+  width: 100%;
+}
+
+.fw-form-control:focus {
+  border-color: var(--fw-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fw-accent) 14%, transparent);
+  outline: none;
+}
+
+.fw-form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236C757D' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.fw-input-group { position: relative; }
+.fw-input-group .fw-input-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fw-text-secondary);
+  font-size: 13px;
+}
+.fw-input-group .fw-form-control { padding-left: 32px; }
+
+/* ============================================================
+   Modals
+   ============================================================ */
+.fw-modal .modal-header {
+  background: var(--fw-topbar-bg);
+  color: #FFFFFF;
+  border-bottom: none;
+  padding: 14px 20px;
+}
+
+.fw-modal .modal-title { font-size: 15px; font-weight: 600; }
+.fw-modal .btn-close { filter: invert(1); }
+.fw-modal .modal-footer { border-top: 1px solid var(--fw-border-light); background: var(--fw-surface-alt); }
+
+/* Bootstrap chrome that themes must reach too — .modal-content and
+   .dropdown-menu ship a hardcoded white background from bootstrap.min.css;
+   without this override a custom theme's --fw-surface never reaches them. */
+.modal-content {
+  background: var(--fw-surface);
+  color: var(--fw-text-primary);
+  border: 1px solid var(--fw-border-light);
+  border-radius: var(--fw-radius-lg);
+}
+.modal-backdrop.show { opacity: .55; background: var(--fw-topbar-bg); }
+.dropdown-menu {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  color: var(--fw-text-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+}
+.dropdown-item { color: var(--fw-text-primary); }
+.dropdown-item:hover, .dropdown-item:focus {
+  background: var(--fw-content-bg); color: var(--fw-text-primary);
+}
+.dropdown-divider { border-color: var(--fw-border-light); }
+
+/* ============================================================
+   Alerts & Flash Messages
+   ============================================================ */
+.fw-alert {
+  border: none;
+  border-left: 4px solid;
+  border-radius: var(--fw-radius);
+  padding: 12px 16px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+
+.fw-alert-success { background: rgba(40,167,69,0.08); border-left-color: var(--fw-success); color: #1A7A34; }
+.fw-alert-danger { background: rgba(220,53,69,0.08); border-left-color: var(--fw-danger); color: #9B1C2A; }
+.fw-alert-warning { background: rgba(255,193,7,0.1); border-left-color: var(--fw-warning); color: #856404; }
+.fw-alert-info { background: rgba(23,162,184,0.08); border-left-color: var(--fw-info); color: #0A6978; }
+
+/* ============================================================
+   Stat Cards (Dashboard)
+   ============================================================ */
+.fw-stat-card {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  padding: 20px;
+  box-shadow: var(--fw-card-shadow);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.fw-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--fw-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.fw-stat-icon-primary { background: var(--fw-accent-light); color: var(--fw-accent); }
+.fw-stat-icon-success { background: rgba(40,167,69,0.1); color: var(--fw-success); }
+.fw-stat-icon-danger { background: rgba(220,53,69,0.1); color: var(--fw-danger); }
+.fw-stat-icon-info { background: rgba(23,162,184,0.1); color: var(--fw-info); }
+
+.fw-stat-value { font-size: 28px; font-weight: 700; line-height: 1; color: var(--fw-text-primary); }
+.fw-stat-label { font-size: 12px; color: var(--fw-text-secondary); margin-top: 4px; }
+.fw-stat-delta { font-size: 12px; margin-top: 4px; }
+.fw-stat-delta.up { color: var(--fw-success); }
+.fw-stat-delta.down { color: var(--fw-danger); }
+
+/* ------------------------------------------------------------------
+   Fact tiles.
+   A stat card holds a NUMBER: 28px, one line, never wraps. These hold
+   strings read off the device -- a firmware build, a backup filename --
+   which are long and unbroken, so at .h5 in a quarter-width column they
+   ran straight past the card edge. Same tile, text sizing, and the value
+   breaks anywhere rather than overflowing.
+   ------------------------------------------------------------------ */
+.fw-fact {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+  padding: 14px 16px;
+  height: 100%;
+  min-width: 0;
+}
+.fw-fact-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fw-text-secondary);
+  margin-bottom: 6px;
+}
+.fw-fact-value {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fw-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.fw-fact-sub {
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--fw-text-secondary);
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.fw-fact-value.is-mono {
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* Table cells holding device strings (URLs, back-end lists, summaries). */
+.fw-cell-break { overflow-wrap: anywhere; word-break: break-word; max-width: 340px; }
+.fw-cell-mono { font-family: Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.fw-cell-note { color: var(--fw-text-secondary); font-size: 12px; margin-top: 3px;
+                overflow-wrap: anywhere; max-width: 420px; }
+
+/* ============================================================
+   Appliance / Workspace Cards
+   ============================================================ */
+.fw-appliance-card {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+  padding: 20px;
+  transition: box-shadow var(--fw-transition), transform var(--fw-transition);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.fw-appliance-card:hover {
+  box-shadow: var(--fw-card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.fw-appliance-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--fw-accent);
+  transform: scaleX(0);
+  transition: transform var(--fw-transition);
+}
+
+.fw-appliance-card:hover::before { transform: scaleX(1); }
+
+.fw-appliance-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.fw-appliance-host { font-size: 12px; color: var(--fw-text-secondary); font-family: monospace; }
+.fw-appliance-kind { font-size: 11px; }
+
+/* ============================================================
+   Code / JSON Display
+   ============================================================ */
+.fw-code-block {
+  background: #1E2D3D;
+  color: #C9D1D9;
+  border-radius: var(--fw-radius-lg);
+  padding: 16px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow: auto;
+  max-height: 500px;
+  border: 1px solid #30363D;
+}
+
+.fw-code-block .json-key { color: #79C0FF; }
+.fw-code-block .json-string { color: #A5D6FF; }
+.fw-code-block .json-number { color: #F2CC60; }
+.fw-code-block .json-bool { color: #FF7B72; }
+.fw-code-block .json-null { color: #8B949E; }
+
+/* ============================================================
+   Toolbar / Filter Bar
+   ============================================================ */
+.fw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* FAZ/CRUD toolbar grouping — tight action cluster + subtle divider before
+   utilities (Display Hidden / Full Screen). Keeps spacing uniform across the
+   whole FAZ space instead of the old Bootstrap btn-group. (2026-07-13) */
+.fw-toolbar-group { display: inline-flex; align-items: center; gap: 6px; }
+.fw-toolbar-sep {
+  width: 1px; align-self: stretch; min-height: 22px;
+  background: var(--fw-border); margin: 0 2px;
+}
+
+.fw-search-box {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.fw-search-box input {
+  padding-left: 34px;
+  border-radius: 20px;
+  border: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+  font-size: 13.5px;
+  height: 36px;
+  width: 100%;
+  transition: border-color var(--fw-transition);
+}
+
+.fw-search-box input:focus { border-color: var(--fw-accent); outline: none; }
+.fw-search-box .search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fw-text-secondary);
+  font-size: 13px;
+}
+
+/* ============================================================
+   Empty State
+   ============================================================ */
+.fw-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--fw-text-secondary);
+}
+
+.fw-empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+.fw-empty-state-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--fw-text-primary); }
+.fw-empty-state-text { font-size: 14px; max-width: 340px; margin: 0 auto 20px; }
+
+/* ============================================================
+   Footer
+   ============================================================ */
+/* Footer link to the Concept Map. --fw-accent on --fw-surface is 8.9:1 — the
+   footer's own --fw-text-secondary would read as disabled text, not a link. */
+.fw-footer-link { color: var(--fw-accent); text-decoration: none; font-weight: 600; }
+.fw-footer-link:hover, .fw-footer-link:focus { color: var(--fw-accent-hover); text-decoration: underline; }
+
+.fw-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--fw-text-secondary);
+  border-top: 1px solid var(--fw-border);
+  margin-left: var(--fw-sidebar-width);
+  background: var(--fw-surface);
+  transition: margin-left var(--fw-transition);
+}
+
+/* ============================================================
+   Chart Container
+   ============================================================ */
+.fw-chart-container {
+  position: relative;
+  height: 280px;
+  width: 100%;
+}
+
+/* ============================================================
+   API Explorer
+   ============================================================ */
+.fw-api-method {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--fw-radius);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: monospace;
+  min-width: 46px;
+  text-align: center;
+}
+
+.fw-api-method-get { background: rgba(40,167,69,0.12); color: #1A7A34; }
+.fw-api-method-post { background: rgba(23,162,184,0.12); color: #0A6978; }
+.fw-api-method-put { background: rgba(255,193,7,0.15); color: #856404; }
+.fw-api-method-delete { background: rgba(220,53,69,0.12); color: #9B1C2A; }
+.fw-api-method-patch { background: color-mix(in srgb, var(--fw-accent) 12%, transparent); color: var(--fw-accent); }
+
+.fw-api-path { font-family: monospace; font-size: 13px; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 768px) {
+  .fw-sidebar {
+    transform: translateX(-100%);
+    width: var(--fw-sidebar-width);
+    height: calc(100dvh - var(--fw-topbar-height));
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fw-sidebar.mobile-open { transform: translateX(0); }
+  .fw-main { margin-left: 0 !important; }
+  .fw-footer { margin-left: 0 !important; }
+}
+
+/* ============================================================
+   Utility
+   ============================================================ */
+.text-accent { color: var(--fw-accent); }
+.text-muted-fw { color: var(--fw-text-secondary); }
+.mono { font-family: 'Consolas', 'Monaco', monospace; }
+.fw-tag {
+  display: inline-block;
+  background: var(--fw-accent-light);
+  color: var(--fw-accent);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  margin: 1px;
+}
+.fw-section-separator {
+  height: 1px;
+  background: var(--fw-border);
+  margin: 20px 0;
+}
+.fw-scroll-table { overflow-x: auto; }
+.fw-loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--fw-accent) 20%, transparent);
+  border-top-color: var(--fw-accent);
+  border-radius: 50%;
+  animation: fw-spin 0.7s linear infinite;
+}
+@keyframes fw-spin { to { transform: rotate(360deg); } }
+
+.fw-pulse { animation: fw-pulse 2s infinite; }
+@keyframes fw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ============================================================
+   Sidebar: pin project Settings to the bottom (2026-06-27)
+   ============================================================ */
+.fw-nav { display: flex; flex-direction: column; min-height: 100%; }
+.fw-nav-spacer { flex: 1 1 auto; }
+.fw-nav-bottom { padding-bottom: 8px; }
+
+/* Topbar Switch Product button: mini product logo + switch icon */
+.fw-switch-product { display: inline-flex; align-items: center; gap: 6px; }
+.fw-switch-product .fw-switch-mark {
+  width: 18px; height: 18px; border-radius: 4px; display: block;
+  background: rgba(255,255,255,0.12);
+}
+
+/* Git tab pre output */
+/* Device / command output panel.
+   This was a dark-theme leftover: rgba(0,0,0,0.30) over a WHITE card renders as
+   a light-grey slab, and #94a3b8 text on that slab is about 1.3:1 -- the output
+   was present and unreadable. SATOM is a light product with no dark mode (see
+   safeguards Sec. 9m), so the panel is light and the text is the body colour.
+   white-space:pre (not pre-wrap) because CLI output is column-aligned and
+   wrapping shreds the columns; the overflow scrolls INSIDE the box, so a long
+   line can never push past the card edge. */
+.fw-pre {
+  background: var(--fw-surface-alt);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius);
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: var(--fw-text-primary);
+  white-space: pre;
+  tab-size: 4;
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+}
+
+/* ===== Appliance Actions: Policy Inspector tree, Console, Service validation ===== */
+.fw-tree {
+  background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(148,163,184,0.15);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: #cbd5e1;
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}
+.fw-console {
+  background: #0b1120;
+  border: 1px solid rgba(148,163,184,0.18);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: #86efac;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+}
+.fw-console.console-error { color: #fca5a5; }
+.console-preset { cursor: pointer; }
+
+.sp-badge {
+  display: inline-block; padding: 6px 14px; border-radius: 8px;
+  font-weight: 600; margin-bottom: 8px;
+}
+.sp-badge.ok { background: rgba(52,211,153,.15); color: #34d399; border: 1px solid #34d399; }
+.sp-badge.bad { background: rgba(248,113,113,.15); color: #f87171; border: 1px solid #f87171; }
+.sp-meta { margin-bottom: 12px; }
+.sp-table .pill {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 12px; font-weight: 600;
+}
+.sp-table .pill.ok { background: rgba(52,211,153,.15); color: #34d399; }
+.sp-table .pill.warn { background: rgba(245,158,11,.15); color: #f59e0b; }
+.sp-table .pill.bad { background: rgba(248,113,113,.15); color: #f87171; }
+.sp-table .ok { color: #34d399; } .sp-table .warn { color: #f59e0b; } .sp-table .bad { color: #f87171; }
+.sp-table .muted { color: #8aa0c0; } .sp-table .small { font-size: 12px; } .sp-table .mono { font-family: Menlo, Monaco, Consolas, monospace; }
+
+/* ============================================================
+   On/off toggle switch — replaces the enable/disable <select>s
+   in the Server Policy editor (and every page using the `fld`
+   / `switch` macro). The hidden checkbox stays the real control
+   (keyboard + focus); fwSync() keeps its .value = enable/disable.
+   ============================================================ */
+.fw-toggle-sw {
+  position: relative; display: inline-flex; align-items: center; gap: 9px;
+  cursor: pointer; user-select: none; padding: 2px 0; line-height: 1;
+}
+.fw-toggle-sw input {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 20px; margin: 0; opacity: 0; cursor: pointer; z-index: 2;
+}
+.fw-toggle-sw-track {
+  position: relative; flex: 0 0 auto; width: 38px; height: 20px; border-radius: 20px;
+  background: #cbd2d9; border: 1px solid rgba(0,0,0,.10);
+  transition: background var(--fw-transition), border-color var(--fw-transition);
+}
+.fw-toggle-sw-track::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.35);
+  transition: transform var(--fw-transition);
+}
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-track { background: var(--fw-accent); border-color: var(--fw-accent); }
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-track::before { transform: translateX(18px); }
+.fw-toggle-sw input:focus-visible ~ .fw-toggle-sw-track { box-shadow: 0 0 0 3px var(--fw-accent-light); }
+.fw-toggle-sw input:disabled ~ .fw-toggle-sw-track { opacity: .5; cursor: not-allowed; }
+.fw-toggle-sw input:disabled { cursor: not-allowed; }
+.fw-toggle-sw-text { font-size: 12px; color: var(--fw-text-secondary); min-width: 52px; white-space: nowrap; }
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-text { color: var(--fw-text-primary); font-weight: 500; }
+/* unsaved-change cue (the page's change tracker adds .fw-dirty to the input) */
+.fw-toggle-sw input.fw-dirty ~ .fw-toggle-sw-track { box-shadow: 0 0 0 2px rgba(251,191,36,.65); }
+/* compact variant for table cells (back-end servers, content-routing rows) */
+.fw-toggle-sw-sm { gap: 7px; }
+.fw-toggle-sw-sm .fw-toggle-sw-text { min-width: 30px; font-size: 11.5px; }
+
+
+/* --- banner device classification meta (zone/line/dept/host) ----------- */
+.fw-device-switch { display: inline-flex; align-items: center; gap: 2px; }
+.fw-dev-meta { align-items: center; gap: 0; margin-left: 4px; }
+.fw-dev-seg {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-size: 12px; font-weight: 600; color: var(--fw-topbar-text);
+  white-space: nowrap; padding: 0 9px;
+}
+.fw-dev-seg + .fw-dev-seg { border-left: 1px solid rgba(255,255,255,0.16); }
+.fw-dev-k {
+  font-style: normal; font-size: 8.5px; letter-spacing: 0.06em;
+  text-transform: uppercase; font-weight: 700; opacity: 0.5;
+}
+.fw-dev-host { font-size: 14px; }
+.fw-dev-host .fw-dev-k { opacity: 0.6; }
+.fw-device-center { min-width: 0; max-width: 46vw; overflow: hidden; }
+.fw-device-center .fw-dev-meta { overflow: hidden; }
+
+@media (max-width: 700px) {
+  .fw-dev-meta .fw-dev-seg:not(.fw-dev-host) { display: none; }
+  .fw-dev-seg + .fw-dev-host { border-left: none; padding-left: 4px; }
+}
+
+/* ============================================================
+   Collapsible sidebar nav groups (accordion) — 2026-06-29
+   Section labels become toggle buttons; one group open at a time.
+   ============================================================ */
+button.fw-nav-section.fw-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  /* typography/padding inherited from .fw-nav-section */
+}
+button.fw-nav-section.fw-nav-toggle:hover { color: var(--fw-sidebar-text-hover); }
+button.fw-nav-section.fw-nav-toggle:focus { outline: none; }
+button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
+/* A first-level entry that is a page, not a group (Plugin Studio,
+   2026-10-23, partials/nav_plugin_studio.html): the section typography of
+   the toggles above, no caret, and the active marker of .fw-nav-item. */
+a.fw-nav-section.fw-nav-toplink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-decoration: none;
+}
+a.fw-nav-section.fw-nav-toplink:hover { color: var(--fw-sidebar-text-hover); text-decoration: none; }
+a.fw-nav-section.fw-nav-toplink.active {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.16);
+  /* inset, not a border: a border would shift the icon off the column */
+  box-shadow: inset 3px 0 0 var(--fw-sidebar-active);
+}
+a.fw-nav-section.fw-nav-toplink > span { flex: 1 1 auto; text-align: left; }
+.fw-nav-caret {
+  font-size: 10px;
+  opacity: .65;
+  flex-shrink: 0;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+}
+.fw-nav-group:not(.open) .fw-nav-caret { transform: rotate(-90deg); }
+
+/* Top-level nav sections are COLLAPSED by default and only open when the
+   group carries .open — emitted server-side for the active section and
+   toggled by JS on click. A full page reload therefore paints the correct
+   state with NO flash-of-all-expanded (the old max-height:1600px default was
+   open, so every reload flashed every section open then JS collapsed them).
+   Scoped to .fw-nav-group > body so the always-visible .fw-nav-context
+   bodies (Device, Global) are untouched. 2026-07-05 */
+.fw-nav-group-body {
+  overflow: hidden;
+  transition: opacity .2s ease;
+}
+.fw-nav-group:not(.open) > .fw-nav-group-body {
+  max-height: 0;
+  opacity: 0;
+}
+.fw-nav-group.open > .fw-nav-group-body {
+  max-height: none;
+  opacity: 1;
+}
+
+/* ============================================================
+   Object-editor field grid — 2026-06-29
+   Fields were stacking full-width (huge text inputs). Lay them
+   out in responsive columns; compact label + input per cell.
+   Used by objedit/editor.html (.fw-fld-grid > .fw-fld) and the
+   workspace _fields.html macro.
+   ============================================================ */
+.fw-fld-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 18px;
+  align-items: start;
+}
+.fw-fld-grid + .fw-fld-grid { margin-top: 12px; }
+
+.fw-fld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;            /* let inputs shrink inside the grid cell */
+}
+.fw-fld-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  line-height: 1.3;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fw-fld-label .fw-key {
+  font-family: var(--bs-font-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--fw-text-secondary);
+  opacity: .7;
+}
+/* every control fills its own cell — no more page-wide text boxes */
+.fw-fld .form-control,
+.fw-fld .form-select,
+.fw-fld .fw-ref { width: 100%; }
+
+/* ref dropdown + ✎ / ＋ buttons sit on one row, select takes the slack */
+.fw-fld .fw-ref { display: flex; gap: 6px; align-items: center; }
+.fw-fld .fw-ref .form-select { flex: 1 1 auto; min-width: 0; }
+.fw-fld .fw-ref .btn { flex: 0 0 auto; }
+
+/* collapsible field groups inside the editor card */
+.fw-group { border-top: 1px solid var(--fw-border-light); padding: 10px 0; }
+.fw-group:first-of-type { border-top: 0; padding-top: 0; }
+.fw-group-head {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  padding: 4px 0;
+  list-style: none;
+}
+.fw-group-head::-webkit-details-marker { display: none; }
+.fw-group-head::before {
+  content: "\25B8";        /* ▸ */
+  display: inline-block;
+  margin-right: 7px;
+  font-size: 10px;
+  color: var(--fw-text-secondary);
+  transition: transform .2s ease;
+}
+details[open] > .fw-group-head::before { transform: rotate(90deg); }
+.fw-group > .fw-fld-grid { margin-top: 10px; }
+
+/* ============================================================
+   Notifications bell dropdown (top bar)
+   ============================================================ */
+.fw-notif-menu .dropdown-menu.fw-notif-dd {
+  width: 340px; max-width: 92vw; border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg); overflow: hidden;
+}
+.fw-notif-dd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--fw-border-light);
+  font-weight: 600; font-size: 13px; color: var(--fw-text-primary);
+  background: var(--fw-content-bg);
+}
+.fw-notif-dd-clear {
+  border: 1px solid var(--fw-border); background: var(--fw-surface);
+  color: var(--fw-text-secondary); border-radius: var(--fw-radius);
+  font-size: 12px; font-weight: 600; padding: 3px 10px; cursor: pointer;
+  line-height: 1.4;
+}
+.fw-notif-dd-clear:hover { color: var(--fw-accent); border-color: var(--fw-accent); }
+.fw-notif-dd-list { max-height: 360px; overflow-y: auto; }
+.fw-notif-dd-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--fw-border-light); text-decoration: none;
+  color: inherit; transition: background var(--fw-transition);
+}
+.fw-notif-dd-item:last-child { border-bottom: none; }
+.fw-notif-dd-item:hover { background: var(--fw-content-bg); text-decoration: none; }
+.fw-notif-dd-item.unread { background: var(--fw-accent-light); }
+.fw-notif-dd-ic { font-size: 16px; line-height: 1.3; flex: 0 0 auto; }
+.fw-notif-dd-main { display: flex; flex-direction: column; min-width: 0; }
+.fw-notif-dd-title {
+  font-size: 13px; font-weight: 500; color: var(--fw-text-primary);
+  white-space: normal; word-break: break-word;
+}
+.fw-notif-dd-time { font-size: 11px; color: var(--fw-text-secondary); margin-top: 1px; }
+.fw-notif-dd-empty {
+  padding: 22px 14px; text-align: center; color: var(--fw-text-secondary);
+  font-size: 13px;
+}
+.fw-notif-dd-foot {
+  display: block; text-align: center; padding: 9px 14px; font-size: 12.5px;
+  font-weight: 600; color: var(--fw-accent); border-top: 1px solid var(--fw-border-light);
+  background: var(--fw-content-bg);
+}
+.fw-notif-dd-foot:hover { background: var(--fw-accent-light); text-decoration: none; }
+
+/* ─── Turbo Drive navigation progress bar ─── */
+.turbo-progress-bar {
+  height: 3px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+  background-size: 200% 100%;
+  animation: fw-progress-shimmer 1.2s linear infinite;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+@keyframes fw-progress-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Dim main content while the next page is being fetched */
+#fw-main.fw-navigating {
+  opacity: 0.85;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* Ease the incoming page in after a Turbo visit (cross-fade + slight rise) */
+@keyframes fw-page-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+#fw-main.fw-entering {
+  animation: fw-page-in 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+/* Whole-page cross-fade for ADOM switches: topbar + sidebar + content fade
+   in together, so selecting an ADOM reads as one smooth transition instead
+   of an instant chrome swap with a fade only in the centre column. Opacity
+   only -- a transform on <body> would reparent fixed elements and jump the
+   layout. */
+@keyframes fw-page-in-full {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+body.fw-entering-page {
+  animation: fw-page-in-full 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: opacity;
+}
+
+/* Respect users who ask for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #fw-main.fw-navigating { transition: none; }
+  #fw-main.fw-entering  { animation: none; }
+  body.fw-entering-page { animation: none; }
+}
+
+/* ============================================================
+   Context nesting — indent the items under the always-visible
+   Device / Global headers so they read as children of the
+   label (tree guide line), matching the nested nav language
+   used elsewhere in the sidebar. 2026-07-05
+   ============================================================ */
+.fw-nav-context > .fw-nav-group-body {
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-context > .fw-nav-group-body > .fw-nav-item {
+  padding-left: 16px;
+}
+
+/* ============================================================
+   Group nesting — same tree-guide indent for the collapsible
+   nav groups (Loadbalancer, WAF, Configuration, Operations,
+   Automation, Administrator, FortiADC) so their items read as
+   children of the group header, matching Device/Global. 2026-07-05
+   ============================================================ */
+.fw-nav-group > .fw-nav-group-body {
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-group > .fw-nav-group-body > .fw-nav-item {
+  padding-left: 16px;
+}
+/* ── FortiWeb-style slide-over object panels (objedit_drawer.js, 2026-07-06) ──
+   Referenced objects open in stacked right-hand panels instead of navigating
+   away; deeper panels are slightly narrower so the parents peek at the left. */
+.fw-drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(13, 25, 42, 0.42);
+  z-index: 1050;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;
+}
+.fw-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.fw-drawer {
+  position: fixed; top: var(--fw-topbar-height); right: 0; bottom: 0;
+  width: min(1113px, 94vw);
+  background: var(--fw-content-bg);
+  border-left: 3px solid var(--fw-accent);
+  box-shadow: -14px 0 34px rgba(0, 0, 0, 0.28);
+  display: flex; flex-direction: column;
+  transform: translateX(102%);
+  transition: transform .25s ease, width .2s ease, filter .2s ease;
+}
+.fw-drawer.show { transform: none; }
+/* a page FortiWeb slides in at full width (Signature Details over its dialog) */
+.fw-drawer.is-wide { width: min(1898px, 97vw); }
+.fw-drawer.fw-drawer-under { filter: brightness(.92); }
+
+.fw-drawer-head {
+  background: var(--fw-topbar-bg);
+  color: #fff;
+  padding: .55rem .9rem;
+  display: flex; justify-content: space-between; align-items: center;
+  flex: 0 0 auto;
+}
+.fw-drawer-titles { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.fw-drawer-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fw-drawer-coll { color: #9fb3c8; font-size: .72rem; white-space: nowrap; }
+.fw-drawer-actions { display: flex; gap: .35rem; flex: 0 0 auto; }
+.fw-drawer-actions .btn {
+  color: #dce6f0; border-color: rgba(255,255,255,.35); background: transparent;
+}
+.fw-drawer-actions .btn:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,.12); }
+
+.fw-drawer-body { flex: 1 1 auto; overflow: auto; padding: 1rem; }
+.fw-drawer-body .fw-objedit > .d-flex:first-child { margin-top: -.25rem; }
+/* A device-layout dialog in a panel (FWDrawer.openFrame): its own document in
+   a same-origin frame, so its scripts never meet the dialog under it. */
+.fw-drawer-body.is-frame { padding: 0; overflow: hidden; }
+.fw-drawer-frame { border: 0; width: 100%; height: 100%; display: block; background: var(--fw-content-bg); }
+/* ...and that document draws the dialog alone (base.html marks it framed). */
+html.fw-framed .fw-topbar, html.fw-framed #fw-sidebar, html.fw-framed #fw-bookmarks,
+html.fw-framed .fw-breadcrumb, html.fw-framed .fw-page-header, html.fw-framed #fw-footer { display: none !important; }
+html.fw-framed .fw-body { padding-top: 0; }
+html.fw-framed .fw-main { margin-left: 0; padding: 12px; }
+html.fw-framed .fw-drawer { top: 0; }
+
+
+/* == PRODUCTION POLISH 2026-07-06 == */
+/* Low-risk visual refinements appended last so they win over earlier rules.
+   No inline handlers, no new CDN deps, CSP-safe. */
+
+/* Cards lift more clearly off the grey content background. */
+.fw-card { transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
+
+/* Active sidebar item: the icon takes the accent colour so selection reads instantly. */
+.fw-nav-item.active .fw-nav-icon { opacity: 1; color: var(--fw-sidebar-active); }
+
+/* Tables: readable zebra striping + a slightly stronger hover. */
+.fw-table tbody tr:nth-child(even) > td { background: #F5F7FA; }
+.fw-table tbody tr:hover > td { background: color-mix(in srgb, var(--fw-accent) 7%, transparent); }
+
+/* Card header: a touch more separation from the body. */
+.fw-card-header { background: #F6F8FA; border-bottom: 1px solid #E3E8EF; }
+
+/* Topbar: a hairline under-border defines the chrome boundary. */
+.fw-topbar { border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+/* Badges: stronger fills so they don't vanish on tinted rows. */
+.fw-badge-success   { background: rgba(40,167,69,0.16);  color: #15692A; }
+.fw-badge-danger    { background: rgba(220,53,69,0.16);  color: #8B1C2A; }
+.fw-badge-warning   { background: rgba(255,193,7,0.20);  color: #7A5700; }
+.fw-badge-info      { background: rgba(23,162,184,0.16); color: #0A5F6C; }
+.fw-badge-primary   { background: color-mix(in srgb, var(--fw-accent) 16%, transparent);  color: var(--fw-accent-hover); }
+.fw-badge-secondary { background: rgba(108,117,125,0.16);color: #3D4550; }
+
+/* A pill is a rounded box drawn around ONE line. Let a two-word verdict wrap
+   inside a narrow column and the tint stops following the text: the badge
+   reads as a cut graphic, which is worse than no badge, because the operator
+   cannot tell a broken box from a truncated word. Opt-in, so a badge sitting
+   in a genuinely narrow cell can still choose to wrap. */
+.fw-badge-nowrap { white-space: nowrap; }
+
+/* BUTTON LABELS NEVER WRAP.
+   Bootstrap 4 shipped .btn{white-space:nowrap}; Bootstrap 5 dropped it. In a
+   flex row that means a button squeezed by a sibling breaks its LABEL across
+   lines instead of staying one control, and nothing errors - the Cancel CR
+   button on a change request rendered 80px wide and THREE lines tall at every
+   viewport width, because the reason input beside it claimed width:100% of
+   their shared form. A button label is one phrase; prose belongs in .form-text.
+   An explicit <br> still breaks, so the API-explorer method chips are
+   unaffected. */
+.btn { white-space: nowrap; }
+
+/* The heading that divides one form into named sections, beside
+   .fw-section-separator. ONE definition: the same six declarations were
+   already inlined on settings/index.html, and a second copy is how this
+   product's chrome drifted apart before (feedback_shared_chrome_css). */
+.fw-form-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fw-text-secondary);
+  margin-bottom: 10px;
+}
+
+/* Empty state: intentional tinted icon medallion instead of a faded glyph. */
+.fw-empty-state-icon {
+  opacity: 1; font-size: 34px; width: 76px; height: 76px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--fw-accent-light); color: var(--fw-accent);
+  margin-bottom: 18px;
+}
+
+/* Page header: anchored with a bottom separator. */
+.fw-page-header { padding-bottom: 14px; border-bottom: 1px solid var(--fw-border-light); }
+
+/* Primary button micro-interaction. */
+.btn-fw-primary, .fw-btn-primary { background-image: var(--fw-gradient-brand); border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent);
+  transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
+.btn-fw-primary:hover, .fw-btn-primary:hover { box-shadow: 0 3px 10px color-mix(in srgb, var(--fw-glow) 45%, transparent); transform: translateY(-1px); }
+.btn-fw-primary:active, .fw-btn-primary:active { transform: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent); }
+
+/* ── Documentation section ─────────────────────────────────────────────── */
+.fw-doc-tile { transition: box-shadow var(--fw-transition), transform var(--fw-transition), border-color var(--fw-transition); }
+.fw-doc-tile:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-2px); border-color: color-mix(in srgb, var(--fw-accent) 38%, transparent); }
+.fw-doc-tile-icon {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: var(--fw-radius-lg);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--fw-accent-light); color: var(--fw-accent); font-size: 20px;
+}
+.fw-doc-tile-title { font-weight: 600; color: var(--fw-text-primary); font-size: 14px; }
+.fw-doc-tile-blurb { color: var(--fw-text-secondary); font-size: 12px; line-height: 1.45; margin-top: 3px; }
+.fw-doc-tile-slug  { color: var(--fw-text-secondary); font-size: 11px; font-family: Consolas, Monaco, monospace; margin-top: 6px; opacity: .7; }
+.fw-doc-tile-chev  { color: var(--fw-text-secondary); align-self: center; opacity: .5; }
+.fw-doc-tile:hover .fw-doc-tile-chev { color: var(--fw-accent); opacity: 1; }
+
+.fw-doc-layout { display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px){ .fw-doc-layout { grid-template-columns: 1fr; } .fw-doc-nav { display: none; } }
+.fw-doc-nav { position: sticky; top: calc(var(--fw-topbar-height) + 16px); background: var(--fw-surface); border: 1px solid var(--fw-border-light); border-radius: var(--fw-radius-lg); padding: 8px; box-shadow: var(--fw-card-shadow); }
+.fw-doc-nav-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--fw-text-secondary); padding: 6px 10px 4px; }
+.fw-doc-nav-item { display: block; padding: 7px 10px; border-radius: var(--fw-radius); font-size: 12.5px; color: var(--fw-text-primary); text-decoration: none; }
+.fw-doc-nav-item:hover { background: var(--fw-accent-light); color: var(--fw-accent); text-decoration: none; }
+.fw-doc-nav-item.active { background: var(--fw-accent); color: #fff; }
+.fw-doc-card { overflow: hidden; }
+.fw-doc-content { max-width: 900px; }
+.fw-doc-content h1, .fw-doc-content h2, .fw-doc-content h3, .fw-doc-content h4 { color: var(--fw-text-primary); font-weight: 600; margin: 1.5em 0 .5em; scroll-margin-top: calc(var(--fw-topbar-height) + 12px); }
+.fw-doc-content > h1:first-child, .fw-doc-content > h2:first-child { margin-top: 0; }
+.fw-doc-content h1 { font-size: 1.4rem; border-bottom: 2px solid var(--fw-border); padding-bottom: .35em; }
+.fw-doc-content h2 { font-size: 1.18rem; border-bottom: 1px solid var(--fw-border-light); padding-bottom: .3em; }
+.fw-doc-content h3 { font-size: 1.04rem; }
+.fw-doc-content p, .fw-doc-content li { line-height: 1.7; }
+.fw-doc-content p { margin-bottom: .85em; }
+.fw-doc-content a { color: var(--fw-accent); }
+.fw-doc-content code { background: #EEF1F5; padding: 2px 5px; border-radius: 3px; font-size: 12.5px; font-family: Consolas, Monaco, monospace; color: #C44220; }
+.fw-doc-content pre { background: #1B2A3A; color: #C9D7E6; border-radius: var(--fw-radius-lg); padding: 14px 16px; font-size: 12.5px; overflow-x: auto; border: 1px solid #2A3B4D; margin: 1em 0; }
+.fw-doc-content pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.fw-doc-content table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 13px; }
+.fw-doc-content table th { background: var(--fw-surface-alt); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; padding: 8px 12px; border-bottom: 2px solid var(--fw-border); text-align: left; }
+.fw-doc-content table td { padding: 8px 12px; border-bottom: 1px solid var(--fw-border-light); vertical-align: top; }
+.fw-doc-content table tr:nth-child(even) td { background: #F7F8FA; }
+.fw-doc-content blockquote { border-left: 4px solid var(--fw-accent); background: var(--fw-accent-light); padding: 10px 16px; margin: 1em 0; border-radius: 0 var(--fw-radius) var(--fw-radius) 0; color: var(--fw-text-secondary); }
+.fw-doc-content blockquote p { margin: 0; }
+.fw-doc-content ul, .fw-doc-content ol { padding-left: 1.4em; margin-bottom: .85em; }
+.fw-doc-content li { margin-bottom: .25em; }
+.fw-doc-content hr { border: none; border-top: 1px solid var(--fw-border); margin: 1.5em 0; }
+
+
+/* ============================================================
+   Nested Studio subgroup — a collapsible group INSIDE a nav
+   group (Administrator > Studio). Uses its own classes so the
+   flat top-level accordion (.fw-nav-group / .fw-nav-toggle in
+   main.js) never captures or collapses it. 2026-07-11
+   ============================================================ */
+.fw-nav-subtoggle {
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  /* border:0 above also dropped .fw-nav-item's 3px left border, so the
+     toggle's icon and label sat 3px left of their sibling links. */
+  border-left: 3px solid transparent;
+}
+.fw-nav-subtoggle > span { flex: 1 1 auto; }
+.fw-nav-subgroup:not(.open) .fw-nav-subtoggle .fw-nav-caret { transform: rotate(-90deg); }
+.fw-nav-subgroup-body {
+  overflow: hidden;
+  transition: opacity .2s ease;
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-subgroup:not(.open) > .fw-nav-subgroup-body { max-height: 0; opacity: 0; }
+.fw-nav-subgroup.open > .fw-nav-subgroup-body { max-height: none; opacity: 1; }
+.fw-nav-subgroup-body > .fw-nav-item { padding-left: 16px; }
+/* A collapsible group inside a submenu (Fleet -> WAF -> WAF Artifacts):
+   its head lines up with the sibling links above it. */
+.fw-nav-subgroup-body > .fw-so-parent > .fw-so-parent-head { padding-left: 16px; }
+
+/* ============================================================
+   Fix: Bootstrap .btn-outline-light is near-white (color/border #f8f9fa),
+   invisible on this LIGHT theme until hover fills it dark. It is the
+   app-wide canonical 'secondary' button, so remap it once here to a
+   visible neutral outline using the fw design tokens. (2026-07-12)
+   ============================================================ */
+.btn-outline-light {
+  color: var(--fw-text-secondary);
+  border-color: var(--fw-border);
+  background-color: var(--fw-surface);
+}
+.btn-outline-light:hover,
+.btn-outline-light:focus-visible,
+.btn-outline-light:active,
+.btn-outline-light.active,
+.btn-check:checked + .btn-outline-light {
+  color: var(--fw-text-primary);
+  background-color: var(--fw-border-light);
+  border-color: var(--fw-border);
+}
+.btn-outline-light:disabled,
+.btn-outline-light.disabled {
+  color: var(--fw-text-secondary);
+  border-color: var(--fw-border-light);
+  opacity: .55;
+}
+
+
+/* Transparent brand mark on the dark topbar: the emblem's ring is deep blue and
+   would otherwise merge into --fw-topbar-bg. A halo separates it without
+   reintroducing the opaque plate the logo deliberately does not have. */
+.fw-topbar-brand img {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fw-glow) 60%, transparent))
+          drop-shadow(0 0 2px color-mix(in srgb, var(--fw-glow-accent) 40%, transparent));
+}
+
+/* ============================================================
+   Admin Console — lateral, theme-grouped settings menu
+   Replaces the 24-entry horizontal tab strip on /settings/.
+   Built from the --fw-* tokens only: this product has ONE theme
+   (light chrome on #F3F6FC), so no dark glass belongs here.
+   ============================================================ */
+.fw-settings-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);  /* "Source of Truth & Backup" on one line at 13px */
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.fw-settings-nav {
+  display: block;                       /* .nav is a flex ROW; this is a column */
+  position: sticky;
+  top: calc(var(--fw-topbar-height) + 16px);
+  max-height: calc(100vh - var(--fw-topbar-height) - 32px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+}
+
+.fw-set-nav-group + .fw-set-nav-group { border-top: 1px solid var(--fw-border-light); }
+
+.fw-set-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-primary);
+  font-family: var(--fw-font);
+  /* The size and line of the entries under it (13px / 1.3): the heads were
+     11px capitals, so a group read smaller than its own entries. A head is
+     told apart by weight and its accent icon. */
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-set-nav-toggle:hover { background: var(--fw-surface-alt); color: var(--fw-text-primary); }
+.fw-set-nav-toggle:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+
+.fw-set-nav-group-icon { font-size: 13px; color: var(--fw-accent); flex: none; }
+.fw-set-nav-group-label { flex: 1; min-width: 0; }
+.fw-set-nav-count {
+  flex: none;
+  padding: 1px 6px;
+  background: var(--fw-surface-alt);
+  border: 1px solid var(--fw-border-light);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fw-text-secondary);
+}
+/* Caret convention is the sidebar's, not a new one: chevron-down while the
+   group is open, rotated -90deg while it is closed (fortiweb.css .fw-nav-caret).
+   Two accordions on the same screen pointing opposite ways read as two
+   different controls. */
+.fw-set-nav-caret {
+  flex: none;
+  font-size: 10px;
+  opacity: .65;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+}
+.fw-set-nav-group:not(.open) .fw-set-nav-caret { transform: rotate(-90deg); }
+
+.fw-set-nav-body {
+  overflow: hidden;
+  padding: 0 0 6px;
+  transition: opacity .2s ease;
+}
+/* visibility (not just max-height:0) so a collapsed group's entries leave the
+   TAB ORDER too — a hidden control you can still focus is worse than one that
+   is simply absent. */
+.fw-set-nav-group:not(.open) > .fw-set-nav-body {
+  max-height: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+.fw-set-nav-group.open > .fw-set-nav-body { max-height: none; opacity: 1; visibility: visible; }
+
+/* Sub-menu: one level under a group (System > General, AI > Scout / Sentinel).
+   Same accordion and caret convention as the group; its entries are indented
+   one step further so the level reads without a second icon colour. */
+.fw-set-nav-subtoggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 7px 10px 7px 16px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-primary);
+  font-family: var(--fw-font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-set-nav-subtoggle:hover { background: var(--fw-surface-alt); }
+.fw-set-nav-subtoggle:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-set-nav-subtoggle > span { flex: 1; min-width: 0; }
+.fw-set-nav-sub:not(.open) > .fw-set-nav-subtoggle .fw-set-nav-caret { transform: rotate(-90deg); }
+.fw-set-nav-sub:not(.open) > .fw-set-nav-subbody { display: none; }
+.fw-settings-nav .fw-set-nav-subbody .nav-link { padding-left: 30px; }
+
+.fw-settings-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 7px 10px 7px 16px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-primary);
+  font-family: var(--fw-font);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-settings-nav .nav-link:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.fw-settings-nav .nav-link:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-settings-nav .nav-link.active { background: var(--fw-accent); color: #FFFFFF; font-weight: 600; }
+.fw-settings-nav .nav-link > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fw-set-nav-icon { flex: none; width: 16px; text-align: center; font-size: 13px; color: var(--fw-text-secondary); }
+.fw-settings-nav .nav-link:hover .fw-set-nav-icon { color: var(--fw-accent); }
+.fw-settings-nav .nav-link.active .fw-set-nav-icon { color: #FFFFFF; }
+/* The group and sub-menu holding the open pane stay marked (accent label and
+   a 3px bar), so the path to it reads at a glance, folded or not — the same
+   rule as the sidebar. Bootstrap's tab script moves .active, :has follows. */
+.fw-set-nav-group:has(.nav-link.active) > .fw-set-nav-toggle,
+.fw-set-nav-sub:has(.nav-link.active) > .fw-set-nav-subtoggle {
+  color: var(--fw-accent);
+  box-shadow: inset 3px 0 0 var(--fw-accent);
+}
+.fw-set-nav-sub:has(.nav-link.active) > .fw-set-nav-subtoggle { background: var(--fw-accent-light); }
+/* A menu row that LEAVES the console carries the arrow, pushed to the far
+   edge so it reads as a property of the row and not as a second icon. */
+.fw-set-nav-out { flex: none; margin-left: auto; font-size: 10px;
+                  color: var(--fw-text-secondary); opacity: .75; }
+.fw-settings-nav a.nav-link { text-decoration: none; }
+.fw-settings-nav a.nav-link:hover .fw-set-nav-out { color: var(--fw-accent); opacity: 1; }
+
+/* Narrow viewports: the menu stops being a column and rides above the
+   panes — the same place the tab strip used to occupy. */
+@media (max-width: 991.98px) {
+  .fw-settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .fw-settings-nav { position: static; max-height: none; }
+}
+
+/* ------------------------------------------------------------------
+   Admin Console panes: ONE column.  The blocks of a pane stack, full
+   width, in the order they are written.
+
+   The pane is still a GRID rather than a plain block, because the gap is
+   what owns the vertical spacing here: Bootstrap's mb-3/mt-3 on those
+   blocks is zeroed below, and two spacing systems on one axis read as an
+   alignment bug.
+
+   Only the ACTIVE pane becomes a grid.  Bootstrap hides the others with
+   `display:none` on `.tab-pane`, and a blanket `display:grid` here would
+   override that and paint all 24 sections at once.
+   ------------------------------------------------------------------ */
+.fw-settings-main .tab-content > .tab-pane.active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* The gap owns the spacing now.  Bootstrap's mb-3/mt-3 on those blocks was
+   compensating for a stack that no longer exists, and it stacks ON TOP of the
+   gap. */
+.fw-settings-main .tab-content > .tab-pane.active > .fw-card,
+.fw-settings-main .tab-content > .tab-pane.active > .row,
+.fw-settings-main .tab-content > .tab-pane.active > .alert,
+.fw-settings-main .tab-content > .tab-pane.active > .d-flex {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* The pane grid is only ONE of the places a pane splits in two.  Bootstrap
+   rows carry a grid of their own and they nest: `col-lg-7` beside `col-lg-5`
+   stacks cards side by side at the top level, and inside a card body a
+   `row g-4` lays two tables abreast (System Information).  Both read as two
+   columns to the operator, so BOTH collapse — the rule is a descendant one on
+   purpose.
+
+   `col-auto` is the exception, and it is not an inconsistency: it means "size
+   to the content", and it is how this page writes inline toolbars and the
+   button beside a field.  Stretching those to the full width does not give one
+   column, it gives a stack of buttons.  `col-form-label` is excluded for the
+   same reason — it is a label, not a column of the layout. */
+.fw-settings-main .tab-content > .tab-pane.active [class*="col-"]:not([class*="col-auto"]):not([class*="col-form-label"]) {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Bootstrap's .badge is white-space:nowrap, so the DNS-provider card's
+   "missing: A, B, C, D, E" runs PAST the card instead of wrapping — the
+   operator reads a truncated list of environment variables and gets no
+   scrollbar to tell them so.  One column is wider than two, but a card is
+   still not as wide as the run: kept.  Scoped to these panes: elsewhere a
+   badge sits in a table cell, where wrapping is the regression. */
+.fw-settings-main .tab-content > .tab-pane.active .badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.fw-settings-main .tab-content > .tab-pane.active code {
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   BOOKMARKS RAIL  (right-hand collapsible panel)
+   LIGHT chrome only. This product has no dark mode: a slate card with
+   backdrop-filter over a #F3F6FC page renders as an opaque grey slab, and
+   pastel status pills sink to ~1.4:1 against it. Everything below is built
+   from --fw-* tokens and .fw-badge-*, which are calibrated against white.
+   ============================================================ */
+.bm-rail {
+  position: fixed;
+  top: var(--fw-topbar-height);
+  right: 0;
+  bottom: 0;
+  z-index: 1035;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+}
+.bm-rail > * { pointer-events: auto; }
+
+.bm-tab {
+  margin-top: 12px;
+  width: 34px;
+  height: 42px;
+  border: 1px solid var(--fw-border);
+  border-right: none;
+  border-radius: var(--fw-radius) 0 0 var(--fw-radius);
+  background: var(--fw-surface);
+  color: var(--fw-accent);
+  box-shadow: var(--fw-card-shadow);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.bm-tab:hover { background: var(--fw-accent-light); }
+.bm-tab-badge {
+  position: absolute;
+  top: -6px; left: -6px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--fw-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.bm-panel {
+  width: 0;
+  height: 100%;
+  overflow: hidden auto;
+  background: var(--fw-surface);
+  border-left: 1px solid var(--fw-border);
+  box-shadow: var(--fw-card-shadow);
+  transition: width var(--fw-transition, .2s ease);
+  font-size: 12.5px;
+}
+body.bm-open .bm-panel { width: 300px; }
+body.bm-open .fw-main { margin-right: 300px; }
+/* Closed, the rail still keeps its 34px tab on the right edge. Without this
+   gutter the tab covered whatever a page put top-right (Script Library's
+   Publish button was the reported case): reserve the strip instead. */
+body:has(#fw-bookmarks):not(.bm-open) .fw-main { margin-right: 34px; }
+.fw-main { transition: margin-right var(--fw-transition, .2s ease); }
+
+.bm-loading { padding: 24px; text-align: center; color: var(--fw-text-secondary); }
+
+.bm-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--fw-border-light);
+  position: sticky; top: 0; background: var(--fw-surface); z-index: 2;
+}
+.bm-title { display: flex; align-items: center; gap: 6px;
+  font-weight: 700; color: var(--fw-text-primary); }
+.bm-title i { color: var(--fw-accent); }
+.bm-head-actions { display: flex; gap: 2px; }
+
+.bm-iconbtn {
+  border: none; background: transparent; color: var(--fw-text-secondary);
+  padding: 3px 5px; border-radius: var(--fw-radius); line-height: 1;
+}
+.bm-iconbtn:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.bm-iconbtn.bm-danger:hover { background: rgba(220,53,69,.12); color: #8B1C2A; }
+.bm-star-on { color: #C98A11; }
+
+.bm-searchbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-bottom: 1px solid var(--fw-border-light);
+  background: var(--fw-surface-alt);
+  position: sticky; top: 41px; z-index: 2;
+}
+.bm-search-ico { color: var(--fw-text-secondary); font-size: 12px; }
+.bm-search {
+  flex: 1; min-width: 0; font-size: 12px; padding: 4px 7px;
+  border: 1px solid var(--fw-border); border-radius: var(--fw-radius);
+  background: var(--fw-surface); color: var(--fw-text-primary);
+}
+.bm-search:focus { outline: none; border-color: var(--fw-accent);
+  box-shadow: 0 0 0 2px var(--fw-accent-light); }
+
+.bm-note {
+  margin: 0; padding: 7px 12px; font-size: 11.5px;
+  color: var(--fw-accent-hover); background: var(--fw-accent-light);
+  border-bottom: 1px solid var(--fw-border-light);
+}
+.bm-note-muted { color: var(--fw-text-secondary); background: var(--fw-surface-alt); }
+
+/* ---- the tree ------------------------------------------------------------
+   Rows are uniform; only the left padding changes with depth, so a device
+   three levels down still lines up with its siblings and the caret column of
+   its parent stays readable. Depth is a CLASS, not an inline style: the CSP
+   here ships a nonce and per-row style attributes die the day style-src drops
+   unsafe-inline. */
+.bm-tree { padding: 2px 0 8px; }
+
+.bm-row {
+  display: flex; align-items: center; gap: 5px;
+  min-height: 25px; padding: 2px 8px 2px 8px;
+  color: var(--fw-text-primary);
+}
+/* Pointing at a row lights it in the reader's own banner colour, washed to
+   a fraction of it. Background only -- the label keeps --fw-text-primary.
+   Falls back to the neutral muted surface when no colour reaches the panel,
+   so a row fragment rendered outside the tree still answers the pointer.
+   :focus-within rides along because this row already treats a focused
+   descendant as equivalent to hover for .bm-actions; without it a keyboard
+   reader gets the action buttons appearing on an unlit row. */
+.bm-row:hover, .bm-row:focus-within {
+  background: var(--bm-row-hover, var(--fw-surface-alt));
+}
+.bm-grp { font-weight: 600; cursor: pointer; user-select: none; }
+.bm-row-hidden { opacity: .55; }
+.bm-row.bm-dragover {
+  background: var(--fw-accent-light);
+  outline: 1px dashed var(--fw-accent); outline-offset: -2px;
+}
+/* Drag-to-reorder: a 2px bar on the edge the row will land against. A shadow,
+   not a border, so the rows around it do not jump by 2px while dragging. */
+.bm-row.bm-drop-before { box-shadow: inset 0 2px 0 var(--fw-accent); }
+.bm-row.bm-drop-after { box-shadow: inset 0 -2px 0 var(--fw-accent); }
+/* "This one opens in another ADOM": the ADOM it switches the tab to. */
+.bm-adom {
+  flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 1.4;
+  color: var(--fw-text-secondary); border: 1px solid var(--fw-border-light);
+  border-radius: 3px; padding: 0 4px;
+}
+
+.bm-d0 { padding-left: 8px; }
+.bm-d1 { padding-left: 21px; }
+.bm-d2 { padding-left: 34px; }
+.bm-d3 { padding-left: 47px; }
+.bm-d4 { padding-left: 60px; }
+.bm-d5 { padding-left: 73px; }
+.bm-d6 { padding-left: 86px; }
+.bm-d7 { padding-left: 99px; }
+.bm-d8 { padding-left: 112px; }
+
+.bm-caret { color: var(--fw-text-secondary); font-size: 10px; width: 10px;
+  flex: 0 0 10px; text-align: center; }
+.bm-ico { color: var(--fw-text-secondary); font-size: 12px; flex: 0 0 auto; }
+.bm-ico-grp { color: #C98A11; }
+.bm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-sub { color: var(--fw-text-secondary); font-size: 11px; flex: 0 0 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-count {
+  color: var(--fw-text-secondary); font-size: 10.5px; font-weight: 600;
+  background: var(--fw-surface-alt); border: 1px solid var(--fw-border-light);
+  border-radius: 8px; padding: 0 5px; line-height: 15px; flex: 0 0 auto;
+}
+.bm-grp:hover .bm-count { background: var(--fw-surface); }
+
+.bm-link { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+  color: var(--fw-text-primary); text-decoration: none; }
+.bm-link:hover { color: var(--fw-accent); }
+.bm-grp .bm-name { flex: 1; min-width: 0; }
+
+/* Device-type bucket. The wash is the reader's own top-bar banner at 8%; the
+   label keeps --fw-text-primary (~15:1 on white). Painting the TEXT in the
+   banner colour at this alpha is how a pill ends up saying something nobody
+   can read. Falls back to the neutral muted surface when no colour reaches
+   the panel, so the chip never renders as a bare word. */
+.bm-grp .bm-name.bm-type {
+  flex: 0 1 auto;
+  background: var(--bm-type-fill, var(--fw-surface-alt));
+  border: 1px solid var(--bm-type-line, var(--fw-border-light));
+  border-radius: 10px;
+  padding: 0 7px;
+  line-height: 17px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.bm-actions { display: flex; align-items: center; gap: 1px; opacity: 0;
+  transition: opacity .12s ease; flex: 0 0 auto; }
+.bm-row:hover .bm-actions, .bm-row:focus-within .bm-actions { opacity: 1; }
+.bm-fav { opacity: 1; }
+.bm-flag { color: var(--fw-text-secondary); font-size: 11px; padding: 0 2px; }
+.bm-del { color: var(--fw-text-secondary); padding: 0 2px; flex: 0 0 auto; }
+.bm-del:hover { color: #8B1C2A; }
+
+.bm-kids { }
+.bm-empty { margin: 0; padding: 4px 12px;
+  color: var(--fw-text-secondary); font-size: 11.5px; font-style: italic; }
+
+.bm-foot { padding: 8px 12px; color: var(--fw-text-secondary);
+  border-top: 1px solid var(--fw-border-light);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bm-check { display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: 11.5px; }
+.bm-foot-count { font-size: 11.5px; white-space: nowrap; }
+
+@media (max-width: 991.98px) {
+  body.bm-open .bm-panel { width: 84vw; }
+  body.bm-open .fw-main { margin-right: 0; }
+}
+
+
+/* --- BOOKMARKS: link to the grouping order -------------------------------
+   An <a> styled as one of the rail's icon buttons. Light chrome only: this
+   product has no dark mode, and a slate control on a white panel reads as a
+   grey slab. */
+a.bm-iconbtn { display:inline-flex; align-items:center; justify-content:center;
+               text-decoration:none; }
+.bm-order { margin-left:auto; padding:0 4px; color:var(--fw-text-muted,#6B7280);
+            text-decoration:none; font-size:12px; line-height:1; opacity:.75; }
+.bm-order:hover { color:var(--fw-accent); opacity:1; }
+
+/* --- BOOKMARKS: the link that leaves the console ------------------------ */
+/* Dimmed, not absent: a device whose record has no reachable address keeps
+   its slot so the row does not silently lose a control the row beside it has.
+   Colour comes from the --fw-* tokens (docs/design-system.md). */
+a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.bm-dev-off { opacity: .3; cursor: not-allowed; }
+/* A refused saved link keeps its row and states why in the tooltip. It is
+   deliberately NOT styled as a broken control: the row is fine, the URL on
+   it is not, and the person who can fix that is the one reading the row. */
+.bm-link-off { color: var(--fw-text-secondary); cursor: not-allowed; }
+.bm-link-off .bm-ico { color: var(--fw-warning, #7A5700); }
+.bm-dev-off:hover { background: transparent; color: var(--fw-text-secondary); }
+
+/* ============================================================
+   Device context — the ADOM on its own indented line. 2026-08-18
+   A FortiWeb in ADOM mode is one row per ADOM, named
+   "<device>@<adom>"; that name plus the "change" hint is wider
+   than the 260px rail, and .fw-nav-item is white-space:nowrap,
+   so it OVERFLOWED rather than wrapped. The device keeps the
+   clickable line and truncates with an ellipsis; the ADOM sits
+   under it, aligned to the device text column (16 rail padding
+   + 18 icon + 10 gap = 44px), reading as its child.
+   ============================================================ */
+.fw-nav-context .fw-nav-device-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fw-nav-device-adom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 7px 44px;
+  margin-top: -3px;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--fw-sidebar-section);
+  min-width: 0;
+}
+.fw-nav-device-adom > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fw-nav-device-adom-icon {
+  font-size: 10px;
+  opacity: .65;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Appliance roster — the ADOMs of one chassis, folded under it.
+   2026-08-18. One physical FortiWeb in ADOM mode is one ROW per
+   ADOM (the auth token carries exactly one), so a flat list
+   printed the same box three times. The device anchors the
+   group; its other ADOMs read as children and start folded.
+   Light chrome only: this product has no dark theme, and the
+   status colours come from .fw-badge-* (see safeguards 9m).
+   ============================================================ */
+.fw-adom-toggle,
+.fw-adom-none {
+  /* One shared box so the name column starts at the same x whether or not
+     the appliance has extra ADOMs. Fixed width, not glyph width: the
+     chevron and the placeholder are different glyphs. */
+  display: inline-block;
+  width: 14px;
+  padding: 0;
+  margin-right: 6px;
+  line-height: 1;
+  text-align: center;
+  vertical-align: baseline;
+}
+.fw-adom-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--fw-text-secondary);
+  cursor: pointer;
+}
+/* Placeholder only. Not a button: there is nothing to expand here. */
+.fw-adom-none {
+  color: var(--fw-text-muted, #9AA4B8);
+  cursor: default;
+  user-select: none;
+}
+.fw-adom-toggle:hover { color: var(--fw-accent); }
+.fw-adom-toggle i {
+  display: inline-block;
+  transition: transform .12s ease-out;
+}
+.fw-adom-toggle.is-open i { transform: rotate(90deg); }
+.fw-adom-row { background: rgba(148, 163, 184, 0.06); }
+.fw-adom-cell { padding-left: 28px; }
+/* The pointer to the row that DOES carry firmware/backup/console. Muted, so
+   it never reads as one of those verbs sitting on an ADOM row. */
+.fw-adom-owner-link { opacity: .75; }
+
+/* ── Inline help: the "?" beside a control ─────────────────────────────────
+   The panel itself is rendered into <body> by fw_hints.js, NOT beside the
+   icon, and that is not a detail: `.fw-card` above is `overflow: hidden`, so
+   a panel positioned inside the card is clipped at its edge — a paragraph cut
+   in half that still looks like a working tooltip. Bootstrap's default
+   200px is far too narrow for a real explanation, so the width is raised on
+   our own class rather than globally: other tooltips (if any ever appear)
+   keep Bootstrap's sizing. */
+.fw-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 5px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fw-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: -2px;
+  cursor: help;
+  opacity: .65;
+  transition: color var(--fw-transition), background var(--fw-transition),
+              opacity var(--fw-transition);
+}
+
+.fw-hint:hover,
+.fw-hint:focus-visible {
+  color: var(--fw-accent);
+  background: var(--fw-accent-light);
+  opacity: 1;
+}
+
+/* Focus must stay visible: this control is reachable ONLY by keyboard or tap
+   for anyone who cannot hover, and an invisible focus ring makes the whole
+   explanation unreachable for them. */
+.fw-hint:focus { outline: none; }
+.fw-hint:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+/* The icon must not be the event target, or `closest()` checks and the
+   tooltip's own hover tracking see the <i> instead of the button. */
+.fw-hint > i { pointer-events: none; }
+
+.fw-hint-tip { --bs-tooltip-max-width: 380px; --bs-tooltip-opacity: 1; }
+
+.fw-hint-tip .tooltip-inner {
+  max-width: 380px;
+  padding: 10px 13px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: .1px;
+  background: #1B2A3A;
+  color: #DCE6F2;
+  border-radius: var(--fw-radius-lg);
+  box-shadow: 0 6px 22px rgba(16, 32, 52, .30);
+}
+
+.fw-hint-tip .tooltip-arrow::before { border-top-color: #1B2A3A; }
+/* The whole text of a cut menu label (fw_hints.js, data-fw-fulltext): a
+   name, so tighter than the prose of a hint, and a long word still wraps. */
+.fw-fulltext-tip .tooltip-inner { padding: 6px 10px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.fw-hint-tip.bs-tooltip-bottom .tooltip-arrow::before,
+.fw-hint-tip[data-popper-placement^="bottom"] .tooltip-arrow::before { border-bottom-color: #1B2A3A; }
+.fw-hint-tip[data-popper-placement^="left"]  .tooltip-arrow::before { border-left-color: #1B2A3A; }
+.fw-hint-tip[data-popper-placement^="right"] .tooltip-arrow::before { border-right-color: #1B2A3A; }
+
+/* On a narrow screen a 380px panel anchored to a 16px icon is mostly
+   off-canvas; let it use the width it has. */
+@media (max-width: 575.98px) {
+  .fw-hint-tip { --bs-tooltip-max-width: 92vw; }
+  .fw-hint-tip .tooltip-inner { max-width: 92vw; }
+}
+
+
+/* --- Clone-history flag + popover (workspace policy list) ------------------
+   Light chrome only: colours come from --fw-* tokens and .fw-badge-*, which are
+   calibrated against white (safeguards 9m). No dark-theme slabs here. */
+.fw-clone-flag {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px; padding: 1px 6px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; line-height: 1.5; cursor: help;
+  background: var(--fw-accent-light); color: var(--fw-accent);
+  border: 1px solid transparent; vertical-align: middle;
+}
+.fw-clone-flag:hover, .fw-clone-flag:focus {
+  border-color: var(--fw-accent); outline: none;
+}
+/* Every recorded attempt failed: the flag must not read as "a copy exists". */
+.fw-clone-flag-empty { background: rgba(220,53,69,0.12); color: #8B1C2A; }
+.fw-clone-pop { --bs-popover-max-width: 520px; }
+.fw-clone-pop .popover-body { padding: 6px 8px; }
+.fw-clone-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fw-clone-tbl td { padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
+.fw-clone-tbl tr + tr td { border-top: 1px solid var(--fw-border-light); }
+.fw-clone-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.fw-clone-when, .fw-clone-who { color: var(--fw-text-secondary); }
+.fw-clone-bad td { color: #8B1C2A; }
+
+/* Why a recorded attempt failed — shown next to the failed badge. */
+.fw-clone-err { color: #8B1C2A; font-size: 11px; }
+
+
+/* ── #versionDelta: ONE COLUMN PER BUILD ─────────────────────────────────
+   The finding lives in the identity column — the class badge, or on a field
+   delta the subtraction, which is about the PAIR and cannot sit in either
+   build's column without implying the other one's number. Each build column
+   then holds only what was measured on THAT build, indented under the
+   transport that produced it.
+
+   Styled here rather than inline because twelve loops render these cells, and
+   a second author of one rule is how this page lost a link once already. */
+#versionDelta td .dv-count { color: var(--fw-text-secondary); font-variant-numeric: tabular-nums; }
+#versionDelta th.dv-build { min-width: 210px; }
+
+/* Column 2 — the kind of evidence, in one place instead of twice per row
+   (2026-09-16). Narrow and non-wrapping: it holds one badge on every row but
+   the incomparable ones, which stack two, each prefixed by its build. Those
+   are the only rows whose two sides disagree, which is what makes them
+   incomparable — so the split is the finding and not a layout accident. */
+#versionDelta th.dv-evcol { width: 1%; white-space: nowrap; cursor: help; }
+#versionDelta td .dv-ev { white-space: nowrap; line-height: 1.6; }
+#versionDelta td .dv-ev-side + .dv-ev-side { margin-top: 2px; }
+#versionDelta td .dv-ev-scope {
+  color: var(--fw-text-secondary); font-size: 10.5px;
+  font-variant-numeric: tabular-nums; margin-right: 3px;
+}
+
+/* The indent IS the reading order: the transport, then what that transport
+   says about this build. Flat, this was the old Change cell — six shapes deep
+   and readable only one row at a time. */
+#versionDelta td .dv-tree { font-size: 12px; line-height: 1.6; }
+#versionDelta td .dv-t-head {
+  color: var(--fw-text-secondary); text-transform: uppercase;
+  letter-spacing: .04em; font-size: 10.5px; font-weight: 600;
+}
+#versionDelta td .dv-t-head + .dv-t-body { padding-left: 12px; margin-bottom: 3px; }
+
+/* Dotted underline = there is a reason behind this and it is one hover away.
+   The CLI head carries the capture it answers from; an unmeasured side
+   carries why it has no answer. Same affordance because the reader's question
+   is the same one. */
+#versionDelta td .dv-cli-scope,
+#versionDelta td .dv-unmeasured,
+.dv-coverage .dv-why,
+#versionDelta td .dv-why,
+#versionDelta td .dv-ev-peer { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+
+/* "there is another row about this name". Deliberately quiet: it is a pointer,
+   not a finding, and a pointer loud enough to compete with the evidence badge
+   beside it would be read as one. */
+#versionDelta td .dv-ev-also {
+  color: var(--fw-text-secondary); font-size: 10.5px; margin-top: 2px;
+}
+/* The reason a side has no schema. Same dotted affordance as every other
+   "there is a reason one hover away" on this page — same question, same
+   gesture, and a second affordance for it is a second thing to learn. */
+#versionDelta td .dv-why,
+.dv-coverage .dv-why { color: var(--fw-text-secondary); font-size: 11px; }
+
+/* The names fold is gone (2026-09-16): both halves open the one window
+   instead. Its rules went with it rather than sitting here unreferenced —
+   dead CSS is how a later reader concludes the fold still exists. */
+#versionDelta .dv-fold-hint { color: var(--fw-text-secondary); }
+/* The CLI half's numbers. Same calibration as the API half's counts — this
+   product is light chrome (safeguards §9m), so state colour comes from the
+   .fw-badge-* set and never from a dark-theme pastel. */
+#versionDelta td .dv-cli-count { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+#versionDelta td .dv-cli-gap { font-variant-numeric: tabular-nums; cursor: help; }
+#versionDelta td .dv-api-gap { font-variant-numeric: tabular-nums; }
+#versionDelta td .dv-names-more { line-height: 1.2; vertical-align: baseline; }
+#dvCliNames .modal-body { max-height: 60vh; overflow-y: auto; }
+
+/* "auto" marker on a field still holding the product's proposed wording. Two
+   pages show it (Change Requests -> New, Upgrade Flow stage 2); it is declared
+   ONCE here because a per-page copy is how chrome drifts between sections. */
+.fw-auto-chip{display:none;margin-left:6px;padding:1px 6px;border-radius:9px;
+  font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+  background:var(--fw-surface-alt,#F4F5F7);color:var(--fw-text-secondary,#5A6270);
+  border:1px solid var(--fw-border,#D6DAE0);vertical-align:middle;}
+.fw-auto-chip.is-on{display:inline-block;}
+
+/* ── FortiWeb GUI layout (workspace/gui_*.html, services/gui_template.py) ──
+   The STRUCTURE of FortiWeb's own pages, measured on fortiweb17 (7.6.8):
+   the pane fills the content area edge to edge; the list is a toolbar
+   (Create New ▾ · Edit · Delete · Search) over a ruled grid; a dialog is a
+   title bar, full-width section bands, a label column sized per section,
+   selects with a caret and an edit pencil, and a footer bar. Drawn with
+   SATOM's light theme and Bootstrap Icons -- no Fortinet CSS or assets. */
+.fwg-pane{margin:-24px;min-height:calc(100vh - var(--fw-topbar-height,50px));
+  display:flex;flex-direction:column;background:var(--fw-surface,#fff);font-size:14px;}
+.fwg-note{display:flex;gap:10px;align-items:center;padding:3px 10px;font-size:12px;
+  color:var(--fw-text-secondary);border-bottom:1px solid var(--fw-border-light,#E8EBEF);
+  padding-right:52px;}
+.fwg-note a{margin-left:auto;}
+.fwg-pane .fw-alert{margin:6px 10px;}
+/* list */
+.fwg-toolbar{display:flex;gap:6px;align-items:center;padding:8px 52px 8px 8px;flex-wrap:wrap;}
+.fwg-tb-btn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;
+  border:1px solid var(--fw-border,#D6DAE0);border-radius:2px;background:var(--fw-surface,#fff);
+  color:var(--fw-text-primary);font-size:14px;text-decoration:none;cursor:pointer;white-space:nowrap;}
+.fwg-tb-btn:hover{background:var(--fw-surface-alt,#F4F5F7);}
+.fwg-tb-btn.is-disabled,.fwg-tb-btn[aria-disabled="true"]{color:var(--fw-text-secondary);
+  pointer-events:none;opacity:.75;}
+.fwg-menu{position:relative;}
+.fwg-menu>summary{list-style:none;}
+.fwg-menu>summary::-webkit-details-marker{display:none;}
+.fwg-menu-body{position:absolute;z-index:20;top:100%;left:0;min-width:150px;
+  background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#D6DAE0);
+  box-shadow:var(--fw-card-shadow);padding:2px 0;}
+.fwg-menu-body a{display:block;padding:5px 8px;color:var(--fw-text-primary);
+  text-decoration:none;white-space:nowrap;}
+.fwg-menu-body a:hover{background:var(--fw-surface-alt,#F4F5F7);}
+.fwg-search{display:inline-flex;height:28px;}
+.fwg-search input{width:200px;border:1px solid var(--fw-border,#D6DAE0);border-right:0;
+  padding:0 8px;font-size:14px;border-radius:0;}
+.fwg-search span{display:inline-flex;align-items:center;padding:0 9px;
+  border:1px solid var(--fw-border,#D6DAE0);}
+.fwg-grid-wrap{flex:1;overflow:auto;border-top:1px solid var(--fw-border,#D6DAE0);}
+.fwg-table{width:100%;border-collapse:collapse;}
+.fwg-table th{position:sticky;top:0;z-index:1;background:var(--fw-surface-alt,#F4F5F7);
+  font-weight:400;white-space:nowrap;text-align:center;padding:9px 8px;
+  border-right:1px solid var(--fw-border,#D6DAE0);border-bottom:1px solid var(--fw-border,#D6DAE0);}
+.fwg-table td{white-space:nowrap;padding:0 8px;height:32px;vertical-align:middle;
+  border-right:1px solid var(--fw-border-light,#E8EBEF);border-bottom:1px solid var(--fw-border-light,#E8EBEF);}
+.fwg-table tbody tr{cursor:default;}
+.fwg-table tbody tr:hover td{background:var(--fw-surface-alt,#F4F5F7);}
+.fwg-table tbody tr.is-selected td{background:#DCE4F3;}
+.fwg-table tbody tr:focus{outline:1px dotted var(--fw-accent);outline-offset:-1px;}
+.fwg-run{color:var(--fw-text-primary);}
+.fwg-run i{color:#15692A;}
+.fwg-idle{color:var(--fw-text-primary);}
+.fwg-idle i{color:#3D4550;}
+/* dialog */
+.fwg-titlebar{display:flex;align-items:center;gap:12px;padding:6px 52px 6px 15px;
+  background:#ECEFF3;color:var(--fw-text-primary);}
+.fwg-titlebar .fwg-sub{margin-left:auto;font-size:12px;color:var(--fw-text-secondary);}
+.fwg-body{flex:1;overflow:auto;padding:0 0 24px;}
+.fwg-sec-title{display:flex;align-items:center;gap:8px;margin:14px 0 0;padding:5px 15px;
+  background:var(--fw-surface-alt,#F4F5F7);color:var(--fw-text-primary);font-size:15px;
+  list-style:none;}
+summary.fwg-sec-title{cursor:pointer;}
+summary.fwg-sec-title::-webkit-details-marker{display:none;}
+/* a FortiGate dialog's own tab (its sections follow, in screen order) */
+.fwg-dlg-tab{margin:18px 15px 0;padding:4px 12px;display:inline-block;font-size:13px;font-weight:600;
+  border-bottom:2px solid var(--fw-accent,#0d9488);color:var(--fw-text-primary);}
+.fwg-fold>summary .bi-dash-square-fill{display:none;}
+.fwg-fold[open]>summary .bi-plus-square-fill{display:none;}
+.fwg-fold[open]>summary .bi-dash-square-fill{display:inline-block;}
+.fwg-fields{display:grid;grid-template-columns:max-content 1fr;column-gap:18px;row-gap:5px;
+  align-items:center;padding:12px 15px 4px;}
+.fwg-label{white-space:nowrap;color:var(--fw-text-primary);}
+.fwg-label .bi-info-circle-fill{color:var(--fw-accent);font-size:13px;margin-left:5px;cursor:help;}
+.fwg-value{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:24px;}
+.fwg-input{display:inline-block;width:242px;min-height:25px;padding:2px 8px;
+  border:1px solid var(--fw-border,#D6DAE0);border-radius:0;background:var(--fw-surface,#fff);
+  color:var(--fw-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fwg-input.is-ro{background:var(--fw-surface-alt,#F4F5F7);color:var(--fw-text-secondary);width:274px;}
+.fwg-select{position:relative;padding-right:26px;}
+.fwg-select::after{content:"";position:absolute;right:8px;top:50%;margin-top:-2px;
+  border:5px solid transparent;border-top-color:var(--fw-text-primary);border-bottom:0;}
+.fwg-select.is-wide{width:274px;}
+.fwg-pencil{color:var(--fw-text-primary);font-size:14px;}
+.fwg-textarea{display:block;width:234px;min-height:70px;padding:4px 8px;white-space:pre-wrap;
+  border:1px solid var(--fw-border,#D6DAE0);}
+.fwg-tagbox{display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  width:274px;min-height:25px;border:1px solid var(--fw-border,#D6DAE0);}
+.fwg-switch{display:inline-block;width:20px;height:12px;border-radius:6px;position:relative;
+  border:2px solid #3D4550;vertical-align:middle;}
+.fwg-switch::after{content:"";position:absolute;top:1px;left:1px;width:6px;height:6px;
+  border-radius:50%;background:#3D4550;}
+.fwg-switch.is-on{border-color:var(--fw-accent);background:var(--fw-accent);}
+.fwg-switch.is-on::after{left:9px;background:#fff;}
+.fwg-suffix{color:var(--fw-text-secondary);}
+/* FortiWeb draws a radio group as a segmented button bar (Local | Multi
+   Certificate | Let's Encrypt): read-only and editable look the same */
+.fwg-radio,.fwg-seg{display:inline-flex;flex-wrap:wrap;}
+.fwg-radio span,.fwg-seg-btn{display:inline-flex;align-items:center;min-height:25px;padding:2px 9px;
+  margin:0 -1px 0 0;border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);
+  color:var(--fw-text-primary);cursor:default;}
+.fwg-seg-btn{cursor:pointer;}
+.fwg-radio span.is-on,.fwg-seg-btn:has(.fwg-seg-input:checked){background:var(--fw-accent);
+  border-color:var(--fw-accent);color:#fff;position:relative;z-index:1;}
+.fwg-seg-input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;}
+.fwg-seg-btn:focus-within{outline:2px solid var(--fw-accent);outline-offset:1px;}
+a.fwg-pencil{text-decoration:none;}
+/* FortiWeb's Omniselect: the reference list in a panel with search, an Edit
+   entry pencil per entry and + Create at its top (gui_dialog.html) */
+.fwg-omni{position:relative;display:inline-block;min-width:220px;}
+.fwg-omni-btn{text-align:left;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fwg-omni-pop{position:absolute;z-index:1060;left:0;top:100%;min-width:100%;max-width:420px;margin-top:2px;
+  background:#fff;border:1px solid var(--fw-border,#D6DAE0);border-radius:4px;
+  box-shadow:0 4px 14px rgba(16,24,40,.12);padding:6px;}
+.fwg-omni-list{list-style:none;margin:6px 0 0;padding:0;max-height:240px;overflow:auto;}
+.fwg-omni-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:3px 6px;border-radius:3px;cursor:pointer;color:var(--fw-text-primary);}
+.fwg-omni-list li:hover,.fwg-omni-list li.is-active{background:var(--fw-content-bg,#F3F6FC);}
+.fwg-omni-list li.is-sel{font-weight:600;}
+.fwg-omni-edit{color:var(--fw-text-primary);text-decoration:none;opacity:.7;}
+.fwg-omni-edit:hover{opacity:1;color:var(--fw-accent);}
+.fwg-omni-create{display:block;width:100%;margin-bottom:6px;padding:4px 6px;text-align:left;border:0;
+  border-bottom:1px solid var(--fw-border,#D6DAE0);background:none;color:var(--fw-accent);}
+.fwg-pencil.is-off{opacity:.35;pointer-events:none;}
+.fwg-chip{display:inline-block;padding:0 7px;border-radius:2px;
+  border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface-alt,#F4F5F7);font-size:13px;}
+.fwg-rows td{height:26px;}
+.fwg-unknown-tag{font-size:11px;color:#7A5700;border:1px solid #7A5700;border-radius:2px;
+  padding:0 4px;margin-left:6px;}
+.fwg-footer{position:sticky;bottom:0;display:flex;justify-content:center;gap:8px;padding:8px;
+  background:#ECEFF3;border-top:1px solid var(--fw-border,#D6DAE0);}
+.fwg-btn{display:inline-flex;align-items:center;justify-content:center;width:120px;height:28px;
+  border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);
+  color:var(--fw-text-primary);text-decoration:none;}
+.fwg-btn.is-primary{background:var(--fw-accent);border-color:var(--fw-accent);color:#fff;}
+.fwg-btn[aria-disabled="true"]{opacity:.5;pointer-events:none;}
+button.fwg-btn{cursor:pointer;}
+/* editable layout view: the controls keep the GUI's field width; the review
+   panel sits above the footer and shows the dry-run diff before Apply */
+.fwg-edit{width:auto;min-width:220px;max-width:420px;}
+.fwg-value .form-check-inline{margin-right:10px;}
+.fwg-review{margin:8px 16px;padding:10px 12px;border:1px solid var(--fw-accent);background:#FFFFFF;}
+.fwg-review .fwg-btn{width:auto;padding:0 14px;}
+/* inline sub-table (HTTP Content Routing, Public IP): toolbar + grid in the value column */
+/* full width of the value column (was max-width:900px, which left half the
+   screen empty at 1920 - 2026-10-24); min-width:0 lets it shrink in the grid */
+.fwg-subtable{flex:1 1 100%;min-width:0;max-width:100%;border:1px solid var(--fw-border,#D6DAE0);}
+.fwg-subtable .fwg-toolbar{padding:4px;}
+.fwg-subtable .fwg-table td{height:28px;}
+.fwg-noresults{text-align:center;color:var(--fw-text-secondary);}
+
+/* "Not in GUI, but in CLI" CLI editor (nig_cli): the previewed script */
+.fw-nig-script { background: var(--fw-content-bg, #F4F5F7); border: 1px solid #E1E4E8; border-radius: 4px; padding: 6px 8px; white-space: pre-wrap; }
+/* FortiWeb-layout view: a section wrapper that leaves the grid untouched, and
+   live show / hide (author display rules must not override [hidden]) */
+.fwg-block { display: contents; }
+.fwg-pane [hidden] { display: none !important; }
+
+/* generic FortiWeb pages (workspace.fwgui_*): tabs above the grid as FortiWeb
+   draws them, the menu path, and the all-pages index */
+.fwg-crumbs{padding:6px 12px 0;}
+.fwg-tabs{display:flex;gap:0;border-bottom:1px solid var(--fw-border,#D6DAE0);padding:0 12px;}
+.fwg-tab{padding:6px 14px;color:var(--fw-text-primary);text-decoration:none;border:1px solid transparent;
+  border-bottom:0;margin-bottom:-1px;}
+.fwg-tab.is-on{border-color:var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);font-weight:600;}
+.fwg-idx{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+.fwg-idx ul{list-style:none;padding-left:12px;margin:0;}
+.fwg-idx li{padding:2px 0;}
+.fwg-idx-group{font-weight:600;color:var(--fw-text-secondary);}
+
+/* ============================================================
+   SATOM frame around a FortiWeb layout (.fwg-satom): every FortiWeb page.
+   FortiWeb gives the structure (toolbar actions, columns, sections, fields,
+   conditions); SATOM gives the look: card, page header, its buttons, inputs,
+   table and badges. Scoped so the bare .fwg-pane pages are untouched.
+   ============================================================ */
+.fwg-pane.fwg-satom{margin:0 0 20px;min-height:0;display:block;font-size:13.5px;}
+.fwg-satom .fwg-note{padding:10px 20px;background:var(--fw-surface-alt);
+  border-bottom:1px solid var(--fw-border-light);font-size:12.5px;color:var(--fw-text-secondary);}
+/* one row at 1280 px (2026-10-24): 8px between toolbar items, and the search
+   box is the elastic item - a 160px basis that grows to 280px - so it gives
+   way before a button is pushed onto a second row */
+.fwg-satom .fwg-sat-toolbar{padding:14px 20px;margin:0;border-bottom:1px solid var(--fw-border-light);gap:8px;}
+.fwg-satom .fwg-sat-toolbar .fw-search-box{flex:1 1 160px;min-width:140px;max-width:280px;}
+.fwg-satom .fwg-sat-filters{padding:8px 20px;border-bottom:1px solid var(--fw-border-light);font-size:12.5px;}
+.fwg-satom .fwg-sat-filters summary{cursor:pointer;color:var(--fw-text-secondary);font-weight:500;}
+.fwg-satom .fwg-sat-filters[open] summary{margin-bottom:8px;}
+.fwg-satom .fw-table .check-col{width:34px;cursor:default;}
+.fwg-satom [aria-disabled="true"]{opacity:.45;pointer-events:none;}
+.fwg-satom summary.btn{list-style:none;}
+.fwg-satom summary.btn::-webkit-details-marker{display:none;}
+.fwg-satom .fwg-menu-body{border-radius:var(--fw-radius-lg);box-shadow:var(--fw-card-shadow);padding:4px;margin-top:4px;}
+.fwg-satom .fwg-menu-body a{border-radius:var(--fw-radius);padding:6px 10px;}
+.fwg-satom .fw-table-wrapper{border:0;border-radius:0;margin:0;overflow-x:auto;}
+.fwg-satom .fw-table td,.fwg-satom .fw-table th{white-space:nowrap;}
+.fwg-satom .fw-table td{padding-top:9px;padding-bottom:9px;}
+.fwg-satom .fw-table tbody tr[data-href]{cursor:pointer;}
+.fwg-satom .fw-table tbody tr.is-selected > td{background:color-mix(in srgb, var(--fw-accent) 16%, transparent) !important;}
+.fwg-satom .fw-table tbody tr:focus{outline:2px solid var(--fw-accent);outline-offset:-2px;}
+/* dialog */
+.fwg-satom .fwg-titlebar{padding:14px 20px;background:var(--fw-surface-alt);
+  border-bottom:1px solid var(--fw-border-light);font-weight:600;font-size:14px;}
+.fwg-satom .fwg-titlebar .fwg-sub{font-weight:400;}
+.fwg-satom .fwg-body{padding:4px 0 16px;}
+.fwg-satom .fwg-sec-title{margin:18px 20px 4px;padding:0 0 6px;background:none;
+  border-bottom:2px solid var(--fw-border-light);font-size:14px;font-weight:600;color:var(--fw-text-primary);}
+.fwg-satom .fwg-sec-title i{color:var(--fw-accent);}
+.fwg-satom .fwg-fields{padding:10px 24px 4px;row-gap:8px;column-gap:24px;}
+.fwg-satom .fwg-label{color:var(--fw-text-secondary);font-weight:500;}
+.fwg-satom .fwg-input,.fwg-satom .fwg-textarea{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-edit{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-seg-btn:first-child,.fwg-satom .fwg-radio span:first-child{border-radius:var(--fw-radius) 0 0 var(--fw-radius);}
+.fwg-satom .fwg-seg-btn:last-child,.fwg-satom .fwg-radio span:last-child{border-radius:0 var(--fw-radius) var(--fw-radius) 0;}
+.fwg-satom .fwg-subtable{border-radius:var(--fw-radius-lg);overflow:hidden;}
+.fwg-satom .fwg-subtable .fwg-table th{background:var(--fw-surface-alt);}
+.fwg-satom .fwg-tb-btn{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-review{border-radius:var(--fw-radius-lg);margin:12px 20px;}
+.fwg-satom .fwg-footer{justify-content:flex-end;padding:12px 20px;background:var(--fw-surface);
+  border-top:1px solid var(--fw-border-light);}
+.fwg-satom .fwg-btn{width:auto;min-width:96px;height:34px;padding:0 16px;border-radius:var(--fw-radius);font-weight:500;}
+.fwg-satom .fwg-btn.is-primary{background-image:var(--fw-gradient-brand);border-color:transparent;}
+.fwg-satom .fw-nig-tab{margin:16px 20px 0;}
+.fwg-satom .fwg-sat-tabs{padding:10px 20px 0;margin:0;border-bottom:1px solid var(--fw-border-light);flex-wrap:wrap;}
+.fwg-satom .fwg-sat-tabs .nav-link{font-size:13px;padding:6px 14px;}
+.fwg-satom .fwg-idx{padding:16px 20px;}
+/* Tables inside a FortiWeb-layout dialog in SATOM's table format (.fw-table,
+   2026-11-01): FortiWeb's grid look (centred weight-400 headers, a border on
+   every cell) stays for FortiWeb's own screens only. Covers the inline
+   sub-tables, HTTP Protocol Constraints, the signature classes, the toggle
+   rows and the change review. */
+.fwg-satom .fwg-table{font-size:13.5px;}
+.fwg-satom .fwg-table th{background:var(--fw-surface-alt);color:var(--fw-text-secondary);font-weight:600;
+  font-size:12px;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:10px 14px;
+  border-right:0;border-bottom:2px solid var(--fw-border);}
+.fwg-satom .fwg-table td{padding:6px 14px;height:auto;border-right:0;
+  border-bottom:1px solid var(--fw-border-light);color:var(--fw-text-primary);}
+.fwg-satom .fwg-table tbody tr:nth-child(even) td{background:var(--fw-surface-alt);}
+.fwg-satom .fwg-table tbody tr:hover td{background:color-mix(in srgb,var(--fw-accent) 5%,transparent);}
+.fwg-satom .fwg-table tbody tr:last-child td{border-bottom:0;}
+.fwg-satom .fwg-table tbody tr.fwg-hce-head td{background:var(--fw-content-bg);color:var(--fw-text-secondary);font-weight:600;}
+.fwg-satom .fwg-rows td{padding:4px 14px;}
+/* the card a dialog's large table sits in (as .fw-table-wrapper, no shadow
+   inside a card) */
+.fwg-satom .fwg-block.fwg-sig,.fwg-satom .fwg-block.fwg-hce{display:block;grid-column:1 / -1;margin:12px 24px;border:1px solid var(--fw-border);
+  border-radius:var(--fw-radius-lg);background:var(--fw-surface);overflow:auto;}
+.fwg-satom .fwg-sig-table th:nth-child(3),.fwg-satom .fwg-sig-table th:nth-child(4){text-align:center;}
+.fwg-satom .fwg-review .fwg-table{border:1px solid var(--fw-border);}
+.fwg-satom .fwg-idx .fwg-sec-title{margin:0 0 6px;}
+.fwg-satom .fw-empty-state-title{font-size:13px;font-weight:500;}
+/* A sentence in a grid is never nowrap: the grid's one-line cells (.fwg-table td,
+   .fwg-satom .fw-table td) would otherwise keep an empty-state sentence (the ADOM
+   notice is ~300 characters) on ONE line, clipped by the card at 1440 px and at
+   390 px. Only a cell that holds a sentence (an empty state, a muted note that
+   spans the row) wraps; data cells keep nowrap. */
+.fwg-satom .fw-table td:has(> .fw-empty-state),.fwg-table td:has(> .fw-empty-state),
+.fwg-satom .fw-table td[colspan].text-muted,.fwg-table td[colspan].text-muted,
+.fwg-table td[colspan].fwg-noresults{white-space:normal;overflow-wrap:anywhere;}
+.fwg-satom .fw-empty-state-title{max-width:72ch;margin-left:auto;margin-right:auto;line-height:1.45;}
+
+
+/* ============================================================
+   PHONE LAYOUT (<= 768px) — 2026-10-11
+   Measured at 390px wide, not guessed:
+   - the topbar ran 260px of controls (product switch, tools, search,
+     bell, user menu) past the right edge, behind overflow: the user menu
+     and logout were unreachable on a phone;
+   - a page-header button row (`.fw-page-header > .d-flex`) does not wrap,
+     so one long row widened the WHOLE page (Server Policies: 865px) and
+     the browser zoomed every table and card out to fit it.
+   Tables already scroll inside `.fw-table-wrapper`; that stays as is.
+   Same light theme and --fw-* tokens as the rest of the file.
+   ============================================================ */
+@media (max-width: 768px) {
+  .fw-main { padding: 14px 12px; }
+
+  /* Topbar: everything reachable. The identity badges give up their text
+     before any control is pushed off-screen. */
+  .fw-topbar { padding: 0 6px; gap: 2px; }
+  .fw-sidebar-toggle { margin-right: 0; flex-shrink: 0; padding: 6px 8px; }
+  .fw-topbar-brand { margin-right: 2px; gap: 6px; }
+  .fw-topbar-brand > span { display: none; }
+  .fw-topbar .fw-adom-badge {
+    margin-left: 4px !important; flex: 0 1 auto; min-width: 26px; overflow: hidden;
+  }
+  .fw-topbar .fw-adom-prefix { display: none; }
+  .fw-topbar .fw-adom-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .fw-topbar .fw-env-badge,
+  .fw-topbar .fw-harole-badge {
+    font-size: 0 !important; gap: 0 !important; padding: 4px 6px !important;
+    margin-left: 4px !important; flex-shrink: 0;
+  }
+  .fw-topbar .fw-env-badge > i,
+  .fw-topbar .fw-harole-badge > i { font-size: 11px; }
+  /* The device stays one tap away in the sidebar ("<device> · change"). */
+  .fw-topbar .fw-device-center { display: none; }
+  .fw-topbar-actions { flex-shrink: 0; gap: 0; }
+  .fw-topbar-btn { padding: 6px 7px; }
+  .fw-topbar .fw-switch-product .bi-arrow-left-right { display: none; }
+  .fw-user-menu .dropdown-toggle::after { display: none; }
+
+  /* Page header: button rows wrap instead of widening the page. The same
+     goes for any flex row in the content (toolbars such as Analytics'
+     .an-bar): a row that fits stays on one line, one that does not wraps.
+     `.flex-nowrap` (Bootstrap, !important) still opts a row out. */
+  .fw-page-header > * { min-width: 0; max-width: 100%; }
+  #fw-main .d-flex { flex-wrap: wrap; }
+
+  /* Device-layout forms (gui_dialog): the FortiOS look is a max-content
+     label column beside fixed 242/274px inputs, which ran FortiGate's
+     System Settings to 490px. On a phone the label sits above its value. */
+  .fwg-fields { grid-template-columns: minmax(0, 1fr); padding-left: 12px; padding-right: 12px; }
+  .fwg-satom .fwg-fields { padding: 10px 12px 4px; }
+  .fwg-label { white-space: normal; margin-top: 6px; }
+  .fwg-input, .fwg-input.is-ro { max-width: 100%; }
+
+  /* Open overlay: dim the page behind it; a tap there closes it (main.js). */
+  body.fw-sidebar-open::after {
+    content: ""; position: fixed; inset: var(--fw-topbar-height) 0 0 0;
+    background: rgba(15, 23, 42, .35); z-index: 850;
+  }
+  .fw-sidebar.mobile-open { box-shadow: 4px 0 18px rgba(15, 23, 42, .25); }
+}
+
+/* Narrowest phones: the ADOM name outranks the logo (it is what makes an
+   ADOM jump visible); the logo comes back above 420px. */
+@media (max-width: 420px) {
+  .fw-topbar-brand { display: none; }
+}
+
+/* main.js wraps a bare table that overflows a phone screen in this box. */
+.fw-phone-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fw-phone-scroll:has(.dropdown-menu.show) { overflow: visible; }
+
+/* Settings cards (settings/index.html): titled, collapsed by default, opened
+   by their anchor (#card-...).  The caret follows the menu's convention --
+   chevron-down while open, rotated -90deg while folded. */
+.fw-card-collapsible > .fw-card-header { cursor: pointer; user-select: none; }
+.fw-card-collapsible > .fw-card-header:hover { background: var(--fw-accent-light); }
+.fw-card-collapsible > .fw-card-header:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-card-caret { margin-left: auto; padding-left: 10px; font-size: 11px; opacity: .65;
+                 transition: transform .2s ease; flex: none; }
+.fw-card-collapsible.fw-card-collapsed > .fw-card-header .fw-card-caret { transform: rotate(-90deg); }
+.fw-card-collapsible.fw-card-collapsed > :not(.fw-card-header) { display: none !important; }
+
+/* ============================================================
+   Bootstrap defaults mapped to the product tokens (contrast, 4.5:1)
+   Bootstrap 5.3 paints a few things from its OWN palette, which leaks past
+   the --fw-* tokens: <code> pink #d63384 (4.19:1 on #F5F7FA), .text-muted
+   #6c757d (4.33:1 on the #F3F6FC canvas), link / nav-tab / outline-primary blue
+   #0d6efd (4.16:1 on the canvas) and danger red #dc3545 as TEXT (4.27:1 on the
+   grey card). Same hues, product values; fills and icons keep the Bootstrap
+   colour (design-system.md section 3: status fills are not text).
+   ============================================================ */
+:root {
+  --bs-code-color: var(--fw-accent-hover);
+  --bs-link-color: var(--fw-accent);
+  --bs-link-hover-color: var(--fw-accent-hover);
+}
+.text-muted { color: var(--fw-text-secondary) !important; }
+.nav { --bs-nav-link-color: var(--fw-accent); --bs-nav-link-hover-color: var(--fw-accent-hover); }
+.btn-outline-primary {
+  --bs-btn-color: var(--fw-accent); --bs-btn-border-color: var(--fw-accent);
+  --bs-btn-hover-bg: var(--fw-accent); --bs-btn-hover-border-color: var(--fw-accent);
+  --bs-btn-active-bg: var(--fw-accent-hover); --bs-btn-active-border-color: var(--fw-accent-hover);
+}
+.text-danger { color: #B91C1C !important; }
+.btn-outline-danger {
+  --bs-btn-color: #B91C1C; --bs-btn-border-color: #B91C1C;
+  --bs-btn-hover-bg: #B91C1C; --bs-btn-hover-border-color: #B91C1C;
+  --bs-btn-active-bg: #991B1B; --bs-btn-active-border-color: #991B1B;
+}
+
+/* A grid's empty state is as wide as the card it sits in, not as the table:
+   at 390 px the columns make the table wider than the card (it scrolls), and a
+   centred sentence over the table's width was cut at the card's edge. The
+   wrapper is a size container; the empty state takes its width and sticks to
+   the left edge while the grid scrolls. */
+.fwg-satom .fw-table-wrapper { container-type: inline-size; }
+.fwg-satom .fw-table td > .fw-empty-state { position: sticky; left: 0; box-sizing: border-box; width: 100cqw; max-width: 100cqw; }
+.fwg-unknown-tag { white-space: nowrap; }
+/* the same leak, three more Bootstrap defaults measured under 4.5:1 as text:
+   .text-success #198754 (4.22), .btn-outline-secondary #6c757d (4.33),
+   .btn-outline-info #0dcaf0 (1.96). Values are the badge set's (design-system section 4). */
+.text-success { color: #15692A !important; }
+.btn-outline-secondary {
+  --bs-btn-color: var(--fw-text-secondary); --bs-btn-border-color: var(--fw-text-secondary);
+  --bs-btn-hover-bg: var(--fw-text-secondary); --bs-btn-hover-border-color: var(--fw-text-secondary);
+  --bs-btn-active-bg: var(--fw-text-secondary); --bs-btn-active-border-color: var(--fw-text-secondary);
+}
+.btn-outline-info {
+  --bs-btn-color: #0A5F6C; --bs-btn-border-color: #0A5F6C;
+  --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #0A5F6C; --bs-btn-hover-border-color: #0A5F6C;
+  --bs-btn-active-bg: #0A5F6C; --bs-btn-active-border-color: #0A5F6C;
+}

@@ -1,0 +1,27 @@
+{#- ADOM Search: the texts that differ per ADOM (2026-10-14). Imported
+    ``with context`` by search/index.html and search/results.html. Examples are
+    generic on purpose: this ships to customers. -#}
+{%- set pk = product.key if product else 'global' -%}
+{%- set _placeholders = {
+  'global': _('Object name, IP address, host name, user…'),
+  'fortiweb': _('Server policy, IP address, host name, server pool, protection profile…'),
+  'fortiadc': _('Virtual server, real server IP, pool, certificate, WAF profile…'),
+  'fortiauthenticator': _('RADIUS client, user, user group, IP address…'),
+  'fortigate': _('Address, firewall policy, interface, VIP, IP address…'),
+  'fortianalyzer': _('Managed device, ADOM, administrator, IP address…'),
+} -%}
+{%- set placeholder = _placeholders.get(pk, _placeholders['global']) -%}
+{%- set _tips = {
+  'global': [(_('An IP address on any product'), '192.0.2.25'), (_('A host or object name'), 'web-01'), (_('A user name'), 'jdoe')],
+  'fortiweb': [(_('A server policy'), 'web-policy-01'), (_('A back-end IP in a server pool'), '192.0.2.25'), (_('A protection profile'), 'inline-prod')],
+  'fortiadc': [(_('A virtual server'), 'vs-shop'), (_('A real server IP'), '192.0.2.25'), (_('A certificate'), 'wildcard')],
+  'fortiauthenticator': [(_('A RADIUS client by name or IP'), '192.0.2.10'), (_('A local user'), 'jdoe'), (_('A user group'), 'vpn-users')],
+  'fortigate': [(_('An address object or subnet'), '192.0.2.0'), (_('A firewall policy name'), 'lan-to-wan'), (_('An interface'), 'port1')],
+  'fortianalyzer': [(_('A managed device'), 'fgt-branch-01'), (_('An ADOM'), 'root'), (_('An administrator'), 'admin')],
+} -%}
+{%- set tips = _tips.get(pk, _tips['global']) -%}
+{%- if pk == 'global' -%}
+{%- set subtitle = _('Searches the configuration SATOM last synced from every appliance in the Global ADOM.') -%}
+{%- else -%}
+{%- set subtitle = _("Searches the configuration SATOM last synced from this ADOM's %(product)s appliances.", product=product.name) -%}
+{%- endif -%}

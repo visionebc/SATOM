@@ -1,0 +1,20 @@
+[Unit]
+Description=SATOM Web App
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/satom
+EnvironmentFile=/opt/satom/.env
+# Worker model, threads and timeouts: deploy/gunicorn.conf.py (gthread,
+# 4 workers x 8 threads by default; SATOM_WEB_* in .env override them).
+# The web processes cap a single SQL statement (a runaway query must not hold
+# a thread and a connection forever); the scheduler and the CLI do not.
+Environment=SATOM_DB_STATEMENT_TIMEOUT_MS=60000
+ExecStart=/opt/satom/venv/bin/gunicorn --config /opt/satom/deploy/gunicorn.conf.py --bind 127.0.0.1:8000 wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

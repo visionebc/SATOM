@@ -1,0 +1,367 @@
+{#
+   THE Admin Console menu.  One definition, every Settings surface.
+
+   This file is the single source: the console (settings/index.html) and every
+   standalone Settings page (settings/sentinel.html) include it, so an entry
+   added, renamed, re-icon'd or re-grouped here changes on all of them at once.
+   Copying the markup into a page instead is how the horizontal strip that
+   preceded this menu ended up with two entries pointing at one pane -- and
+   nothing fails when two copies disagree: the operator simply gets a different
+   menu depending on which URL they arrived by.
+
+   Contract (all optional, all defaulted):
+     nav_mode    'panes'  -- entries switch a tab in THIS page (the console)
+                 'links'  -- entries navigate back to the console (a standalone
+                             Settings page, where the panes do not exist and a
+                             tab button would be a control that does nothing)
+     nav_active  the tab target ('tab-sentinel') or endpoint ('sentinel.docs')
+                 the caller is currently showing; it is drawn selected and its
+                 group is the one the server renders expanded
+     is_admin    whether admin-only groups are offered at all
+
+   The tab TARGET is the identity of a section: the panes, the in-page links
+   (#tab-auth), the URL-hash restore and tests/test_theme.py all key off it.
+   Targets are therefore literal and NEVER translated -- only `label` goes
+   through the translation call.  (An identifier is not copy -- safeguards §68.)
+
+   An item with `ep` instead of `t` is a link to a PAGE and is drawn with the
+   leaving arrow.  Integrations was the first entry to use it: it is a whole
+   page of its own (/settings/integrations), not a pane of the console, and it
+   had NO menu entry at all until the operator asked for one -- a page reachable
+   only by typing its URL is a page that does not exist.  Sentinel's Context
+   and Response policy are PANES at the operator's request.  The arrow is the only thing that distinguishes a row which
+   replaces the whole page from one which does not, and every entry that leaves
+   must carry it.
+
+   Sentinel is a group of its own -- a pipeline with its own incidents console
+   and architecture, not one knob under Monitoring -- and it sits below
+   Monitoring & Alerts at the operator's request.
+
+   Scout is a group of its own for the same reason and sits LAST, directly
+   below Sentinel, at the operator's request.  Filing it as one entry under
+   Sentinel would have put a troubleshooting tool inside the security pipeline's
+   section, which is exactly the confusion the two were separated to avoid: the
+   clock starts Sentinel and it opens incidents; an operator starts Scout and it
+   returns a location.  A menu is where that distinction is first read.
+
+   "Source of Truth & Backup" is a group for the same reason, added 2026-08-29
+   at the operator's request.  It was ONE entry ("SoT & Backup") holding two
+   unrelated authorities and a third that was not an authority at all, and the
+   word "SoT" in its label was being read as covering all of them.  Splitting
+   the entries is the whole point: the CONFIGURATION SoT is the only thing this
+   product calls a source of truth, the BACKUP SERVER is a destination and not
+   an authority, and the repository this node downloads its own code from is a
+   third thing again -- which is why the entry that was labelled "Git" now says
+   "Software Update Repository" and stays under System, away from this group
+   (since 2026-11-24 a section of the Software Update page, see below).
+   A label is the only place that distinction is visible before a click.
+
+   2026-11-24 (operator: "Software Update Repository and Software Update must
+   go together, two sections is absurd"): the repository pane left this menu
+   and is the Git repository section of the Software Update page, next to the
+   signed packages and the Update sources card that used to sit in General.
+   One page for both ways of updating, and Update methods on it says which
+   are allowed (app/services/update_methods.py).  /settings/#tab-git and
+   #card-update-sources still work: the script below forwards them.
+
+   Software Update, High Availability, System Automations and System Backup &
+   Restore moved here from Administrator > System on 2026-10-21 (FA-0005,
+   operator request). They stay whole pages of their own, so they are `ep`
+   entries with the leaving arrow, and each page draws this menu in `links`
+   mode. System Backup & Restore sits with the backup surfaces; the other
+   three are the node's own machinery and sit under System, Software Update
+   next to the repository it pulls from. System Automations scopes its rows
+   to the ADOM, so its entry (`adom`) carries `_adom` like the Administrator
+   link it replaces: a hard navigation must not drop the ADOM.
+
+   "Deploy Clone" joined that group on 2026-10-18 at the operator's request:
+   it copies a whole installation's data (database, vault, SoT history) into
+   another installation, i.e. the same estate the backup bundles carry.  It is
+   NOT "Clone / Migrate" under Fleet & Devices, which copies configuration
+   between appliances -- the two labels must never converge.
+
+   There is no "My Account" group: Security (2FA, recovery email, session) and
+   Change Password moved to the user's own Profile page on 2026-10-23 at the
+   operator's request.  Every group here is therefore admin-only, and
+   settings.index sends a non-admin to the Profile instead of drawing an empty
+   console.  Do not add a self-service group back: what belongs to ONE user
+   lives on that user's Profile, and this menu configures the installation.
+
+   2026-10-23 restructure (operator): menus may nest ONE level ('sub' entries,
+   a heading with its own entries).  System > General holds General, Node TLS,
+   Email & Alerts and Thresholds (the Monitoring & Alerts group is gone);
+   Integrations is a group of its own with DNS Records and Hypervisors; AI
+   holds Scout (Providers, Path Diagnostics, Architecture -- Path Diagnostics
+   IS Scout's walk, app/services/scout_config.py) and Sentinel, divided as it
+   was.  The resolver list of DNS Lookup moved to the DNS Lookup page itself,
+   so Network & DNS is gone too.  Sentinel and Scout still sit LAST.
+
+   Sentinel holds ONLY its configuration surfaces (operator, 2026-11-01: "what
+   is configured stays in Settings, the rest goes to Operations"): Settings,
+   Context (configuration however little it looks like it: it is the -35-point
+   trusted-source weight, the largest single number in the scoring table) and
+   Response policy.  The incidents console, the overview (health, pipeline,
+   score, demo lab, CVE mirror, decision log), the border blocklist (live
+   entries and their release) and the architecture are Operations › Sentinel
+   (partials/nav_sentinel.html).  Do not add them back here.
+
+   2026-11-16 (operator): "Users" left Access & Identity -- it is
+   Administrator > Users (/users/), and two menus offering the same page is
+   one too many.  Profiles, Authentication, Access Control and Vault stay.
+   The same day the menu stopped being an accordion.  Since 2026-11-24
+   (operator: "the menu goes collapsed; what goes open is the content of
+   each submenu") every GROUP is drawn FOLDED except the one holding the
+   section on screen, and every SUB-MENU inside a group is drawn EXPANDED, so
+   opening a group shows all of its entries at once.  The same day (operator:
+   "opening another piece does not collapse the menu, it does not stay where
+   you are") it became an accordion again: opening a group folds the others,
+   and whenever a section is shown -- by this menu, an in-page link, the hash
+   restore or a save redirect -- its group is the one left open and its
+   target is written to the URL (#tab-...), so a reload or a return lands on
+   the same section.  Nothing is stored in the browser.
+
+   NO Jinja comment may appear inside the list literal below: it lives inside a
+   set-tag, and tests/test_user_guide_features.py parses that same text with
+   ast.literal_eval to check the manual against it.  (Nor may one be typed into
+   an HTML comment: an HTML comment is still Jinja source, and a stray set-tag
+   inside one is a template that never compiles -- it cost this page a 500.)
+#}
+{% set nav_mode = nav_mode | default('panes') %}
+{% set nav_is_admin = is_admin | default(false) %}
+{% set nav_active = nav_active | default('tab-general') %}
+{% set nav_groups = [
+  {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
+    {'sub': 'general', 'icon': 'bi-sliders', 'label': _('General'), 'items': [
+      {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
+      {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
+      {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
+      {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
+    {'ep': 'self_update.index', 'icon': 'bi-arrow-repeat', 'label': _('Software Update'),
+     'perm': 'user_manage'},
+    {'ep': 'ha.index',       'icon': 'bi-diagram-3',        'label': _('High Availability'),
+     'perm': 'user_manage'},
+    {'ep': 'scheduled_actions.index', 'icon': 'bi-clock-history', 'label': _('System Automations'),
+     'perm': 'user_manage', 'adom': true}]},
+  {'key': 'integrations', 'label': _('Integrations'), 'icon': 'bi-plug', 'admin': true, 'items': [
+    {'ep': 'integrations.index', 'icon': 'bi-plug',         'label': _('Integrations'),
+     'perm': 'user_manage'},
+    {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')},
+    {'t': 'tab-hypervisors', 'icon': 'bi-hdd-stack-fill',   'label': _('Hypervisors')}]},
+  {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
+    {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
+    {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')},
+    {'ep': 'system_backup.index', 'icon': 'bi-safe',        'label': _('System Backup & Restore'),
+     'perm': 'user_manage'},
+    {'t': 'tab-deployclone', 'icon': 'bi-copy',             'label': _('Deploy Clone')}]},
+  {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
+    {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles'),
+     'perm': 'profiles.manage'},
+    {'t': 'tab-auth',        'icon': 'bi-shield-lock',      'label': _('Authentication')},
+    {'t': 'tab-access',      'icon': 'bi-shield-lock',      'label': _('Access Control')},
+    {'t': 'tab-vault',       'icon': 'bi-safe',             'label': _('Vault')}]},
+  {'key': 'certs', 'label': _('Certificates & Trust'), 'icon': 'bi-award', 'admin': true, 'items': [
+    {'t': 'tab-certmgr',     'icon': 'bi-award',            'label': _('Certificate Manager')},
+    {'t': 'tab-catrust',     'icon': 'bi-patch-check-fill', 'label': _('Trust store')}]},
+  {'key': 'fleet', 'label': _('Fleet & Devices'), 'icon': 'bi-hdd-stack-fill', 'admin': true, 'items': [
+    {'t': 'tab-adoms',       'icon': 'bi-grid-1x2',         'label': _('ADOMs')},
+    {'t': 'tab-policylinks', 'icon': 'bi-link-45deg',       'label': _('Policy Links')},
+    {'t': 'tab-clonerules',  'icon': 'bi-files',            'label': _('Clone / Migrate')}]},
+  {'key': 'interface', 'label': _('User Interface'), 'icon': 'bi-palette', 'admin': true, 'items': [
+    {'t': 'tab-appearance',  'icon': 'bi-palette',          'label': _('Appearance')},
+    {'t': 'tab-languages',   'icon': 'bi-translate',        'label': _('Languages')},
+    {'t': 'tab-adommenus',   'icon': 'bi-eye-slash',        'label': _('ADOM Menus')}]},
+  {'key': 'ai', 'label': _('AI'), 'icon': 'bi-stars', 'admin': true, 'items': [
+    {'sub': 'scout', 'icon': 'bi-compass', 'label': _('Scout'), 'items': [
+      {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('Providers'),
+       'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'},
+      {'t': 'tab-scout',       'icon': 'bi-sliders',          'label': _('Path Diagnostics')},
+      {'t': 'tab-scout-docs',  'icon': 'bi-diagram-3',        'label': _('Architecture')}]},
+    {'sub': 'sentinel', 'icon': 'bi-shield-exclamation', 'label': _('Sentinel'), 'items': [
+      {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
+      {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
+      {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')}]}]}
+] %}
+{% macro nav_leaf(it) -%}
+            {%- if it.ep %}
+            {# An entry that leads OUT of the console.  It is drawn as a link
+               and carries the leaving arrow: a menu row that looks identical to
+               its neighbours but replaces the whole page is the surprise this
+               marker exists to remove. #}
+            <a class="nav-link{{ ' active' if it.ep == nav_active else '' }}" href="{{ url_for(it.ep, _adom=product.key) if it.adom and product else url_for(it.ep) }}">
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+              <i class="bi bi-box-arrow-up-right fw-set-nav-out" aria-hidden="true"></i>
+            </a>
+            {%- elif nav_mode == 'panes' %}
+            <button class="nav-link{{ ' active' if it.t == nav_active else '' }}" type="button"
+                    data-bs-toggle="tab" data-bs-target="#{{ it.t }}"
+                    {%- if it.id %} id="{{ it.id }}"{% endif %}>
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+            </button>
+            {%- else %}
+            {# Standalone Settings page: the panes are not on it, so the same
+               entry has to NAVIGATE.  Rendering the tab button here would give
+               the operator a row that highlights on hover and then does
+               nothing — the failure mode a menu cannot report. #}
+            <a class="nav-link{{ ' active' if it.t == nav_active else '' }}"
+               href="{{ url_for('settings.index') }}#{{ it.t }}">
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+            </a>
+            {%- endif %}
+{%- endmacro %}
+  <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
+         aria-label="{{ _('Settings sections') }}">
+    {% for g in nav_groups %}
+      {% if nav_is_admin or not g.admin %}
+        {# A group with nothing the caller may see is not rendered at all —
+           an empty accordion header is a promise of a section that is not
+           there.  The same rule applies one level down: a sub-menu
+           ('sub' entry) whose entries are all hidden is not drawn either. #}
+        {% set vis = [] %}
+        {% set leaves = [] %}
+        {% for it in g['items'] %}
+          {% if it.sub %}
+            {% set kids = [] %}
+            {% for k in it['items'] %}
+              {% if not k.perm or (current_user and current_user.can(k.perm)) %}
+                {% set _ = kids.append(k) %}{% set _ = leaves.append(k) %}
+              {% endif %}
+            {% endfor %}
+            {% if kids %}
+              {% set _ = vis.append({'sub': it.sub, 'icon': it.icon, 'label': it.label, 'items': kids}) %}
+            {% endif %}
+          {% elif not it.perm or (current_user and current_user.can(it.perm)) %}
+            {% set _ = vis.append(it) %}{% set _ = leaves.append(it) %}
+          {% endif %}
+        {% endfor %}
+        {% if vis %}
+        {# The anchor matches on the target OR the endpoint: a standalone page
+           names itself with whichever of the two it is, and a group that holds
+           the current page but renders collapsed hides the selection the
+           operator is looking at. #}
+        {% set holds_active = (leaves | selectattr('t', 'equalto', nav_active) | list)
+                            + (leaves | selectattr('ep', 'equalto', nav_active) | list) %}
+        {# COLLAPSED is the default, server-side (operator, 2026-11-24: "the
+           menu goes collapsed; what goes open is the content of each
+           submenu").  Only the group that holds the section on screen is
+           drawn open -- a folded group would hide the selection.  Rendered
+           here and not left to the script so the first paint is already the
+           default.  The count is of SECTIONS (leaves), not of rows: a
+           sub-menu is a heading. #}
+        <div class="fw-set-nav-group{{ ' open' if holds_active else '' }}" role="presentation"
+             data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
+          <button type="button" class="fw-set-nav-toggle" aria-expanded="{{ 'true' if holds_active else 'false' }}"
+                  data-set-toggle="{{ g.key }}">
+            <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
+            <span class="fw-set-nav-group-label">{{ g.label }}</span>
+            <span class="fw-set-nav-count">{{ leaves | length }}</span>
+            <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+          </button>
+          <div class="fw-set-nav-body">
+            {% for it in vis %}
+            {%- if it.sub %}
+            {# One level more (operator, 2026-10-23: "submenus one level
+               more").  Drawn expanded like its group; its header folds it. #}
+            <div class="fw-set-nav-sub open" data-set-sub="{{ it.sub }}">
+              <button type="button" class="fw-set-nav-subtoggle"
+                      aria-expanded="true" data-set-subtoggle="{{ it.sub }}">
+                <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+                <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+              </button>
+              <div class="fw-set-nav-subbody">
+              {% for k in it['items'] %}{{ nav_leaf(k) }}
+              {% endfor %}
+              </div>
+            </div>
+            {%- else %}{{ nav_leaf(it) }}
+            {%- endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  </aside>
+<script nonce="{{ csp_nonce }}">
+// NONCE IS NOT DECORATION.  This app serves
+//   script-src-elem 'self' 'nonce-...'
+// so an inline script element without it is BLOCKED by the browser --
+// silently, with nothing failing server-side and nothing wrong in the
+// markup.  Every inline script and style element in this product carries
+// the nonce; tests/test_csp_nonce.py is what enforces it.
+// --- Admin Console lateral menu: fold / unfold ------------------------------
+// Ships WITH the menu, in the same file, because the menu is included by more
+// than one page.
+//
+// Since 2026-11-24 (operator: "the menu goes collapsed; what goes open is the
+// content of each submenu" + "opening another piece does not collapse the
+// menu, it does not stay where you are") the server draws every group FOLDED
+// except the one holding the current section, every sub-menu OPEN, and the
+// menu is an ACCORDION: opening a group folds the others.  Whenever a section
+// is shown its group is the open one and, in the console, its target goes to
+// the URL hash so a reload lands on it again.  Nothing is stored.
+(function () {
+  var RETIRED = ['satom.settingsnav.open.v1', 'satom.settingsnav.closed.v1'];
+  var nav = document.getElementById('settingsTabs');
+  if (!nav) return;
+  // Sections that left the console for a page of their own: an old link or
+  // bookmark is forwarded instead of landing on a blank console.
+  var MOVED = {
+    '#tab-git': "{{ url_for('self_update.index') }}#git",
+    '#card-update-sources': "{{ url_for('self_update.index') }}#update-sources"
+  };
+  if ({{ 'true' if nav_mode == 'panes' else 'false' }} && MOVED[window.location.hash]) {
+    window.location.replace(MOVED[window.location.hash]);
+    return;
+  }
+  RETIRED.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+
+  function paint(el, toggleSel, open) {
+    if (!el) { return; }
+    el.classList.toggle('open', open);
+    var btn = el.querySelector(toggleSel);
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  }
+  function groupOf(el) { return el && el.closest ? el.closest('.fw-set-nav-group') : null; }
+  function subOf(el) { return el && el.closest ? el.closest('.fw-set-nav-sub') : null; }
+  // The accordion: *g* open, every other group folded.
+  function only(g) {
+    if (!g) { return; }
+    Array.prototype.forEach.call(nav.querySelectorAll('.fw-set-nav-group'), function (o) {
+      paint(o, '.fw-set-nav-toggle', o === g);
+    });
+  }
+
+  nav.addEventListener('click', function (e) {
+    var subHead = e.target.closest ? e.target.closest('.fw-set-nav-subtoggle') : null;
+    if (subHead) {
+      var sub = subOf(subHead);
+      if (sub) { paint(sub, '.fw-set-nav-subtoggle', !sub.classList.contains('open')); }
+      return;
+    }
+    var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
+    if (head) {
+      var g = groupOf(head);
+      if (!g) { return; }
+      if (g.classList.contains('open')) { paint(g, '.fw-set-nav-toggle', false); }
+      else { only(g); }
+    }
+  });
+
+  // A section shown by ANY route (this menu, an in-page link "...#tab-auth",
+  // the URL-hash restore, the redirect after a save): its group becomes the
+  // open one, its sub-menu opens, and its target is written to the URL so a
+  // reload or a return lands on the same section.  A #card- hash that sits
+  // inside the pane just shown is kept: it is the more precise address.
+  nav.addEventListener('shown.bs.tab', function (e) {
+    only(groupOf(e.target));
+    paint(subOf(e.target), '.fw-set-nav-subtoggle', true);
+    var t = e.target.getAttribute('data-bs-target') || '';
+    if (t.indexOf('#tab-') !== 0 || !window.history || !history.replaceState) { return; }
+    var h = window.location.hash || '';
+    var here = h.length > 1 ? document.getElementById(h.slice(1)) : null;
+    var pane = document.getElementById(t.slice(1));
+    if (here && pane && pane !== here && pane.contains(here)) { return; }
+    if (h !== t) { history.replaceState(null, '', location.href.split('#')[0] + t); }
+  }, true);
+})();
+</script>

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}User Management — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Users') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-people me-2 text-accent"></i>{{ _('User Management') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Manage application users and roles') }}</p>
+  </div>
+</div>
+
+{% include 'users/_panel.html' %}
+{% endblock %}

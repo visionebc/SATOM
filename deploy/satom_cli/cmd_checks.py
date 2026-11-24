@@ -1,0 +1,1418 @@
+"""Additional 'diagnose' probes. STDLIB ONLY (see context.py).
+
+These answer questions the web UI structurally cannot answer about itself:
+whether the sidecar is really running the code that is on disk, whether the
+protections a fresh install never seeds are armed, whether the vhost that makes
+the app reachable by name still wins, and whether the privilege model survived
+the last update. Each one exists because the corresponding failure happened
+here and reported success while it did.
+"""
+import hashlib
+import json
+import os
+import shutil
+import re
+import stat
+from pathlib import Path
+
+from . import dbq
+from .context import UNITS, app_cmd, app_env, run
+from .context import run as _run
+from .render import Result
+
+# satom-git-publish.timer left this list 2026-08-05: the reports/ SoT moved
+# from git commits to the local versioned store (services.sot_store), so the
+# hourly publisher retired with it. A node that still has the timer is fine;
+# a node without it is no longer broken.
+REQUIRED_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service",
+                  "satom-updater.path", "satom-updater.service", "satom-alerts.timer",
+                  "satom-cert-renew.timer")
+
+# Units whose file is a template in deploy/ and is therefore re-copied verbatim
+# by the update runner. Their User= only survives as a drop-in.
+DROPIN_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service")
+
+# The protections a node needs to actually protect itself. Nothing seeds these:
+# ScheduledAction rows are DATA and operator edits win, so a fresh install has
+# every capability and zero coverage.
+MIN_ACTIONS = {
+    "device_sync": "hourly source-of-truth refresh",
+    "device_inspect": "nightly SoT off-box push",
+    "system_backup": "nightly database bundle",
+    "deep_monitor": "probe sweep",
+    "metrics_scrape": "fleet metrics collection (VictoriaMetrics)",
+    "inventory_snapshot": "daily inventory counts (Metrics trend)",
+    # The sweep records; this is what carries the record to a human. Without it
+    # the rollups accumulate for ninety days and nobody is told anything unless
+    # they open the console, which is the same shape of gap as an unarmed
+    # backup: full capability, zero delivery.
+    "monitor_report": "period summary (daily / weekly / monthly)",
+    # Sentinel: without the sweep the module has every table, page and gate and
+    # never opens an incident, which reads on the console exactly like "quiet".
+    "sentinel_sweep": "Sentinel correlation sweep (hot path)",
+    "sentinel_baseline": "Sentinel median/MAD baselines (nightly)",
+    "sentinel_vuln_sync": "Sentinel CVE mirror refresh (daily, gated)",
+    "knowledge_fetch": "knowledge packs from the feed (daily; mode is a setting)",
+    "signature_check": "signature DB freshness per FortiWeb (daily)",
+    "observatory_scan": "HTTP Observatory grades of published sites (daily)",
+    "hsts_preload_refresh": "HSTS preload list for the Observatory (weekly)",
+}
+
+
+def _pass(rows, name, ok, detail=""):
+    rows.append((name, ("pass" if ok else "FAIL") + ("  " + detail if detail else "")))
+    return ok
+
+
+def _proc_start_epoch(pid):
+    """Absolute start time of a pid, from /proc. No date parsing, no ps."""
+    try:
+        with open("/proc/stat") as fh:
+            btime = next(int(l.split()[1]) for l in fh if l.startswith("btime "))
+        with open("/proc/%d/stat" % int(pid)) as fh:
+            fields = fh.read().rsplit(") ", 1)[1].split()
+        return btime + (int(fields[19]) / os.sysconf("SC_CLK_TCK"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _main_pid(ctx, alias):
+    rc, out, _ = run(["systemctl", "show", ctx.unit(alias), "--no-pager",
+                      "--property=MainPID"])
+    try:
+        pid = int(out.partition("=")[2])
+        return pid or None
+    except ValueError:
+        return None
+
+
+def _newest_source(ctx):
+    """(path, mtime) of the newest .py that a long-running process LOADS.
+
+    ``app/`` only. deploy/ is deliberately excluded: the operator CLI runs from
+    a root-owned copy in /usr/local/lib and the update runner is a separate
+    root process, so editing either of them says nothing about whether gunicorn
+    is stale. Including them made this check fire every time the CLI itself was
+    touched — and a check that always complains is a check the operator learns
+    to skip.
+    """
+    newest, newest_m = None, 0
+    root = ctx.app_dir / "app"
+    candidates = list(root.rglob("*.py")) if root.is_dir() else []
+    candidates += [p for p in ctx.app_dir.glob("*.py")]
+    for p in candidates:
+        if "__pycache__" in p.parts:
+            continue
+        # A module name cannot begin with a dot, so a hidden .py is
+        # structurally unimportable: nothing loads it, ever. The tree collects
+        # them (scratch patches, one-off probes) and without this the check
+        # names a throwaway script as the reason to restart a service.
+        if any(part.startswith(".") for part in p.relative_to(ctx.app_dir).parts):
+            continue
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest_m:
+            newest, newest_m = p, m
+    return newest, newest_m
+
+
+# Jinja compiles a template the first time a process renders it and, with
+# auto-reload off (the production default), keeps the compiled copy for the
+# life of the worker. The cache is per WORKER and filled lazily, so after a
+# template edit some workers serve the new markup and some serve the old one:
+# the symptom is a menu entry that appears, vanishes and comes back with no
+# pattern, which reads as a navigation bug rather than a missed restart.
+TEMPLATE_SUFFIXES = (".html", ".htm", ".txt", ".j2", ".jinja", ".jinja2", ".xml")
+
+# Only the web process renders templates: render_template appears nowhere
+# outside the request path. Charging template mtime to the sidecars would mark
+# them stale for markup they never load, and a check that always complains is
+# a check the operator learns to skip.
+TEMPLATE_CONSUMERS = ("web",)
+
+#: Same margin as app/services/code_freshness.CLOCK_SLACK_S (whole-second btime).
+CLOCK_SLACK_S = 5.0
+
+
+def _newest_template(ctx):
+    """(path, mtime) of the newest file a Jinja loader can actually LOAD.
+
+    Filtered by suffix on purpose. app/templates carries editor backups
+    (*.bak, *.pre-<something>, *.retired-*) that no loader will ever read; a
+    bare newest-file scan would pick up a backup written seconds ago and
+    report the web worker stale against markup that is not served.
+    """
+    root = ctx.app_dir / "app" / "templates"
+    if not root.is_dir():
+        return None, 0
+    newest, newest_m = None, 0
+    for p in root.rglob("*"):
+        if p.suffix.lower() not in TEMPLATE_SUFFIXES:
+            continue
+        try:
+            if not p.is_file():
+                continue
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest_m:
+            newest, newest_m = p, m
+    return newest, newest_m
+
+
+def code(ctx, args):
+    """Is each long-running process actually running the code on disk?
+
+    satom-scheduler carries its OWN copy of the application. Editing an action
+    spec or a probe registry and restarting only the web service leaves the
+    sidecar on the old code, and the symptom is pathognomonic: the manual run
+    succeeds while the scheduled run fails with 'Unknown action'.
+    """
+    newest, newest_m = _newest_source(ctx)
+    tpl, tpl_m = _newest_template(ctx)
+    r = Result("ok", "code freshness")
+    if not newest and not tpl:
+        r.status = "warn"
+        r.rows("", [("source tree", "no .py files found under %s" % ctx.app_dir)])
+        return r
+    rows = []
+    if newest:
+        rows.append(("newest source", str(newest.relative_to(ctx.app_dir))))
+    if tpl:
+        rows.append(("newest template", str(tpl.relative_to(ctx.app_dir))))
+    stale = {}
+    for alias in ("web", "scheduler", "reconciler"):
+        st = ctx.unit_state(alias)
+        if st["enabled"] == "not-found" or st["active"] != "active":
+            rows.append((alias, "not running (%s)" % st["active"]))
+            continue
+        pid = _main_pid(ctx, alias)
+        started = _proc_start_epoch(pid) if pid else None
+        if started is None:
+            rows.append((alias, "running, start time unavailable"))
+            continue
+        watch_m, kind = newest_m, "source"
+        if alias in TEMPLATE_CONSUMERS and tpl_m > watch_m:
+            watch_m, kind = tpl_m, "template"
+        delta_h = (watch_m - started) / 3600.0
+        # /proc/stat's btime is whole seconds: a start time can read up to 1 s
+        # early, so a restart right after the pull looked "0.0 h" stale.
+        if watch_m - started > CLOCK_SLACK_S:
+            rows.append((alias, "STALE — started %.1f h before the newest %s"
+                         % (delta_h, kind)))
+            stale[alias] = kind
+        else:
+            rows.append((alias, "current (started %.1f h after)" % max(0.0, -delta_h)))
+    r.rows("", rows)
+    r.set(stale=stale)
+    if stale:
+        r.status = "warn"
+        r.note("Restart: %s" % "  ".join("sudo satom execute restart %s" % a for a in stale))
+        if "template" in stale.values():
+            r.note("A template edit is cached per gunicorn WORKER, so the page "
+                   "is right on some requests and wrong on others. It is also "
+                   "invisible to a test_client render, which is a fresh process "
+                   "reading from disk — verify against the running service.")
+        if "scheduler" in stale:
+            r.note("The scheduler is the dangerous one: it fails only on the "
+                   "SCHEDULED path, so a manual test of the same action passes.")
+    return r
+
+
+def scheduler(ctx, args):
+    """Is anything automated actually firing on this node?"""
+    r = Result("ok", "scheduler — %s (%s)" % (ctx.host, ctx.role))
+    st = ctx.unit_state("scheduler")
+    rows = [("unit", "%s/%s" % (st["active"], st["sub"])), ("enabled", st["enabled"])]
+
+    should_fire = ctx.role in ("primary", "standalone")
+    pid = _main_pid(ctx, "scheduler")
+    cmdline = ""
+    if pid:
+        try:
+            cmdline = Path("/proc/%d/cmdline" % pid).read_bytes().replace(b"\0", b" ").decode()
+        except Exception:  # noqa: BLE001
+            cmdline = ""
+    rows.append(("main pid", "%s" % (pid or "-")))
+    rows.append(("process", cmdline.strip()[:90] or "-"))
+
+    if st["active"] != "active":
+        r.status = "bad"
+        rows.append(("verdict", "the sidecar is not running"))
+    elif should_fire and "scheduler_runtime" not in cmdline:
+        r.status = "bad"
+        rows.append(("verdict", "unit is active but the runtime is NOT in the "
+                                "process — it is idling in a guard loop"))
+    else:
+        rows.append(("verdict", "firing here" if should_fire else
+                     "idle — correct on a standby, actions are primary-only"))
+    r.rows("", rows)
+
+    actions, err = dbq.query(ctx, dbq.ACTIONS)
+    if actions is None:
+        r.worst("warn")
+        r.rows("actions", [("state", "unreadable: %s" % err)])
+        return r
+    if not actions:
+        r.status = "bad"
+        r.rows("actions", [("count", "0 — nothing to fire")])
+        r.note("No ScheduledAction row exists. Nothing seeds them: "
+               "sudo satom execute seed actions")
+        return r
+    overdue = []
+    for row in actions:
+        try:
+            late = int(row[10])
+        except (IndexError, ValueError):
+            continue
+        if dbq.bool_of(row[3]) and late > 3 * 3600:
+            overdue.append("%s (%.1fh)" % (row[2], late / 3600.0))
+    r.rows("actions", [("total", str(len(actions))),
+                       ("overdue > 3h", str(len(overdue)))])
+    if overdue and should_fire:
+        r.worst("bad" if len(overdue) > 1 else "warn")
+        r.lines("overdue", overdue[:10])
+        r.note("Overdue means the sidecar did not FIRE them. That is a "
+               "scheduler fault, not a fault in the actions themselves.")
+
+    j = ctx.journal("scheduler", 200)
+    unknown = sorted(set(re.findall(r"Unknown action '([a-z_]+)'", j)))
+    if unknown:
+        r.status = "bad"
+        r.lines("journal", ["Unknown action: %s" % ", ".join(unknown)])
+        r.note("The sidecar is running older code than the tree. "
+               "sudo satom execute restart scheduler")
+    return r
+
+
+def units(ctx, args):
+    """Unit inventory, and whether the privilege model survived the last update."""
+    r = Result("ok", "systemd units")
+    rows = []
+    for unit in REQUIRED_UNITS:
+        rc, out, _ = run(["systemctl", "show", unit, "--no-pager",
+                          "--property=UnitFileState,ActiveState,LoadState"])
+        d = {}
+        for ln in out.splitlines():
+            k, _, v = ln.partition("=")
+            d[k] = v
+        if d.get("LoadState") == "not-found":
+            _pass(rows, unit, False, "not installed")
+            r.status = "bad"
+            continue
+        enabled = d.get("UnitFileState", "")
+        excused = unit.startswith("satom-ha-datasync") and ctx.role != "standby"
+        ok = enabled in ("enabled", "enabled-runtime", "static", "generated") or excused
+        _pass(rows, unit, ok, "%s / %s" % (enabled, d.get("ActiveState", "?")))
+        if not ok:
+            r.worst("bad" if unit == "satom-updater.path" else "warn")
+    r.rows("inventory", rows)
+
+    drops = []
+    want_user = ctx.app_user
+    for unit in DROPIN_UNITS:
+        p = Path("/etc/systemd/system/%s.d/10-app-user.conf" % unit)
+        if not p.exists():
+            drops.append((unit, "FAIL  no drop-in — User= will revert on the next update"))
+            r.worst("bad" if want_user != "root" else "warn")
+            continue
+        try:
+            txt = p.read_text()
+        except Exception:  # noqa: BLE001
+            drops.append((unit, "drop-in unreadable as %s" % ctx.user))
+            continue
+        m = re.search(r"^User=(\S+)", txt, re.M)
+        got = m.group(1) if m else "(unset)"
+        ok = (got == want_user)
+        drops.append((unit, ("pass" if ok else "FAIL") + "  User=%s" % got))
+        if not ok:
+            r.worst("warn")
+    r.rows("User= drop-ins (tree owner: %s)" % want_user, drops)
+
+    running_as = []
+    for alias in ("web", "scheduler", "reconciler"):
+        pid = _main_pid(ctx, alias)
+        who = "-"
+        if pid:
+            try:
+                for ln in Path("/proc/%d/status" % pid).read_text().splitlines():
+                    if ln.startswith("Uid:"):
+                        import pwd
+                        who = pwd.getpwuid(int(ln.split()[1])).pw_name
+            except Exception:  # noqa: BLE001
+                who = "?"
+        running_as.append((alias, who))
+        if who == "root" and want_user != "root":
+            r.worst("bad")
+    r.rows("actually running as", running_as)
+    if any(w == "root" for _, w in running_as) and want_user != "root":
+        r.note("A unit reverted to root. Editing the unit file does NOT survive: "
+               "the update runner re-copies deploy/<unit> every time. "
+               "sudo satom execute reinstall units")
+    r.note("satom-updater stays root deliberately — it is the privileged runner. "
+           "A second root unit is how the boundary gets rebuilt by accident.")
+    return r
+
+
+def config(ctx, args):
+    """.env: present, correctly owned, and internally consistent."""
+    r = Result("ok", "configuration")
+    env_file = ctx.app_dir / ".env"
+    if not env_file.exists():
+        r.status = "bad"
+        r.rows("", [(".env", "MISSING at %s" % env_file)])
+        r.note("Without it the app falls back to sqlite and fails in confusing "
+               "ways rather than refusing to start.")
+        return r
+    rows = []
+    try:
+        stt = env_file.stat()
+        mode = stat.S_IMODE(stt.st_mode)
+        import grp
+        import pwd
+        owner = pwd.getpwuid(stt.st_uid).pw_name
+        group = grp.getgrgid(stt.st_gid).gr_name
+        rows.append(("path", str(env_file)))
+        rows.append(("owner", "%s:%s" % (owner, group)))
+        rows.append(("mode", oct(mode)))
+        if mode & 0o007:
+            r.status = "bad"
+            rows.append(("exposure", "WORLD-READABLE — every secret on this node is public"))
+        elif mode not in (0o640, 0o600):
+            r.worst("warn")
+    except Exception as exc:  # noqa: BLE001
+        rows.append(("stat", "failed: %s" % exc))
+    r.rows("file", rows)
+
+    if not ctx.env_readable:
+        r.worst("warn")
+        r.rows("contents", [("state", "not readable as %s — checks below skipped" % ctx.user)])
+        r.note("This is expected for an operator who is not root and not in the "
+               "'%s' group. It is a limit of your session, not a fault of the "
+               "node." % ctx.app_user)
+        return r
+
+    checks = []
+    e = ctx.env
+    _pass(checks, "SECRET_KEY", bool(e.get("SECRET_KEY", "").strip()))
+    fk = e.get("FERNET_KEY", "").strip()
+    ok_fk = len(fk) == 44 and fk.endswith("=")
+    _pass(checks, "FERNET_KEY", ok_fk, "" if ok_fk else "not a 44-char Fernet key")
+    parts = ctx.db_parts()
+    _pass(checks, "SQLALCHEMY_DATABASE_URI", bool(parts),
+          "" if parts else "unparseable")
+    if parts:
+        checks.append(("database", "%s@%s:%s/%s" % (parts[0], parts[2], parts[3], parts[4])))
+        if parts[4].startswith("sqlite") or "sqlite" in ctx.db_uri():
+            r.worst("bad")
+            checks.append(("engine", "SQLITE — the app fell back; Postgres is expected"))
+    if not all(x[1].startswith("pass") or ":" in x[1] for x in checks):
+        r.worst("bad")
+    r.rows("required keys", checks)
+    if not ok_fk:
+        r.status = "bad"
+        r.note("A wrong FERNET_KEY does not fail at boot. It fails later, when "
+               "something tries to decrypt an appliance password or an SFTP "
+               "credential — and it looks like a wrong password.")
+
+    # [SATOM-LINK-HOSTS] The password-reset mail keeps the request's host only
+    # when it is one of the node's own names or listed in LINK_HOSTS; any other
+    # Host header (forgeable on the unauthenticated /auth/forgot) is replaced by
+    # the node FQDN. So the FQDN must be a name a user can open, and a
+    # LINK_HOSTS entry must be a bare host name: it is compared with the URL's
+    # hostname, so "https://x" or "x:8443" never matches anything.
+    import socket
+    served = sorted({n for _, t in satom_vhosts() for n in vhost_server_names(t)})
+    rows, worst, notes = link_hosts_report(
+        socket.getfqdn(), socket.gethostname(), e.get("LINK_HOSTS", ""), served)
+    r.rows("password-reset links", rows)
+    r.worst(worst)
+    for n in notes:
+        r.note(n)
+    return r
+
+
+def link_hosts_report(fqdn, hostname, link_hosts_raw, served):
+    """(rows, status, notes) for the reset-link host rule. Pure, so a test can
+    pin it without a node. Mirrors ``app/auth/routes._reset_link``."""
+    fqdn = (fqdn or "").lower()
+    listed = [h.strip().lower() for h in (link_hosts_raw or "").split(",") if h.strip()]
+    own = {n.lower() for n in (hostname, fqdn) if n} | set(listed)
+    rows = [("fallback host", fqdn or "?"),
+            ("LINK_HOSTS", ", ".join(listed) or "(empty)")]
+    status, notes = "ok", []
+    if fqdn and "." not in fqdn:
+        status = "warn"
+        rows.append(("fallback", "SINGLE-LABEL — a mailed link to https://%s/ does "
+                                 "not resolve off this LAN" % fqdn))
+        notes.append("Give the node a resolvable FQDN (/etc/hosts or DNS search "
+                     "domain), or add the name users open to LINK_HOSTS in .env "
+                     "and restart web.")
+    bad = [h for h in listed if "/" in h or ":" in h]
+    if bad:
+        status = "warn"
+        rows.append(("never matches", ", ".join(bad)))
+        notes.append("LINK_HOSTS takes bare host names (no scheme, no port, no "
+                     "path); those entries match no request.")
+    for n in served:
+        rows.append((n, "kept in the link" if n in own
+                     else "link rewritten to %s" % (fqdn or "?")))
+    return rows, status, notes
+
+
+# [SATOM-DATA-PERMS] data/ holds the device config vault (full appliance
+# configurations), the system bundles (pg_dump + recovery seal), the ACME
+# account keys and the shared PKI. The service runs with UMask=0022 -- kept on
+# purpose, nginx must read the ACME webroot it writes -- so everything it
+# created there was 0755/0644 and readable by every local account: www-data,
+# postfix, redis, the wazuh agent. Nothing in data/ is served by nginx and no
+# other account needs it, so the directory itself is the gate (0750, no group
+# members) and the trees that hold secrets are owner-only underneath it as
+# defence in depth.
+DATA_DIR_LOOSE = 0o027          # data/: group write, any bit for other
+PRIVATE_LOOSE = 0o077           # private trees: any bit for group or other
+PRIVATE_TREES = ("backups", "system_backups", "acme", "recovery", "pki-shared")
+
+
+def _raise(exc):
+    raise exc
+
+
+def data_exposure(data_dir):
+    """Entries under ``data_dir`` that another local account could read.
+
+    Returns a list of dicts ``{path, mode, want, is_dir, dev, ino}``; ``want``
+    only ever REMOVES bits from ``mode``. Pure apart from lstat: a symlink is
+    never followed and never reported (chmod on a link changes its target).
+    A directory this process cannot read raises PermissionError -- "could not
+    look" must not read as "nothing exposed".
+    """
+    out = []
+    base = Path(data_dir)
+
+    def _grade(p, loose):
+        st = os.lstat(p)
+        if stat.S_ISLNK(st.st_mode):
+            return
+        mode = stat.S_IMODE(st.st_mode)
+        if mode & loose:
+            out.append({"path": str(p), "mode": mode, "want": mode & ~loose,
+                        "is_dir": stat.S_ISDIR(st.st_mode),
+                        "dev": st.st_dev, "ino": st.st_ino})
+
+    try:
+        top = os.lstat(base)
+    except FileNotFoundError:
+        return out
+    if not stat.S_ISDIR(top.st_mode):
+        return out
+    _grade(base, DATA_DIR_LOOSE)
+    for name in PRIVATE_TREES:
+        tree = base / name
+        try:
+            if not stat.S_ISDIR(os.lstat(tree).st_mode):
+                continue
+        except FileNotFoundError:
+            continue
+        _grade(tree, PRIVATE_LOOSE)
+        for root, dirs, files in os.walk(tree, onerror=_raise):
+            for n in dirs + files:
+                _grade(Path(root) / n, PRIVATE_LOOSE)
+    return out
+
+
+def data(ctx, args):
+    """Is anything under data/ readable by another local account?"""
+    r = Result("ok", "data directory")
+    d = ctx.app_dir / "data"
+    try:
+        found = data_exposure(d)
+    except PermissionError:
+        # 0750 owned by the service account is the CORRECT state, and it is
+        # exactly what stops a non-member from looking. Saying "clean" here
+        # would be a fail-open; saying "exposed" would be a lie.
+        r = Result("warn", "cannot evaluate data/ permissions", exit_code=4)
+        r.note("data/ is not readable as %s, which is the correct state for an "
+               "account outside '%s'. Re-run with sudo." % (ctx.user, ctx.app_user))
+        return r
+    try:
+        mode = oct(stat.S_IMODE(os.lstat(d).st_mode))
+    except OSError:
+        mode = "missing"
+    rows = [("data/", mode), ("private trees", ", ".join(PRIVATE_TREES))]
+    r.rows("", rows)
+    if not found:
+        r.rows("exposure", [("readable by other accounts", "none")])
+        return r
+    r.status = "bad"
+    files = [f for f in found if not f["is_dir"]]
+    r.rows("exposure", [
+        ("entries too open", "%d (%d files)" % (len(found), len(files))),
+    ] + [(f["path"], "%s -> %s" % (oct(f["mode"]), oct(f["want"])))
+         for f in found[:12]])
+    r.note("Another local account (www-data, postfix, redis, an agent) can read "
+           "device configurations or database bundles. The service UMask stays "
+           "0022 on purpose; close the directory instead: "
+           "`satom execute repair data --yes`.")
+    return r
+
+
+# Vhost directories the installer may have used, per distro family.
+NGINX_VHOST_DIRS =("/etc/nginx/sites-enabled", "/etc/nginx/vhosts.d",
+                    "/etc/nginx/conf.d")
+
+
+def bare_host_vhosts(bodies):
+    """Proxying vhosts that pass `Host $host`, which DROPS the port.
+
+    Takes [(name, text)] and returns the offending names. Pure on purpose: the
+    caller reads /etc/nginx, this decides, and a test can pin the decision
+    without standing up nginx.
+    """
+    return [n for n, t in bodies
+            if re.search(r"\bproxy_pass\s", t)
+            and re.search(r"proxy_set_header\s+Host\s+\$host\s*;", t)]
+
+
+def uncovered_names(served, san_names):
+    """Served FQDNs the certificate does not cover.
+
+    Single-label names are reported by the caller but NOT graded here: no public
+    CA issues a certificate for a bare hostname, so grading it would leave every
+    node that imports a wildcard in a permanent warn -- the chronic false
+    positive this codebase keeps having to delete.
+    """
+    return [n for n in served if "." in n and not cert_covers(n, san_names)]
+
+
+def vhost_server_names(txt):
+    """DNS names a vhost answers for. Drops the catch-all and bare IPs.
+
+    An IP is never gradeable against a certificate: a public CA will not put one
+    in a SAN, so counting it as a miss would make the check complain forever on
+    a node whose certificate is exactly right.
+    """
+    out = []
+    for m in re.finditer(r"^\s*server_name\s+([^;]+);", txt, re.M):
+        for tok in m.group(1).split():
+            tok = tok.strip().lower().rstrip(".")
+            if not tok or tok == "_":
+                continue
+            if re.match(r"^\d+\.\d+\.\d+\.\d+$", tok):
+                continue
+            out.append(tok)
+    return out
+
+
+def cert_covers(name, san_names):
+    """RFC 6125 matching. A '*' covers exactly ONE leftmost label.
+
+    Written out rather than assumed: `*.example.tld` covers `node.example.tld`
+    but NOT `a.b.example.tld` and NOT the bare `example.tld`. Treating the
+    wildcard as "matches anything under the domain" is the usual mistake and it
+    turns this check into a rubber stamp.
+    """
+    name = (name or "").lower().rstrip(".")
+    for pat in san_names:
+        pat = (pat or "").lower().rstrip(".")
+        if not pat:
+            continue
+        if pat == name:
+            return True
+        if pat.startswith("*."):
+            head, _, rest = name.partition(".")
+            if head and rest and rest == pat[2:]:
+                return True
+    return False
+
+
+def cert_san_names(path):
+    """DNS entries of a certificate's subjectAltName, [] if unreadable."""
+    rc, out, _ = run(["openssl", "x509", "-noout", "-ext", "subjectAltName",
+                      "-in", str(path)])
+    if rc != 0:
+        return []
+    names = []
+    for chunk in out.replace("\n", ",").split(","):
+        chunk = chunk.strip()
+        if chunk.upper().startswith("DNS:"):
+            names.append(chunk[4:].strip())
+    return names
+
+
+# [SATOM-API-LIMITS] /api/v1 may hold at most API_CONN_TOTAL of the gunicorn
+# threads (deploy/gunicorn.conf.py: 4 workers x 8 = 32), so the console always
+# has the rest; per client address 8 requests in flight and 50/s (burst 100).
+# Over a limit nginx answers 429 at once -- nothing queues in Python. Per-TOKEN
+# limits are the application's (app/api_v1/auth.py rate_key). The zones live
+# in a file of their own that nginx includes once (api_limits_conf_path), so
+# two vhosts never define them twice.
+API_LIMITS_CONF = "/etc/nginx/conf.d/satom-api-limits.conf"
+#: openSUSE/SLES: the stock nginx.conf includes conf.d TWICE (a zone defined
+#: twice fails the whole config) and vhosts.d once -- the installer's choice.
+API_LIMITS_CONF_SUSE = "/etc/nginx/vhosts.d/satom-api-limits.conf"
+
+
+def api_limits_conf_path() -> str:
+    """Where the zones file belongs on THIS node (the installer's rule)."""
+    if not Path("/etc/nginx/sites-enabled").is_dir() and Path("/etc/nginx/vhosts.d").is_dir():
+        return API_LIMITS_CONF_SUSE
+    return API_LIMITS_CONF
+API_CONN_TOTAL = 16
+API_LIMITS_ZONES = (
+    "limit_conn_zone $server_name zone=satom_api_total:1m;",
+    "limit_conn_zone $binary_remote_addr zone=satom_api_client:10m;",
+    "limit_req_zone $binary_remote_addr zone=satom_api_rate:10m rate=50r/s;",
+)
+API_LIMITS_DIRECTIVES = (
+    "limit_conn satom_api_total %d;" % API_CONN_TOTAL,
+    "limit_conn satom_api_client 8;",
+    "limit_req zone=satom_api_rate burst=100 nodelay;",
+    "limit_conn_status 429;",
+    "limit_req_status 429;",
+)
+
+
+def api_limits_zones_text() -> str:
+    return ("# [SATOM-API-LIMITS] Written by SATOM (installer / 'satom execute "
+            "repair nginx').\n# The /api/v1 location of the SATOM vhost uses "
+            "these zones.\n" + "\n".join(API_LIMITS_ZONES) + "\n")
+
+
+def api_limits_missing(text: str) -> bool:
+    """A vhost proxying to the local gunicorn whose /api/v1 is unlimited."""
+    return bool(re.search(r"proxy_pass\s+http://127\.0\.0\.1:8000", text or "")) \
+        and "satom_api_total" not in (text or "")
+
+
+def _block_end(text: str, open_brace: int) -> int:
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def add_api_limits(text: str) -> str:
+    """*text* with a ``location ^~ /api/v1/`` block in front of every
+    ``location /`` that proxies to the local gunicorn: the same proxy settings
+    plus :data:`API_LIMITS_DIRECTIVES`. Unchanged when already present. Pure."""
+    if not api_limits_missing(text):
+        return text
+    out, pos = [], 0
+    for m in re.finditer(r"^([ \t]*)location\s+/\s*\{", text, re.M):
+        if m.start() < pos:
+            continue
+        brace = text.index("{", m.start())
+        end = _block_end(text, brace)
+        if end < 0:
+            break
+        body = text[brace + 1:end]
+        if not re.search(r"proxy_pass\s+http://127\.0\.0\.1:8000", body):
+            continue
+        indent = m.group(1)
+        inner = indent + "    "
+        limits = "".join("\n%s%s" % (inner, d) for d in API_LIMITS_DIRECTIVES)
+        block = ("%s# [SATOM-API-LIMITS] zones: satom-api-limits.conf\n%slocation ^~ /api/v1/ {%s%s}\n"
+                 % (indent, indent, limits, body.rstrip(" \t") + indent))
+        out.append(text[pos:m.start()])
+        out.append(block)
+        pos = m.start()
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def satom_vhosts():
+    """(path, text) of every vhost that proxies to the local gunicorn."""
+    out = []
+    for d in NGINX_VHOST_DIRS:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        for f in sorted(p.iterdir()):
+            if not f.is_file():
+                continue
+            try:
+                t = f.read_text()
+            except Exception:  # noqa: BLE001
+                continue
+            if "proxy_pass" in t and "127.0.0.1:8000" in t:
+                out.append((f, t))
+    return out
+
+
+def nginx(ctx, args):
+    """The front door: syntax, which vhost wins, and the ACME trap."""
+    r = Result("ok", "nginx")
+    rc, out, err = run(["nginx", "-t"])
+    if rc == 127:
+        r.status = "warn"
+        r.rows("", [("nginx", "not installed on this node")])
+        return r
+    ok = (rc == 0)
+    r.rows("syntax", [("nginx -t", "ok" if ok else "INVALID")])
+    if not ok:
+        r.status = "bad"
+        r.lines("error", (err or out).splitlines()[:12])
+        r.note("Do NOT reload until this is clean. 'execute reload nginx' "
+               "validates first and refuses, which is the behaviour you want.")
+        return r
+
+    # [SATOM-NGINX-DIRS] install-satom.sh picks the vhost directory by family:
+    # sites-enabled (Debian/Ubuntu), vhosts.d (openSUSE/SLES) or conf.d
+    # (RHEL/Arch). This check only knew the first and third, so on openSUSE it
+    # read ZERO files and reported "listeners (none found)" plus
+    # "default_server holder NONE" for a node whose vhost was correct — a FAIL
+    # that no configuration change could ever clear, on the check whose entire
+    # job is telling you the console is about to become unreachable. Scan every
+    # directory the installer may have used; a vhost in any of them is real.
+    confs = []
+    for _d, _pat in (
+        ("/etc/nginx/sites-enabled", "*"),
+        ("/etc/nginx/vhosts.d", "*.conf"),
+        ("/etc/nginx/conf.d", "*.conf"),
+    ):
+        _p = Path(_d)
+        if _p.is_dir():
+            confs.extend(sorted(x for x in _p.glob(_pat) if x.is_file()))
+    default_443, listens, findings, bodies = [], [], [], []
+    for c in confs:
+        try:
+            txt = c.read_text()
+        except Exception:  # noqa: BLE001
+            findings.append((c.name, "unreadable as %s" % ctx.user))
+            continue
+        bodies.append((c.name, txt))
+        if re.search(r"listen\s+[^;]*443[^;]*default_server", txt):
+            default_443.append(c.name)
+        for m in re.finditer(r"listen\s+([^;]+);", txt):
+            listens.append("%s: %s" % (c.name, m.group(1).strip()))
+        # A `return 301` at SERVER level runs in the rewrite phase, BEFORE a
+        # location is chosen, so it swallows the ACME challenge. The redirect
+        # has to live inside `location /`.
+        depth, server_level_redirect = 0, False
+        for line in txt.splitlines():
+            s = line.split("#", 1)[0]
+            if depth == 1 and re.match(r"\s*return\s+30[12]\b", s):
+                server_level_redirect = True
+            depth += s.count("{") - s.count("}")
+        if server_level_redirect and "acme-challenge" not in txt:
+            findings.append((c.name, "server-level 'return 301' and no ACME "
+                                     "challenge location — HTTP-01 will fail here"))
+            r.worst("warn")
+    r.lines("listeners", listens[:14] or ["(none found)"])
+    r.rows("default_server on :443", [
+        ("holder", ", ".join(default_443) or "NONE"),
+    ])
+    if len(default_443) != 1:
+        r.worst("bad" if not default_443 else "warn")
+        r.note("Exactly one vhost must own default_server on :443. With none, "
+               "the alphabetically first config wins and the application "
+               "becomes unreachable by hostname while the static site keeps "
+               "serving — which looks like a DNS fault, not an nginx one.")
+    if findings:
+        r.rows("findings", findings)
+    # [SATOM-VHOST-HOST] `$host` DROPS the port. Flask-WTF builds the CSRF
+    # token's expected origin from the host the app believes it has and
+    # compares it with the browser's Referer INCLUDING the port, so behind a
+    # NAT or a proxy on a non-standard port EVERY POST -- login included -- is
+    # rejected with a message about an expired session. The symptom points at
+    # the wrong place, which is exactly why this has to be a check and not a
+    # note.
+    proxied = [(n, t) for n, t in bodies if re.search(r"\bproxy_pass\s", t)]
+    if proxied:
+        bare = bare_host_vhosts(proxied)
+        r.rows("proxied Host header", [
+            (n, "$host - DROPS the port" if n in bare else "$http_host")
+            for n, _ in proxied])
+        if bare:
+            r.worst("bad")
+            r.note("A vhost passes `Host $host`, which strips the port. Every "
+                   "POST behind a non-standard port fails CSRF and reports a "
+                   "stale form. Fix: `satom execute repair nginx --yes`.")
+        # [SATOM-API-LIMITS] An unlimited /api/v1 lets one integration take
+        # every gunicorn thread, and the console stops answering with it.
+        unlimited = [n for n, t in proxied if api_limits_missing(t)]
+        zones_ok = Path(api_limits_conf_path()).exists()
+        r.rows("/api/v1 limits", [
+            (n, "MISSING" if n in unlimited else ("present" if zones_ok
+                                                  else "present, zones file MISSING"))
+            for n, t in proxied if "127.0.0.1:8000" in t])
+        if unlimited or (not zones_ok and any("satom_api_total" in t for _n, t in proxied)):
+            r.worst("warn")
+            r.note("/api/v1 has no connection / rate limits: one API client "
+                   "can hold every web thread and the console with it. "
+                   "Fix: `satom execute repair nginx --yes`.")
+
+    # [SATOM-SERVED-NAMES] What the vhost serves and what the certificate
+    # covers have to be the SAME set. The installer minted both from
+    # `hostname` (the SHORT name), so a node reached by its FQDN had a
+    # certificate without that SAN -- a browser warning about a certificate
+    # the installer had just reported as good.
+    crt = ctx.app_dir / "pki" / "public" / "server.crt"
+    served = sorted({n for _, t in proxied for n in vhost_server_names(t)})
+    if served and crt.exists():
+        sans = cert_san_names(crt)
+        r.rows("certificate SAN", [("DNS names", ", ".join(sans) or "(none)")])
+        r.rows("certificate covers server_name",
+               [(n, "covered" if cert_covers(n, sans) else "NOT COVERED")
+                for n in served])
+        # Only FQDNs are GRADED. A single-label name cannot be in a public
+        # certificate -- no CA issues one -- and is only reachable through the
+        # local search domain, so counting it as a failure would leave every
+        # node that imports a wildcard on a permanent warn.
+        # It is PRINTED all the same: not grading is not hiding.
+        missing = uncovered_names(served, sans)
+        if missing:
+            r.worst("warn")
+            r.note("The vhost answers for %s but the served certificate has no "
+                   "matching SAN, so a browser reaching the node by that name "
+                   "gets a name-mismatch warning. Re-issue with the name in the "
+                   "SAN, or import one that covers it." % ", ".join(missing))
+    elif served and not crt.exists():
+        r.rows("certificate covers server_name",
+               [("state", "%s missing - cannot verify" % crt)])
+        r.worst("warn")
+
+    # SATOM-NGINX-PEER: :8443 is the authenticated node-to-node channel. A
+    # standalone install has no peer, so grading it there makes EVERY fresh
+    # single-node install open with "[warn] nginx" forever, over a feature it
+    # deliberately does not have. Same chronic false positive already removed
+    # from `get system health` for the datasync timer that is inert by design
+    # on a primary (see cmd_ops.py "excused"). A check that always complains is
+    # a check the operator learns to skip.
+    # The row is still PRINTED, so the channel is never silently unreported --
+    # what changes is that it stops counting as a finding.
+    probes = nginx_probes(bool(configured_peers(ctx)))
+    if len(probes) == 1:
+        r.rows("peer channel :8443",
+               [("state", "n/a - no peer configured (standalone)")])
+    for probe, url in probes:
+        code_, _ = ctx.http(url, timeout=5)
+        r.rows(probe, [("GET /healthz", code_ or "no answer")])
+        if code_ != 200:
+            r.worst("warn")
+    return r
+
+
+def nginx_probes(has_peer):
+    """Which HTTP probes the nginx check is allowed to GRADE.
+
+    SATOM-NGINX-PEER. Takes a boolean, not a role string, and stays pure: a
+    test can pin the standalone case without standing up nginx, a peer or a
+    database.
+
+    Deliberately NOT keyed on ctx.role. `role` is derived from
+    pg_is_in_recovery(), so it can only ever be primary/standby/unknown -- a
+    STANDALONE node reports "primary", and the "standalone" value promised by
+    that property's docstring is unreachable. Keying on it silently graded
+    every standalone install anyway, which is the bug this exists to fix.
+    """
+    probes = [("app :443", "https://127.0.0.1/healthz")]
+    if has_peer:
+        probes.append(("peer channel :8443", "https://127.0.0.1:8443/healthz"))
+    return probes
+
+
+def configured_peers(ctx):
+    """Hosts in the peer registry that are not this node.
+
+    Same discovery the `get node status` command uses: local IPs compared
+    against data/ha_nodes.json. A standalone install has no such file, so it
+    has no peer and nothing should be answering on :8443.
+    """
+    import json as _json
+    try:
+        nodes = _json.loads((ctx.app_dir / "data" / "ha_nodes.json").read_text())
+    except Exception:  # noqa: BLE001 - absent file IS the standalone answer
+        return []
+    if isinstance(nodes, dict):
+        nodes = nodes.get("nodes", [])
+    if not isinstance(nodes, list):
+        return []
+    _rc, out, _e = run(["hostname", "-I"])
+    mine = set(out.split())
+    peers = []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        host = n.get("host") or n.get("ip") or ""
+        if host and host not in mine and n.get("name") != ctx.host:
+            peers.append(host)
+    return peers
+
+
+def git(ctx, args):
+    """Repository integrity, including the ownership trap."""
+    # See cmd_ops.git_status: without --no-optional-locks a root `git status`
+    # rewrites .git/index and takes it away from the service account — the very
+    # drift this check reports.
+    # As the service account (context.app_cmd): run as root, git executes what
+    # .git/config says -- core.fsmonitor, filters, diff drivers -- and that file
+    # is the service account's to write.
+    g = app_cmd(ctx, ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
+                      "-C", str(ctx.app_dir)])
+    genv = app_env(ctx, git=True)
+
+    def run(cmd, timeout=60):
+        # `find` goes through here too: harmless as the service account,
+        # and it only reads.
+        if cmd[:len(g)] != g:
+            return _run(cmd, timeout=timeout)
+        return _run(cmd, timeout=timeout, env=genv, cwd=str(ctx.app_dir))
+    r = Result("ok", "git integrity")
+    # SATOM-GIT-PKG: until 1.3.3 no offline bundle carried git, so an air-gapped
+    # node reported "repository unusable" — true, and it sends the operator to
+    # look at the repository instead of at the one missing package.
+    if shutil.which("git") is None:
+        r.status = "bad"
+        r.rows("", [("git binary", "not installed")])
+        r.note("code updates (reconciler / self-update) and manual git bundles "
+               "shell out to git. The device SoT no longer depends on it "
+               "(services.sot_store), but code delivery does. Install it from "
+               "the distribution media or the offline bundle.")
+        return r
+    rc, out, _ = run(g + ["rev-parse", "--is-inside-work-tree"])
+    if rc != 0:
+        r.status = "bad"
+        r.rows("", [("repository", "unusable at %s" % ctx.app_dir)])
+        return r
+    rows = []
+    rc, root_in_git, _ = run(["find", str(ctx.app_dir / ".git"), "-user", "root"],
+                             timeout=60)
+    n_git = len([x for x in root_in_git.splitlines() if x.strip()]) if rc == 0 else -1
+    _pass(rows, "no root-owned files in .git", n_git == 0,
+          "" if n_git <= 0 else "%d found" % n_git)
+    if n_git > 0:
+        r.worst("warn")
+
+    # Excluded because root owning them is CORRECT, not drift:
+    #   .env               0640 root:<service account> by design — the app only
+    #                      reads it, so a write primitive cannot rewrite its
+    #                      own secrets
+    #   data/lib-versions  written by the privileged runner, which IS root
+    #   dist/              build output from the offline-bundle builders
+    #   venv/, .git/       covered separately / not application state
+    # Flagging these would put a permanent FAIL on a healthy node, and the
+    # first thing a permanent FAIL teaches is that this check can be ignored.
+    exclude = ["*/venv/*", "*/venv", "*/.git/*", "*/.git", "*/dist/*", "*/dist",
+               "*/data/lib-versions/*", "*/data/lib-versions"]
+    cmd = ["find", str(ctx.app_dir), "-user", "root", "-not", "-name", ".env"]
+    for pat in exclude:
+        cmd += ["-not", "-path", pat]
+    rc, root_in_tree, _ = run(cmd, timeout=90)
+    offenders = [x for x in root_in_tree.splitlines() if x.strip()]
+    n_tree = len(offenders) if rc == 0 else -1
+    _pass(rows, "no root-owned files in the tree", n_tree == 0,
+          "" if n_tree <= 0 else "%d found" % n_tree)
+    if n_tree > 0:
+        r.worst("warn")
+
+    rc, url, _ = run(g + ["config", "--get", "remote.origin.url"])
+    _pass(rows, "origin uses TLS", url.startswith("https://") or url.startswith("ssh://")
+          or url.startswith("git@"), url.split("@")[-1][:48])
+    if url.startswith("http://"):
+        r.worst("warn")
+    r.rows("", rows)
+
+    # SATOM-UNIQUE-STATE: a node holding work that exists nowhere else has to
+    # SAY so, because the operation that destroys it looks routine.
+    # `git reset --hard` discards MODIFICATIONS TO TRACKED FILES and, when it
+    # targets the remote ref, COMMITS THIS NODE HAS NOT PUSHED. Both are the
+    # only copy. Untracked files survive a reset, so they are listed but do
+    # not grade -- grading them would put a permanent warn on the primary,
+    # which legitimately carries an untracked `reports` symlink, and the first
+    # thing a permanent warn teaches is that this check can be ignored.
+    unique = []
+    # --name-only gives BARE paths. Slicing the porcelain "XY " prefix by
+    # position is wrong here: run() strips the captured output, so the first
+    # line loses its leading space and a fixed slice eats the first character
+    # of the filename.
+    rc, dirty_out, _ = run(g + ["diff", "--name-only", "HEAD"])
+    dirty = [x.strip() for x in dirty_out.splitlines() if x.strip()] if rc == 0 else []
+    unique.append(("modified tracked files", str(len(dirty)) if dirty else "none"))
+
+    ahead = 0
+    rc, branch, _ = run(g + ["rev-parse", "--abbrev-ref", "HEAD"])
+    branch = branch.strip()
+    upstream = ""
+    if rc == 0 and branch and branch != "HEAD":
+        rc2, up, _ = run(g + ["rev-parse", "--abbrev-ref", "%s@{upstream}" % branch])
+        if rc2 == 0 and up.strip():
+            upstream = up.strip()
+    if upstream:
+        rc3, cnt, _ = run(g + ["rev-list", "--count", "%s..HEAD" % upstream])
+        if rc3 == 0 and cnt.strip().isdigit():
+            ahead = int(cnt.strip())
+        unique.append(("commits not on %s" % upstream, str(ahead) if ahead else "none"))
+    else:
+        unique.append(("upstream branch", "not set -- cannot tell what is unpushed"))
+
+    rc, parked, _ = run(g + ["for-each-ref", "--format=%(refname)", "refs/backup"])
+    n_parked = len([x for x in parked.splitlines() if x.strip()]) if rc == 0 else 0
+    unique.append(("parked safety refs", str(n_parked) if n_parked else "none"))
+
+    rc, untracked_out, _ = run(
+        g + ["ls-files", "--others", "--exclude-standard"])
+    untracked = [x for x in untracked_out.splitlines() if x.strip()] if rc == 0 else []
+    unique.append(("untracked files", str(len(untracked)) if untracked else "none"))
+
+    r.rows("state that exists only here", unique)
+    if dirty:
+        r.lines("modified", dirty[:12])
+    if dirty or ahead or not upstream:
+        r.worst("warn")
+        r.note("This node currently holds work no other node has. A "
+               "`git reset --hard`, a self-update, or an applied package "
+               "discards it. Commit and push before reconciling this node. "
+               "On the STANDBY this is doubly true: satom-reconciler pulls on "
+               "its own, so a manual reset there is pure risk -- and the "
+               "standby has already been the last surviving copy of "
+               "uncommitted work at least once.")
+    if offenders:
+        r.lines("root-owned", [x.replace(str(ctx.app_dir) + "/", "")
+                               for x in offenders[:12]])
+    if n_tree > 0 or n_git > 0:
+        r.note("Running anything as root inside the tree (pytest, git, a "
+               "script) leaves files the service account cannot rewrite. "
+               "sudo satom execute repair permissions")
+    return r
+
+
+def acme(ctx, args):
+    """The ACME path, end to end, without issuing anything."""
+    r = Result("ok", "ACME / Let's Encrypt")
+    rows = []
+    lego = "/usr/local/bin/lego"
+    have = Path(lego).exists() or ctx.have("lego")
+    _pass(rows, "client installed", have, lego)
+    if not have:
+        r.worst("warn")
+
+    acct = ctx.app_dir / "data" / "acme"
+    exists = acct.is_dir()
+    _pass(rows, "account directory", exists, str(acct))
+    if exists:
+        try:
+            mode = stat.S_IMODE(acct.stat().st_mode)
+            _pass(rows, "account directory is 0700", mode == 0o700, oct(mode))
+            if mode != 0o700:
+                r.worst("warn")
+            n = sum(1 for _ in acct.rglob("*.key"))
+            rows.append(("account keys", str(n) if n else "none yet (never registered)"))
+        except Exception:  # noqa: BLE001
+            rows.append(("account directory", "unreadable as %s" % ctx.user))
+    else:
+        r.worst("warn")
+
+    webroot = Path("/var/www/acme")
+    _pass(rows, "http-01 webroot", webroot.is_dir(), str(webroot))
+    if not webroot.is_dir():
+        r.worst("warn")
+    r.rows("", rows)
+
+    n, err = dbq.query(ctx, "SELECT count(*) FROM acme_dns_providers")
+    if n:
+        r.rows("catalogue", [("dns providers seeded", n[0][0])])
+    creds, _ = dbq.query(
+        ctx, "SELECT count(*) FROM app_settings WHERE key LIKE 'certmgr.acme.creds.%'")
+    if creds:
+        got = int(creds[0][0] or 0)
+        r.rows("credentials", [("configured providers", str(got))])
+        if not got:
+            r.worst("warn")
+            r.note("No DNS provider credentials are stored, so DNS-01 cannot "
+                   "complete. That is the operator's step: Settings -> "
+                   "Certificate Manager -> DNS provider credentials.")
+    r.note("The account key under data/acme MUST persist. Registering a new "
+           "account on every issue burns the CA's rate limit and loses the "
+           "ability to revoke what was issued before.")
+    return r
+
+
+def _metrics_store_anchor(ctx):
+    """(version, sha256) the node is SUPPOSED to have, or (None, None).
+
+    Read from deploy/metrics-store.env, which is the single home for the
+    artifact identity. Never guessed: a wrong digest here would report a
+    correct binary as tampered, and this check would be the thing operators
+    learn to ignore.
+    """
+    f = ctx.app_dir / "deploy" / "metrics-store.env"
+    ver = sha = None
+    try:
+        for line in f.read_text().splitlines():
+            line = line.strip()
+            k, _, v = line.partition("=")
+            v = v.strip().strip('"').strip("'")
+            if k == "VM_VERSION":
+                ver = v
+            elif k == "VM_SHA256":
+                sha = v
+    except Exception:  # noqa: BLE001 -- absent file is "cannot tell", not "bad"
+        pass
+    return ver, sha
+
+
+def _metrics_store_rows(ctx, rows, r):
+    """Grade the store BINARY; only report the unit's runtime state.
+
+    [SATOM-METRICS-NODE-LOCAL] The binary is node-local and nothing carries it
+    between nodes -- not git, not the datasync, not a pg_dump -- so its absence
+    is real drift and is graded. The unit's enabled/active state is an OPERATOR
+    decision (Settings -> General can stop it), so it is printed and NOT graded:
+    a check that goes amber the moment somebody legitimately stops a service is
+    a check nobody reads. This node has burned that lesson three times already
+    (satom-ha-datasync idle on the primary, status words coloured red, the
+    :8443 peer probe on a standalone).
+    """
+    ver, want = _metrics_store_anchor(ctx)
+    binp = Path("/usr/local/bin/victoria-metrics")
+
+    if not binp.exists():
+        _pass(rows, "metrics store binary", False,
+              "MISSING — /monitoring/analytics has no backend on this node; "
+              "run 'sudo bash %s/deploy/install-metrics-store.sh'" % ctx.app_dir)
+        r.worst("warn")
+    elif not want:
+        _pass(rows, "metrics store binary", True, "%s (digest unverifiable: "
+              "deploy/metrics-store.env unreadable)" % binp)
+    else:
+        try:
+            got = hashlib.sha256(binp.read_bytes()).hexdigest()
+        except Exception as exc:  # noqa: BLE001
+            got = ""
+            _pass(rows, "metrics store binary", False, str(exc)[:120])
+            r.worst("warn")
+        if got:
+            if not _pass(rows, "metrics store binary", got == want,
+                         ("v%s (sha256 verified)" % ver) if got == want
+                         else "sha256 does NOT match the anchored v%s build" % ver):
+                r.worst("warn")
+
+    st = ctx.unit_state("metrics")
+    rows.append(("metrics store service",
+                 "%s/%s   (runtime state is the operator's; not graded)"
+                 % (st.get("enabled", "?"), st.get("active", "?"))))
+
+
+def install(ctx, args):
+    """Is this node fully ARMED, as opposed to merely installed?
+
+    The installer delivers code, units, TLS and a database. It does not deliver
+    the automated protections, because those are DATA and operator edits win
+    over code defaults here. A fresh node therefore looks perfect and defends
+    nothing. This is the check that says so out loud.
+    """
+    r = Result("ok", "installation completeness — %s" % ctx.host)
+    rows = []
+
+    missing_units = []
+    for unit in REQUIRED_UNITS:
+        rc, out, _ = run(["systemctl", "show", unit, "--no-pager", "--property=LoadState"])
+        if out.partition("=")[2] == "not-found":
+            missing_units.append(unit)
+    if not _pass(rows, "systemd units installed", not missing_units,
+                 ", ".join(missing_units)):
+        r.status = "bad"
+
+    st = ctx.unit_state("updater")
+    if not _pass(rows, "privileged runner enabled",
+                 st["enabled"] in ("enabled", "enabled-runtime"), st["enabled"]):
+        r.status = "bad"
+
+    drop_ok = all(Path("/etc/systemd/system/%s.d/10-app-user.conf" % u).exists()
+                  for u in DROPIN_UNITS)
+    if not _pass(rows, "User= drop-ins present", drop_ok or ctx.app_user == "root"):
+        r.worst("warn")
+
+    cli = Path("/usr/local/sbin/satom")
+    cli_ok = cli.exists() and not cli.is_symlink()
+    if not _pass(rows, "operator CLI installed", cli_ok, str(cli)):
+        r.worst("warn")
+
+    sudoers = Path("/etc/sudoers.d/satom")
+    if not _pass(rows, "service-account sudoers", sudoers.exists(), str(sudoers)):
+        r.worst("warn")
+
+    pki_ok = (ctx.app_dir / "pki" / "public" / "server.crt").exists()
+    if not _pass(rows, "service certificate present", pki_ok):
+        r.worst("bad")
+
+    venv_ok = (ctx.app_dir / "venv" / "bin" / "python3").exists()
+    if not _pass(rows, "venv present", venv_ok):
+        r.status = "bad"
+
+    _metrics_store_rows(ctx, rows, r)
+
+    r.rows("infrastructure", rows)
+
+    # -- the half nothing seeds -------------------------------------------
+    armed = []
+    actions, err = dbq.query(ctx, dbq.ACTIONS)
+    if actions is None:
+        armed.append(("scheduled actions", "unreadable: %s" % err))
+        r.worst("warn")
+    else:
+        present = {row[2] for row in actions if dbq.bool_of(row[3])}
+        for key, what in sorted(MIN_ACTIONS.items()):
+            ok = key in present
+            armed.append((key, ("pass" if ok else "MISSING") + "  — " + what))
+            if not ok:
+                r.worst("bad")
+
+    # The mailer's real keys are email.mode / email.host (email_service.py).
+    # Do not invent a key name here: a check that reads a setting nobody writes
+    # reports a permanent, false failure — worse than no check at all.
+    to, _ = dbq.setting(ctx, "alerts.email_to")
+    fallback, _ = dbq.setting(ctx, "email.default_to")
+    mode, _ = dbq.setting(ctx, "email.mode")
+    mhost, _ = dbq.setting(ctx, "email.host")
+    menabled, _ = dbq.setting(ctx, "email.enabled")
+    recipient = (to or fallback or "").strip()
+    armed.append(("alert recipient", recipient or "NONE — signals computed and discarded"))
+    armed.append(("mail transport", "%s via %s%s"
+                  % ((mode or "?").strip() or "?", (mhost or "?").strip() or "?",
+                     "" if dbq.bool_of(menabled) else "   (email.enabled=0)")))
+    if not recipient or not dbq.bool_of(menabled) or not (mhost or "").strip():
+        r.worst("warn")
+
+    ext, _ = dbq.setting(ctx, "backup_server.config")
+    armed.append(("external backup server", "configured" if (ext or "").strip()
+                  else "not configured — the off-node copy does not exist"))
+    if not (ext or "").strip():
+        r.worst("warn")
+
+    admins, _ = dbq.query(ctx, "SELECT count(*) FROM users WHERE is_active "
+                               "AND COALESCE(auth_source,'local')='local' "
+                               "AND role IN ('admin','superadmin')")
+    if admins:
+        n = int(admins[0][0] or 0)
+        armed.append(("local admin accounts", str(n) if n else "NONE — IdP outage locks you out"))
+        if not n:
+            r.worst("bad")
+    r.rows("protections that must be ARMED", armed)
+
+    # Only tell the operator to arm things when something is NOT armed. Advice
+    # printed unconditionally is advice that gets skipped on the one node where
+    # it mattered.
+    if any(v.startswith("MISSING") for _, v in armed):
+        r.lines("arm the minimum set", [
+            "  sudo satom execute seed actions          # shows the plan",
+            "  sudo satom execute seed actions --yes    # applies it",
+        ])
+    if not recipient or not dbq.bool_of(menabled) or not (mhost or "").strip():
+        r.lines("alerting", [
+            "Settings -> Alerts needs a recipient and a working transport, or",
+            "every signal is computed on schedule and delivered to nobody.",
+        ])
+    return r
+
+
+# --------------------------------------------------------------------------
+# recovery custody
+# --------------------------------------------------------------------------
+
+def _app_json(ctx, code, timeout=60):
+    """Run a snippet in the app venv and parse its last line as JSON."""
+    venv = ctx.app_dir / "venv" / "bin" / "python3"
+    if not venv.exists():
+        return None, "venv missing at %s" % venv
+    rc, out, err = run(app_cmd(ctx, [str(venv), "-c", code]), timeout=timeout,
+                       cwd=str(ctx.app_dir), env=app_env(ctx, dotenv=True))
+    if rc != 0:
+        return None, (err or out or "exit %d" % rc).strip().splitlines()[-1:][0]
+    try:
+        return json.loads((out or "").strip().splitlines()[-1]), ""
+    except Exception as exc:  # noqa: BLE001
+        return None, "unparseable output (%s)" % type(exc).__name__
+
+
+_RECOVERY_CODE = (
+    "import json\n"
+    "from app import create_app\n"
+    "from app.services import recovery\n"
+    "from app.services import recovery_seal as _rs\n"
+    "a=create_app()\n"
+    "with a.app_context():\n"
+    "    print(json.dumps({'findings': recovery.check() + _rs.check(),\n"
+    "                      'seal': _rs.seal_state(),\n"
+    "                      'fpr': recovery.current_fingerprints(),\n"
+    "                      'escrow': recovery.escrow_state(),\n"
+    "                      'holds_ca': recovery.holds_ca_key()}))\n"
+)
+
+
+def recovery(ctx, args):
+    """Is the material that no backup carries actually recoverable?
+
+    Two secrets gate recovery of this installation and neither is replicated:
+    FERNET_KEY opens every encrypted column, and the internal CA key is the
+    sole issuer for replication mTLS. They are kept out of backup bundles on
+    purpose -- a bundle is retained, mirrored to the peer and pushed off-box
+    over SFTP, so one carrying the key that opens the SFTP password would
+    collapse the estate into a single file.
+
+    That decision is only safe if somebody actually holds a copy. This reports
+    whether anybody does.
+    """
+    if not ctx.env_readable:
+        # .env is 640 root:<service account>. Unreadable means "I could not
+        # evaluate", NOT "there is no key" -- reporting the latter would be the
+        # exact fail-open shape this check exists to find.
+        r = Result("warn", "cannot evaluate recovery custody", exit_code=4)
+        r.note(".env is unreadable as %s, so the live key fingerprint cannot "
+               "be computed. Re-run with sudo." % ctx.user)
+        return r
+    data, err = _app_json(ctx, _RECOVERY_CODE)
+    if data is None:
+        r = Result("warn", "cannot evaluate recovery custody", exit_code=4)
+        r.note(err)
+        return r
+    findings = data.get("findings") or []
+    fpr = data.get("fpr") or {}
+    escrow = data.get("escrow") or {}
+    rows = [("FERNET_KEY", fpr.get("fernet") or "(none)"),
+            ("internal CA key",
+             fpr.get("ca") or ("(not on this node)" if not data.get("holds_ca")
+                               else "(unreadable)"))]
+    for kind in ("fernet", "ca"):
+        rec = escrow.get(kind)
+        rows.append(("%s exported" % kind,
+                     "%s by %s" % (rec.get("at"), rec.get("by")) if rec
+                     else "never"))
+    # The seal is why the escrow lines can read "never" with no finding
+    # attached. Suppressing a warning without showing what replaced it is how
+    # a quiet check becomes an unexplained one.
+    seal = data.get("seal") or {}
+    if not seal.get("sealed"):
+        rows.append(("sealed envelope", "none"))
+    elif not seal.get("reachable"):
+        rows.append(("sealed envelope", "UNREACHABLE -- carried by nothing"))
+    else:
+        rows.append(("sealed envelope",
+                     "%s by %s (%s)" % (seal.get("at") or "?",
+                                        seal.get("by") or "?",
+                                        ", ".join(seal.get("kinds") or []))))
+    worst = "ok"
+    for f in findings:
+        if f.get("severity") == "critical":
+            worst = "bad"
+            break
+        worst = "warn"
+    title = ("recovery custody: %d finding(s)" % len(findings) if findings
+             else "recovery custody: both secrets accounted for")
+    r = Result(worst, title, exit_code=1 if worst == "bad" else
+               (2 if worst == "warn" else 0))
+    r.rows("material", rows, keys="dim")
+    if findings:
+        r.lines("findings", ["%s: %s" % (f["kind"], f["detail"])
+                             for f in findings])
+        r.note("Export with: sudo satom execute export recovery-key --yes")
+    return r

@@ -1,0 +1,349 @@
+"""Live firmware / model read for ONE appliance -- the inventory primitive.
+
+**Why this module exists.** ``Appliance.firmware`` is documentation, and until
+now nothing kept it current. ``device_sync`` never writes it (it says so in its
+own comment) and ``rediscovery.apply_inventory`` only fills it as a side effect
+of a status poll that happens to meet a *fresh* snapshot. Measured on the live
+node 2026-08-13: 5 of the 10 registered appliances carried an EMPTY firmware
+string while every online one answered a status call fine. A CMDB whose version
+column is empty on half the estate is a list of IP addresses.
+
+**What it does.** Exactly one status call per appliance -- the same call
+``Appliance.probe_status`` already makes -- and nothing else: no config read, no
+SoT version, no Change Request. That is what makes it safe to expose on
+``/api/v1``, where firmware *upgrade* stays hard-blocked.
+
+**Why it is per-kind.** The four vendors put the version in four different
+places. Every shape below was read off the live devices on 2026-08-13 except
+FortiAnalyzer and FortiGate, read off faz02 (2026-10-13) and fgt02
+(2026-10-10); the FortiAnalyzer branch still reads a candidate list rather
+than one key.
+
+===================  ==================================  ====================
+kind                 status call                         version key
+===================  ==================================  ====================
+fortiweb             status.systemstatus                 firmwareVersion
+fortiadc             /api/platform/version               version + build
+fortiauthenticator   GET /api/v1/systeminfo/             firmware
+fortianalyzer        get /sys/status (JSON-RPC)          Version
+fortigate            GET /api/v2/monitor/system/status   version + build
+===================  ==================================  ====================
+
+**An empty answer is a failure, not an observation.** If the status call
+succeeds but carries no version string, :func:`read` returns ``ok=False`` and
+:func:`refresh` persists NOTHING -- in particular it does not stamp
+``firmware_checked_at``. A row that claims it was checked at 14:02 while showing
+a stale version is worse than one that admits it was never checked: that
+timestamp is the only thing a consumer (VEYRS) can use to decide whether the
+version is worth correlating against a CVE feed.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+
+# Substrings that mark a virtual appliance in a model / firmware / serial blob.
+_VM_HINTS = ("VM", "KVM", "HV", "AWS", "AZURE", "GCP", "OCI", "XEN")
+
+
+def _first(d: dict, keys) -> str:
+    """First non-empty value among *keys*, as a stripped string ('' if none)."""
+    if not isinstance(d, dict):
+        return ""
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, ""):
+            return str(v).strip()
+    return ""
+
+
+def _hw_from(blob: str) -> str | None:
+    """'vm' / 'hardware' / None (unknown) from a model+firmware+serial blob."""
+    up = (blob or "").upper()
+    if not up.strip():
+        return None
+    return "vm" if any(h in up for h in _VM_HINTS) else "hardware"
+
+
+def _product_model(product: str, platform: str) -> str | None:
+    """``<product>-<platform>``, unless the platform already names the product.
+
+    FortiAnalyzer's ``Platform Full Name`` is the whole model
+    ("FortiAnalyzer-VM64-KVM", faz02 2026-10-13) while FortiAuthenticator's
+    firmware head is only the platform ("FACVMKVM"): prefixing blindly stored
+    "FortiAnalyzer-FortiAnalyzer-VM64-KVM"."""
+    platform = (platform or "").strip()
+    if not platform:
+        return None
+    if platform.lower().startswith(product.lower()):
+        return platform
+    return f"{product}-{platform}"
+
+
+def _unwrap(raw):
+    """FortiWeb answers ``{'results': {...}}``; the others answer flat."""
+    if isinstance(raw, dict) and isinstance(raw.get("results"), dict):
+        return raw["results"]
+    return raw if isinstance(raw, dict) else {}
+
+
+def _ok(firmware: str, model: str | None, hw: str | None,
+        hostname: str = "", serial: str = "") -> dict:
+    # ``serial`` rides the SAME payload the version came from — every reader
+    # below was already extracting it to decide hw_type and then throwing it
+    # away. Returning it costs no extra device call, which is the property
+    # that lets this module stay on /api/v1.
+    return {"ok": True, "firmware": firmware, "model": model or None,
+            "hw_type": hw, "hostname": hostname, "serial": serial,
+            "error": "", "detail": ""}
+
+
+def _fail(code: str, detail: str = "") -> dict:
+    return {"ok": False, "firmware": "", "model": None, "hw_type": None,
+            "hostname": "", "serial": "", "error": code,
+            "detail": str(detail)[:300]}
+
+
+# --------------------------------------------------------------------------- #
+#  Per-kind readers                                                            #
+# --------------------------------------------------------------------------- #
+
+def _read_fortiweb(appliance) -> dict:
+    d = _unwrap(appliance.build_client(timeout=15.0).status_check())
+    fw = _first(d, ("firmwareVersion", "firmware_version", "version"))
+    if not fw:
+        # FortiWeb answers a REFUSAL with HTTP 200 and an {errcode, message}
+        # envelope, so the client raises nothing. Live on fortiweb08
+        # (192.0.2.13) 2026-08-13: errcode -20010, "The license of peer VM
+        # FortiWeb is not valid." Reporting that as a generic parse miss would
+        # send an operator to read this parser instead of the licence.
+        errcode = _first(d, ("errcode", "error_code"))
+        if errcode:
+            return _fail("device_refused",
+                         f"errcode {errcode}: {_first(d, ('message', 'msg'))}")
+        return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
+    platform = _first(d, ("platformName", "platform"))
+    serial = _first(d, ("serialNumber", "serial"))
+    # "FortiWeb-KVM 7.6.8,build1128(GA.M),260602" -> model "FortiWeb-KVM 7.6.8"
+    model = fw.split(",")[0].strip() or platform or None
+    # The device's own hostname rides along in the SAME payload — no second
+    # call. Measured on fortiweb12/13 2026-08-27: {"hostName": "fortiweb12"}.
+    # An ADOM row answers with the CHASSIS hostname, which is correct and is
+    # qualified at render time, not rewritten here.
+    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"),
+               hostname=_first(d, ("hostName", "host_name", "hostname")),
+               serial=serial)
+
+
+def _read_fortiadc(appliance) -> dict:
+    # Through adc_ops, never ``clients.fortiadc`` directly: this module is
+    # fleet-wide and tests/test_product_separation.py keeps ADC client
+    # construction inside ADC modules.
+    from . import adc_ops
+
+    p = adc_ops.platform_payload(appliance)
+    model, hw, fw = adc_ops.model_inventory_from(p)
+    if not fw:
+        return _fail("no_version_in_status", f"keys={sorted(p)[:12]}")
+    # Candidate keys, not one assumed key: the platform payload is the only
+    # place an ADC serial could be, and a shape that does not carry one must
+    # degrade to "" (never observed) rather than to a wrong string.
+    return _ok(fw, model, hw,
+               serial=_first(p, ("serial", "serialNumber", "sn",
+                                 "serial_number", "serial-number")))
+
+
+def _read_fortiauthenticator(appliance) -> dict:
+    d = appliance.build_client(timeout=15.0).status_check()
+    d = d if isinstance(d, dict) else {}
+    # Live 2026-08-13: {"firmware": "FACVMKVM v8.0.3, build0099 (GA)", "sn": ...}
+    fw = _first(d, ("firmware", "version", "firmware_version"))
+    if not fw:
+        return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
+    serial = _first(d, ("sn", "serial", "serial_number"))
+    # The head token is the platform: "FACVMKVM v8.0.3, ..." -> "FACVMKVM".
+    parts = fw.split()
+    head = parts[0].strip() if parts else ""
+    model = _product_model("FortiAuthenticator", head)
+    return _ok(fw, model, _hw_from(f"{head} {fw} {serial}"), serial=serial)
+
+
+def _read_fortianalyzer(appliance) -> dict:
+    # Live 2026-10-13 (faz02, 7.6.7): get /sys/status ->
+    # {"Version": "v7.6.7-build3737 260601 (GA.M)", "Platform Type":
+    #  "FAZVM64-KVM", "Platform Full Name": "FortiAnalyzer-VM64-KVM",
+    #  "Serial Number": "FAZ-VM...", "Hostname": "faz02", ...}. Candidate
+    # keys, not one assumed key, so a shape surprise degrades to a clean
+    # "no_version_in_status" instead of a confidently wrong version.
+    d = appliance.build_client(timeout=15.0).status_check()
+    d = d if isinstance(d, dict) else {}
+    fw = _first(d, ("Version", "version", "firmware", "Firmware Version"))
+    if not fw:
+        return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
+    platform = _first(d, ("Platform Full Name", "Platform Type", "platform"))
+    serial = _first(d, ("Serial Number", "serial"))
+    model = _product_model("FortiAnalyzer", platform)
+    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"), serial=serial)
+
+
+def _read_fortigate(appliance) -> dict:
+    # Live 2026-10-10 (fgt02): GET /api/v2/monitor/system/status ->
+    # {"version": "v8.0.1", "build": 245, "serial": "FGVM...",
+    #  "results": {"model_name": "FortiGate", "model_number": "VM64-KVM",
+    #              "hostname": "fgt02", ...}} (the client flattens it).
+    d = appliance.build_client(timeout=15.0).status_check()
+    d = d if isinstance(d, dict) else {}
+    ver = _first(d, ("version",))
+    if not ver:
+        return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
+    build = _first(d, ("build",))
+    model = "-".join(x for x in (_first(d, ("model_name",)) or "FortiGate",
+                                 _first(d, ("model_number",))) if x)
+    # the form the other kinds store: platform, version and build together,
+    # so the GUI layouts and the API library resolve the exact build
+    fw = "%s %s%s" % (model, ver if ver.startswith("v") else "v" + ver,
+                      (",build%04d" % int(build)) if build.isdigit() else "")
+    serial = _first(d, ("serial",))
+    return _ok(fw, model, _hw_from(f"{model} {serial}"),
+               hostname=_first(d, ("hostname",)), serial=serial)
+
+
+_READERS = {
+    "fortiweb": _read_fortiweb,
+    "fortigate": _read_fortigate,
+    "fortiadc": _read_fortiadc,
+    "fortianalyzer": _read_fortianalyzer,
+    "fortiauthenticator": _read_fortiauthenticator,
+}
+
+
+# --------------------------------------------------------------------------- #
+#  Public API                                                                  #
+# --------------------------------------------------------------------------- #
+
+def read(appliance) -> dict:
+    """Read the running firmware off the device. NEVER raises.
+
+    Returns ``{ok, firmware, model, hw_type, error, detail}``. ``ok`` is True
+    only when a NON-EMPTY version string came back.
+    """
+    reader = _READERS.get(getattr(appliance, "kind", "") or "")
+    if reader is None:
+        return _fail("unsupported_kind", str(getattr(appliance, "kind", "")))
+    try:
+        return reader(appliance)
+    except Exception as exc:  # noqa: BLE001 -- a probe must never 500 its caller
+        return _fail("unreachable", f"{type(exc).__name__}: {exc}")
+
+
+def refresh(appliance) -> dict:
+    """:func:`read` + persist. On failure NOTHING is written -- not even the
+    timestamp (see the module docstring on attestation).
+
+    Adds ``changed`` (did the version actually move), ``previous`` and
+    ``checked_at`` (ISO, only on success).
+    """
+    from ..extensions import db
+
+    res = read(appliance)
+    if not res.get("ok"):
+        res["changed"] = False
+        res["checked_at"] = None
+        return res
+
+    previous = appliance.firmware or ""
+    res["changed"] = (previous != res["firmware"])
+    res["previous"] = previous or None
+    appliance.firmware = res["firmware"]
+    # model / hw_type are refreshed only when the device actually told us; an
+    # unknown must never erase an operator-entered value.
+    if res.get("model"):
+        appliance.model = res["model"]
+    if res.get("hw_type"):
+        appliance.hw_type = res["hw_type"]
+    now = datetime.utcnow()
+    # The hostname is stamped ONLY when the device actually said one. The
+    # kinds differ and the difference is measured, not assumed: FortiWeb
+    # carries hostName; FortiAuthenticator's systeminfo payload has no
+    # hostname field at all (fac01, 2026-08-27). Writing device_hostname_at on
+    # a payload that never contained a name would attest an observation that
+    # did not happen — the same defect the module docstring forbids for
+    # firmware_checked_at.
+    if res.get("hostname"):
+        res["hostname_changed"] = (
+            (appliance.device_hostname or "") != res["hostname"])
+        appliance.device_hostname = res["hostname"]
+        appliance.device_hostname_at = now
+    else:
+        res["hostname_changed"] = False
+    # The serial is stamped on the SAME rule as the hostname: only when the
+    # payload actually carried one. A blank must never erase a serial an
+    # earlier probe established, because the four kinds answer differently and
+    # "this payload did not say" is not "this box has no serial".
+    if res.get("serial"):
+        res["serial_changed"] = (appliance.serial or "") != res["serial"]
+        appliance.serial = res["serial"]
+        appliance.serial_checked_at = now
+    else:
+        res["serial_changed"] = False
+    appliance.firmware_checked_at = now
+    db.session.commit()
+    # Identity is recorded from the same observation, and AFTER the commit
+    # above so a failure here can never roll back the inventory write. It is
+    # the record that outlives de-registration — see models_identity.
+    try:
+        from . import device_identity as _ident
+        _ident.observe(appliance, serial=res.get("serial") or "",
+                       firmware=res.get("firmware") or "",
+                       model=res.get("model") or "",
+                       hw_type=res.get("hw_type") or "")
+    except Exception as exc:  # noqa: BLE001 — a probe must never 500 its caller
+        res["identity_error"] = type(exc).__name__
+    res["checked_at"] = now.isoformat()
+    res["hostname_at"] = (appliance.device_hostname_at.isoformat()
+                          if res.get("hostname") else None)
+    # LAST, after everything above is committed and reported: the library is
+    # a consumer of this observation, never a condition on it.
+    harvest = _maybe_enqueue_harvest(appliance, previous, res["firmware"])
+    if harvest is not None:
+        res["apilib_harvest"] = harvest
+    # A build with no harvested schema: one bell per product@version, with the
+    # one-click harvest (services.schema_watch). Never raises.
+    from . import schema_watch
+    pending = schema_watch.observe(appliance)
+    if pending is not None:
+        res["schema_watch"] = {k: pending.get(k) for k in ("version", "closest", "notified",
+                                                           "already", "live")}
+    return res
+
+
+def _maybe_enqueue_harvest(appliance, previous: str, current: str) -> dict | None:
+    """Queue an API-library harvest when this probe saw the box change build.
+
+    Keyed on the NORMALIZED version, so a probe that re-reads the same build
+    (the common case: every probe) queues nothing, and neither does a cosmetic
+    change in the raw string. The first version ever recorded queues only when
+    the library has no evidence for that build yet — registering the tenth box
+    on a build that is already measured is not new knowledge.
+
+    Returns the enqueue answer, ``None`` when nothing was asked. NEVER raises:
+    the probe's answer is the observation, and a library or job-ledger fault
+    must not turn a successful read into a 500.
+    """
+    try:
+        from . import apilib_harvest
+        from . import firmware_versions as fv
+        old, new = fv.normalize(previous), fv.normalize(current)
+        if not new or old == new:
+            return None
+        if not old and not apilib_harvest.needs_harvest(appliance):
+            return None
+        return apilib_harvest.enqueue(
+            appliance.id, reason="firmware_change:%s->%s" % (old or "none", new))
+    except Exception as exc:  # noqa: BLE001 — a probe must never 500 its caller
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"queued": False, "reason": "error",
+                "msg": ("%s: %s" % (type(exc).__name__, exc))[:200]}

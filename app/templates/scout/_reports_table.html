@@ -1,0 +1,20 @@
+{#  One table for the form page's "latest" card and the full history page,
+    so the two cannot drift.  Rows are already ADOM-scoped by the view.    #}
+<table class="table fw-table mb-0">
+  <thead><tr><th>#</th><th>When (UTC)</th><th>Appliance</th><th>Object</th>
+    <th>Verdict</th><th>Metrics</th><th>By</th></tr></thead>
+  <tbody>
+    {% for r in (rows if rows is defined else recent) %}
+    <tr>
+      <td><a href="{{ url_for('scout.report_view', rid=r.id) }}">#{{ r.id }}</a></td>
+      <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ r.appliance_name }}</td>
+      <td>{{ r.policy }}</td>
+      <td>{% if r.localised %}<span class="fw-badge fw-badge-nowrap fw-badge-danger">FAULT · layer {{ r.verdict_layer }}</span>
+        {% else %}<span class="fw-badge fw-badge-nowrap fw-badge-info">no fault localised</span>{% endif %}</td>
+      <td>{{ {'ok': 'ok', 'error': 'ERROR', 'not_collected': 'not collected'}.get(r.metrics_status, r.metrics_status or '—') }}</td>
+      <td>{{ r.username or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

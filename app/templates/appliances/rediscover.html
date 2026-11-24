@@ -1,0 +1,306 @@
+{% extends 'base.html' %}
+{% block title %}Rediscovery - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4>{% if snapshot %}<i class="bi bi-arrow-repeat me-2"></i>Rediscovery{% else %}<i class="bi bi-binoculars me-2"></i>Discovery{% endif %} — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+<p class="text-muted">A full read-only sweep of every {{ 'FortiADC' if appliance.kind == 'fortiadc' else 'CMDB' }} endpoint ({{ plan_size }} in the registry) — refreshes the whole appliance's object inventory in one pass and writes a config snapshot.</p>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      {% if snapshot %}
+        <div class="small text-muted">{{ _('Last sweep:') }} <b>{{ snapshot.generated_at }}</b></div>
+        <div class="small">{{ snapshot.objects }} object(s) across {{ snapshot.sections }} section(s)</div>
+      {% else %}
+        <div class="small text-muted">{{ _('No rediscovery has been run yet.') }}</div>
+      {% endif %}
+      {% if allow_deep is not defined or allow_deep %}
+      <div class="small mt-1">
+        {% if deep_fresh and deep_fresh.captured_at %}
+          <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth captured: {{ deep_fresh.captured_at }}</span>
+          {% if appliance.kind == 'fortiadc' %}
+          <a href="{{ url_for('appliances.inspector', id=appliance.id, source='capture') }}" class="small ms-1"><i class="bi bi-diagram-2 me-1"></i>{{ _('Virtual-server tree from this capture') }}</a>
+          {% endif %}
+        {% else %}
+          <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-diagram-3 me-1"></i>{{ _('Depth: not captured') }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if allow_cli %}
+      <div class="small mt-1">
+        {% if cli_decision and cli_decision.existing %}
+          <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-terminal me-1"></i>{{ _('CLI dump') }}: {{ cli_decision.existing.created_at }}</span>
+        {% else %}
+          <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-terminal me-1"></i>{{ _('CLI dump: none captured') }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      {% if appliance.kind == 'fortiadc' %}
+      <div class="form-check form-switch mb-0" title="{{ _('Also read every child table over REST, once per parent object (?pkey=): certificate-group, CA-group and schedule-group members, which the parent rows do not carry, plus pool members and match conditions. Feeds the virtual-server tree.') }}">
+        <input class="form-check-input" type="checkbox" id="redisc-deep">
+        <label class="form-check-label small" for="redisc-deep">{{ _('Capture full depth: every child table (REST)') }} <span class="text-muted">{{ _('(slower)') }}</span></label>
+      </div>
+      {% elif allow_deep is not defined or allow_deep %}
+      <div class="form-check form-switch mb-0" title="{{ _('Also walk every WPP + Server Policy dependency graph (sub-tables, rule-lists, disabled signatures, exceptions) and cache it for the Analysis page. Slower — reads more from the box.') }}">
+        <input class="form-check-input" type="checkbox" id="redisc-deep">
+        <label class="form-check-label small" for="redisc-deep">{{ _('Capture full WPP + policy depth') }} <span class="text-muted">{{ _('(slow)') }}</span></label>
+      </div>
+      <div class="form-check form-switch mb-0" title="{{ _('Predefined (factory) WPPs are normally rebuilt from the factory catalog for this firmware build and API version when this appliance\'s own rows match it, and read in full once a week. Turn this on to read every predefined WPP in full now and refresh the catalog.') }}">
+        <input class="form-check-input" type="checkbox" id="redisc-factory-full">
+        <label class="form-check-label small" for="redisc-factory-full">{{ _('Re-read predefined WPPs in full') }} <a href="{{ url_for('factory_catalog.index') }}" class="small text-muted ms-1">{{ _('catalog') }}</a></label>
+      </div>
+      {% endif %}
+      {% if allow_cli %}
+      <div class="mb-0" title="{{ _('Opens one read-only SSH session and stores show full-configuration in the configuration vault, so the CLI-coverage report compares the catalog against this box as swept rather than against an older dump.') }}">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="redisc-cli"{% if cli_decision and not cli_decision.capture and not cli_decision.age_h %} disabled{% endif %}>
+          <label class="form-check-label small" for="redisc-cli">{{ _('Also capture the CLI configuration') }} <span class="text-muted">{{ _('(SSH, slow)') }}</span></label>
+        </div>
+        {% if cli_decision and not cli_decision.capture %}
+        <div class="small text-muted mt-1" style="max-width:34rem">{{ cli_decision.reason }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+      <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
+      <button id="redisc-stop" class="btn btn-outline-danger d-none" title="{{ _('Stops after the request in flight returns. During the endpoint sweep no snapshot is written and the previous one is kept; during the deep pass or the CLI capture the snapshot is already saved and only the remaining work is skipped.') }}"><i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}</button>
+    </div>
+  </div>
+</div>
+
+<div id="redisc-progress" class="card shadow-sm {{ '' if progress else 'd-none' }}">
+  <div class="card-header fw-card-header">{{ _('Progress') }}</div>
+  <div class="card-body">
+    <div class="progress mb-2" style="height: 22px;">
+      <div id="redisc-bar" class="progress-bar" role="progressbar" style="width: {{ progress.percent if progress else 0 }}%;">
+        {{ progress.percent if progress else 0 }}%
+      </div>
+    </div>
+    <div id="redisc-line" class="small text-muted">{{ progress.summary if progress and progress.summary else '' }}</div>
+    <div id="redisc-errors" class="small mt-2"></div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function() {
+  const token = document.querySelector('meta[name="csrf-token"]').content;
+  const startBtn = document.getElementById('redisc-start');
+  const stopBtn = document.getElementById('redisc-stop');
+  const ACTIVE = ['running', 'deep-running', 'cli-running'];
+  const wrap = document.getElementById('redisc-progress');
+  const bar = document.getElementById('redisc-bar');
+  const line = document.getElementById('redisc-line');
+  const errs = document.getElementById('redisc-errors');
+  let timer = null;
+
+  // Mirror of rediscovery.deep_line() — keep the two in step.
+  function deepLine(p) {
+    if (p.deep_kind === 'adc') {
+      if (!p.deep_total) return 'Deep capture: listing child tables…';
+      let a = `Deep capture ${p.deep_done || 0}/${p.deep_total} child-table reads`;
+      if (p.deep_current) a += ` · ${p.deep_current}`;
+      if (p.cli_running) a += ' · CLI capture running alongside';
+      return a;
+    }
+    if (!p.deep_total) return 'Deep capture: listing server policies and WPPs…';
+    let t = `Deep capture ${p.deep_done || 0}/${p.deep_total} · `
+      + `${p.deep_policies || 0} server policies, ${p.deep_wpps || 0} WPPs`;
+    if (['server policy', 'WPP', 'offline WPP'].includes(p.deep_phase)) {
+      t += ` · ${p.deep_phase} ${p.deep_index || 0}/${p.deep_of || 0}`;
+      if (p.deep_current) t += `: ${p.deep_current}`;
+    } else if (p.deep_phase === 'certificates') {
+      t += ' · certificates and SNI';
+    } else if (p.deep_phase === 'done') {
+      t += ' · saving';
+    }
+    if (p.deep_catalog_reused) t += ` · ${p.deep_catalog_reused} predefined WPP(s) from the factory catalog`;
+    if (p.cli_running) t += ' · CLI capture running alongside';
+    return t;
+  }
+
+  function paint(p) {
+    if (!p || p.state === 'idle') return;
+    wrap.classList.remove('d-none');
+    const active = ACTIVE.includes(p.state);
+    stopBtn.classList.toggle('d-none', !active);
+    if (active) bar.classList.remove('bg-secondary', 'bg-warning');
+    stopBtn.disabled = !!p.stop_requested;
+    stopBtn.innerHTML = p.stop_requested
+      ? '<span class="spinner-border spinner-border-sm me-1"></span>Stopping…'
+      : '<i class="bi bi-stop-fill me-1"></i>Stop';
+    const pct = p.percent || 0;
+    bar.style.width = pct + '%'; bar.textContent = pct + '%';
+    bar.classList.toggle('bg-success', p.state === 'done');
+    if (p.state === 'running') {
+      line.textContent = `${p.done}/${p.total} endpoints · ${p.objects} objects · ${p.section || ''}`;
+    } else if (p.state === 'deep-running') {
+      bar.classList.remove('bg-success');
+      bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+      // The sweep is at 100 % by now; the bar switches to the deep pass's own
+      // count so it says which policy/WPP is being walked (SI-0004).
+      const dt = p.deep_total || 0, dp = p.deep_percent || 0;
+      bar.style.width = (dt ? dp : 100) + '%';
+      bar.textContent = dt ? 'Deep ' + dp + '%' : 'Deep…';
+      line.textContent = deepLine(p);
+    } else if (p.state === 'cli-running') {
+      bar.classList.remove('bg-success');
+      bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+      line.textContent = 'CLI capture (show full-configuration) running… up to 5 min';
+    } else if (p.state === 'done') {
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+      // Says FINISHED in words: a green bar at 100 % is also what the sweep
+      // phase looks like right before the deep pass starts.
+      let txt = 'Finished' + (p.finished ? ' at ' + String(p.finished).slice(11, 19) + ' UTC' : '')
+        + ' — ' + (p.summary || `${p.objects} objects across ${p.section_count} sections`);
+      if (p.deep_objects != null && p.deep_kind === 'adc') txt += ` · depth: ${p.deep_objects} child row(s) from ${p.deep_total || 0} child-table reads`
+        + (p.deep_errors ? `, ${p.deep_errors} error(s)` : '');
+      else if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
+        + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
+      if (p.deep_reads != null && p.deep_kind !== 'adc') txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;
+      if (p.deep_catalog) txt += ` · ${p.deep_catalog}`;
+      if (p.cache_error) txt += ` · local cache not updated: ${p.cache_error}`;
+      if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
+      // Skipped and failed are DIFFERENT outcomes and are never collapsed:
+      // "no dump was taken" and "a dump was attempted and lost" send the
+      // operator to opposite places.
+      if (p.cli_kb != null) txt += ` · CLI dump: ${p.cli_kb} KB captured`;
+      if (p.cli_skipped) txt += ` · CLI capture skipped: ${p.cli_skipped}`;
+      if (p.cli_error) txt += ` · CLI capture failed: ${p.cli_error}`;
+      line.textContent = txt;
+      startBtn.disabled = false;
+    } else if (p.state === 'interrupted' || p.state === 'failed') {
+      // Three terminal states, three sentences. A sweep killed by a restart
+      // wrote no snapshot and reported no error, so it is neither 'done' nor
+      // 'failed' -- and a frozen bar with no words is how this page used to
+      // show a run that had already died.
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+      bar.classList.add('bg-warning');
+      line.textContent = (p.state === 'interrupted'
+        ? 'Interrupted — the service restarted while this sweep was running. '
+          + 'It wrote no snapshot; run it again.'
+        : 'Failed — ' + (p.error || 'the sweep did not finish.'));
+      startBtn.disabled = false;
+    } else if (p.state === 'stopped') {
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated', 'bg-success');
+      bar.classList.add('bg-secondary');
+      line.textContent = (p.error || 'Stopped.') + (p.stopped_by ? ' (by ' + p.stopped_by + ')' : '');
+      startBtn.disabled = false;
+    }
+    if (p.stop_requested && active) {
+      line.textContent += ' — stopping after the current '
+        + (p.state === 'running' ? 'endpoint'
+           : p.state === 'deep-running' ? 'object'
+           : p.state === 'cli-running' ? 'CLI capture' : 'step') + '…';
+    }
+    paintErrors(p.errors);
+  }
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  // SI-0007: one group per failure kind, each saying WHY and WHAT TO DO, with
+  // every endpoint, its URN and the device's answer. textContent only.
+  function paintErrors(list) {
+    errs.replaceChildren();
+    if (!list || !list.length) return;
+    const n = list.length >= 25 ? 'At least 25' : String(list.length);
+    errs.appendChild(el('div', 'fw-semibold text-danger', n + ' endpoint(s) could not be read. '
+      + 'The rest of the sweep was read normally; only these objects are missing.'));
+    const groups = {}, order = [];
+    list.forEach(function(e) {
+      e = e || {};
+      const k = (e.kind || 'legacy') + '|' + (e.title || e.error || 'unknown');
+      if (!groups[k]) { groups[k] = {e: e, items: []}; order.push(k); }
+      groups[k].items.push(e);
+    });
+    order.forEach(function(k) {
+      const g = groups[k], d = el('details', 'mt-2');
+      d.dataset.kind = g.e.kind || 'legacy';
+      if (order.length === 1) d.open = true;
+      d.appendChild(el('summary', 'text-danger',
+        (g.e.title || g.e.error || 'Unknown error') + ' — ' + g.items.length + ' endpoint(s)'));
+      if (g.e.why) d.appendChild(el('div', 'mt-1', g.e.why));
+      if (g.e.action) d.appendChild(el('div', 'mt-1', 'What to do: ' + g.e.action));
+      const ul = el('ul', 'mb-0 mt-1');
+      g.items.forEach(function(it) {
+        const li = el('li');
+        li.appendChild(el('code', null, it.endpoint || '?'));
+        if (it.urn) { li.appendChild(document.createTextNode(' · ')); li.appendChild(el('code', null, it.urn)); }
+        li.appendChild(document.createTextNode(' — device answered: ' + (it.error || 'nothing')));
+        ul.appendChild(li);
+      });
+      d.appendChild(ul);
+      errs.appendChild(d);
+    });
+  }
+  async function poll() {
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_status", id=appliance.id) }}');
+      const p = await r.json();
+      paint(p);
+      if (ACTIVE.includes(p.state)) return;
+    } catch (e) { /* keep polling */ return; }
+    clearInterval(timer); timer = null;
+  }
+  async function start() {
+    startBtn.disabled = true;
+    errs.textContent = '';
+    const deepEl = document.getElementById('redisc-deep');   // absent on FortiADC
+    const deep = deepEl ? deepEl.checked : false;
+    const ffEl = document.getElementById('redisc-factory-full');
+    const factoryFull = deep && ffEl ? ffEl.checked : false;
+    const cliEl = document.getElementById('redisc-cli');     // absent on FAZ/FAC
+    const cli = (cliEl && !cliEl.disabled) ? cliEl.checked : false;
+    const freshToken = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': freshToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'deep=' + (deep ? '1' : '0') + '&cli=' + (cli ? '1' : '0')
+          + '&factory_full=' + (factoryFull ? '1' : '0')
+      });
+      if (!r.ok) {
+        errs.textContent = 'Server error ' + r.status + ' — check permissions or try refreshing.';
+        startBtn.disabled = false;
+        return;
+      }
+      const j = await r.json();
+      if (j.cli_skipped) { errs.textContent = 'CLI capture not started: ' + j.cli_skipped; }
+      if (!j.started) {
+        line.textContent = j.reason || 'could not start';
+        startBtn.disabled = false;
+        return;
+      }
+      paint(j.progress);
+      if (!timer) timer = setInterval(poll, 1500);
+    } catch (e) {
+      errs.textContent = 'Request failed: ' + e.message;
+      startBtn.disabled = false;
+    }
+  }
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', async function() {
+    stopBtn.disabled = true;
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_stop", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content}
+      });
+      const j = await r.json();
+      if (!j.stopped) { errs.textContent = 'Could not stop: ' + (j.reason || r.status); stopBtn.disabled = false; return; }
+      paint(j.progress);
+      if (!timer) timer = setInterval(poll, 1500);
+    } catch (e) {
+      errs.textContent = 'Stop request failed: ' + e.message;
+      stopBtn.disabled = false;
+    }
+  });
+  {% if progress and progress.state in ['running', 'deep-running', 'cli-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true; paint({{ progress|tojson }});{% endif %}
+})();
+</script>
+{% endblock %}

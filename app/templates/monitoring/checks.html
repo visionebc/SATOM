@@ -1,0 +1,167 @@
+{# ============================================================================
+   Monitoring › Service checks (2026-11-17, operator request).
+
+   "A web page with its screenshot and certificate; the health of a service —
+   SSL VPN, OpenVPN, IPsec, WireGuard, HTTP, HTTPS, other ports and protocols;
+   the port can be up while the service is not." Every check speaks the
+   service's own protocol (services/service_probes.py); web kinds also keep a
+   screenshot (services/web_screenshot.py), the base being the Power Panel's
+   Web Monitor.
+
+   Drawn in the Observability shell (dark tokens, --obs-*). No inline handler
+   (CSP): static/js/service_checks.js reads #sc-config and drives the page.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}Service checks{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset('css/service_checks.css') }}">{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-start justify-content-between gap-3 mb-3 flex-wrap">
+  <div>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-heart-pulse me-2 text-accent"></i>{{ _('Service checks') }}</h1>
+    <p class="text-muted small mb-0" style="max-width:920px">
+      {{ _('Proves that a service works at its own protocol level — not merely that its port is open: a web page with its screenshot and certificate, SSL VPN portals, OpenVPN, IPsec (IKE) and WireGuard handshakes, TLS, DNS, SSH, SMTP and plain TCP. Runs with the monitor sweep every three minutes; a check is due when its interval has elapsed.') }}</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="small text-muted" id="sc-updated"></span>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="sc-refresh" title="{{ _('Reload') }}"><i class="bi bi-arrow-clockwise"></i></button>
+    {% if may_write %}
+    <button type="button" class="btn btn-sm btn-primary" id="sc-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add check') }}</button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not shots.ok %}
+<div class="fw-alert fw-alert-info small mb-3" role="note"><i class="bi bi-camera me-1"></i>{{ _('Screenshots') }}: {{ shots.hint }}</div>
+{% endif %}
+{% if not may_write %}
+<div class="fw-alert fw-alert-info small mb-3" role="note"><i class="bi bi-lock me-1"></i>{{ _('Read-only: adding, editing and running checks needs Configuration write and the "Probe free targets" permission — a check dials a host of the operator\'s choosing from the management network.') }}</div>
+{% endif %}
+
+<div class="sc-kpis mb-3" id="sc-kpis" aria-live="polite">
+  {% for key, label, icon in [('total', _('Checks'), 'list-check'), ('up', _('Up'), 'check-circle'), ('degraded', _('Degraded'), 'exclamation-triangle'), ('down', _('Down'), 'x-octagon'), ('unknown', _('Not run yet'), 'hourglass')] %}
+  <div class="fw-card sc-kpi st-{{ key }}"><div class="sc-kpi-label"><i class="bi bi-{{ icon }} me-1" aria-hidden="true"></i>{{ label }}</div><div class="sc-kpi-num" data-kpi="{{ key }}"><span class="obs-skel d-inline-block" style="width:28px;height:22px"></span></div></div>
+  {% endfor %}
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist" id="sc-tabs">
+  {% for key, label, kinds in groups %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {{ 'active' if loop.first }}" id="tab-{{ key }}" data-bs-toggle="tab" data-bs-target="#pane-{{ key }}" type="button" role="tab" aria-controls="pane-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}">
+      {{ _(label) }} <span class="badge text-bg-light ms-1" data-count="{{ key }}">0</span></button>
+  </li>
+  {% endfor %}
+</ul>
+<div class="tab-content">
+  {% for key, label, kinds in groups %}
+  <div class="tab-pane fade {{ 'show active' if loop.first }}" id="pane-{{ key }}" role="tabpanel" aria-labelledby="tab-{{ key }}">
+    <div class="{{ 'sc-grid' if key == 'web' else '' }}" data-group="{{ key }}">
+      <div class="sc-empty text-muted small p-3">{{ _('Loading…') }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ---------------------------------------------------------------- detail -- #}
+<div class="modal fade" id="scDetail" tabindex="-1" aria-labelledby="scDetailTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scDetailTitle">{{ _('Check') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body" id="scDetailBody"></div>
+    </div>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- editor -- #}
+{% if may_write %}
+<div class="modal fade" id="scEdit" tabindex="-1" aria-labelledby="scEditTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <form class="modal-content" id="scEditForm" novalidate>
+      <div class="modal-header">
+        <h5 class="modal-title" id="scEditTitle">{{ _('Add check') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="id" value="">
+        <div class="row g-3">
+          <div class="col-md-7">
+            <label class="form-label" for="sc-name">{{ _('Name') }}</label>
+            <input class="form-control form-control-sm" id="sc-name" name="name" maxlength="120" required>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label" for="sc-kind">{{ _('Service') }}</label>
+            <select class="form-select form-select-sm" id="sc-kind" name="kind">
+              {% for key, label, kinds in groups %}
+              <optgroup label="{{ _(label) }}">
+                {% for k in kinds %}<option value="{{ k }}">{{ kind_label.get(k, k) }}</option>{% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="row g-3 mt-0" id="sc-fields"></div>
+        <hr>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label" for="sc-interval">{{ _('Every') }}</label>
+            <select class="form-select form-select-sm" id="sc-interval" name="interval_min">
+              {% for m in intervals %}<option value="{{ m }}">{{ m if m < 60 else (m // 60) }} {{ _('min') if m < 60 else _('h') }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="sc-timeout">{{ _('Timeout (s)') }}</label>
+            <input class="form-control form-control-sm" id="sc-timeout" name="timeout_s" type="number" min="2" max="60" value="10">
+          </div>
+          <div class="col-md-3" data-for-cert>
+            <label class="form-label" for="sc-certwarn">{{ _('Certificate warning (days)') }}</label>
+            <input class="form-control form-control-sm" id="sc-certwarn" name="cert_warn_days" type="number" min="0" max="365" value="21">
+          </div>
+          <div class="col-md-3" data-for-web>
+            <label class="form-label" for="sc-shot">{{ _('Screenshot every (min, 0 = never)') }}</label>
+            <input class="form-control form-control-sm" id="sc-shot" name="screenshot_every_min" type="number" min="0" max="1440" value="60">
+          </div>
+        </div>
+        <div class="row g-3 mt-0" data-for-ipsec hidden>
+          <div class="col-md-6">
+            <label class="form-label" for="sc-fgt">{{ _('Also read the tunnel on a FortiGate (optional)') }}</label>
+            <select class="form-select form-select-sm" id="sc-fgt" name="fgt_appliance_id">
+              <option value="">{{ _('— none: IKE answer only —') }}</option>
+              {% for f in fortigates %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="sc-tunnel">{{ _('Tunnel (phase 1 name)') }}</label>
+            <input class="form-control form-control-sm" id="sc-tunnel" name="fgt_tunnel" maxlength="120">
+          </div>
+        </div>
+        <div class="small text-danger mt-3" id="sc-edit-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <span class="small text-muted me-auto">{{ _('Saving runs the check once. Secrets (OpenVPN keys, WireGuard keys) are stored in the vault and never shown again.') }}</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="submit" class="btn btn-sm btn-primary" id="sc-save"><span class="sc-save-label">{{ _('Save and run') }}</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script type="application/json" id="sc-config">{{ {
+  "data": url_for('service_checks.data'),
+  "base": url_for('service_checks.index'),
+  "mayWrite": may_write,
+  "groups": groups,
+  "kindLabel": kind_label,
+  "certKinds": cert_kinds,
+  "webKinds": web_kinds,
+  "secretPlaceholder": secret_placeholder,
+  "shots": shots.ok
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/service_checks.js') }}"></script>
+{% endblock %}

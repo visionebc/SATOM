@@ -1,0 +1,1877 @@
+{% extends "base.html" %}
+{% block title %}Software Update{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Software Update') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Software Update') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Update the manager\'s own code and Python libraries — from its git repository, from signed update packages, or both (Update methods). Never OS packages. Rolled out one node at a time: the') }} <strong>{{ _('standby') }}</strong> {{ _('first, and the') }}
+      <strong>{{ _('primary') }}</strong> {{ _('only after the standby passes its health check.') }}</p>
+  </div>
+</div>
+
+{# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
+   menu in links mode, like Integrations (settings/_nav.html). #}
+<div class="fw-settings-layout">
+  {% with nav_mode='links', nav_active='self_update.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
+  <div class="fw-settings-main">
+
+
+{# [SATOM-UPDATE-METHODS] One page for both ways of updating (operator,
+   2026-11-24: "Software Update Repository and Software Update must go
+   together; the user may upgrade by both ways or by only one"). Update
+   methods says which are allowed; the git repository pane (once Settings >
+   System > Software Update Repository) and Update sources (once Settings >
+   General) live here. The rule that lets the two coexist is in
+   app/services/update_methods.py. #}
+<div class="card mb-3" id="update-methods">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-signpost-split me-1"></i>{{ _('Update methods') }}</strong>
+    {% set method_label = {'both': _('Both'), 'git': _('Git repository only'), 'packages': _('Signed packages only')} %}
+    <span><span class="fw-badge fw-badge-info">{{ method_label[update_method] }}</span>
+      {% if not update_method_set %}<span class="text-muted small ms-1">({{ _('default') }})</span>{% endif %}</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('self_update.set_methods') }}" class="row g-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <select name="method" class="form-select form-select-sm" aria-label="{{ _('Update methods') }}">
+          <option value="both" {% if update_method == 'both' %}selected{% endif %}>{{ _('Both — git repository and signed packages') }}</option>
+          <option value="git" {% if update_method == 'git' %}selected{% endif %}>{{ _('Git repository only') }}</option>
+          <option value="packages" {% if update_method == 'packages' %}selected{% endif %}>{{ _('Signed packages only') }}</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if this_role != 'primary' %} disabled title="{{ _('Change update methods on the PRIMARY node — this node\'s database is read-only') }}"{% endif %}>{{ _('Save') }}</button>
+      </div>
+    </form>
+    <ul class="small text-muted mt-2 mb-0 ps-3">
+      <li><strong>{{ _('Git repository') }}</strong>: {{ _('the code is fetched from the update repository and applied by the privileged runner, by hand or by Deploy automation.') }}</li>
+      <li><strong>{{ _('Signed packages') }}</strong>: {{ _('satom-update packages from the update feed or uploaded here, verified against this node\'s trust store — for nodes with no route to a repository.') }}</li>
+      <li><strong>{{ _('Both') }}</strong>: {{ _('the two coexist by VERSION. Neither way moves this node to an older version unless you tick the downgrade confirmation, and in AUTO the reconciler holds instead of undoing a newer package.') }}</li>
+      <li>{{ _('A standby always follows its primary over the HA link, whatever is chosen here: that is how an update applied on the primary — from git or from a package — reaches it.') }}</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card mb-3" id="this-node"><div class="card-header"><strong>{{ _('This node') }}</strong></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4"><span class="text-muted small">{{ _('Host') }}</span>
+        <div class="font-monospace">{{ this_node }}
+          {% if this_role == 'primary' %}<span class="badge bg-success">{{ _('PRIMARY') }}</span>
+          {% elif this_role == 'standby' %}<span class="badge bg-info text-dark">{{ _('STANDBY') }}</span>
+          {% else %}<span class="badge bg-secondary">{{ _('role: unknown') }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="col-md-3"><span class="text-muted small">{{ _('Running version') }}</span>
+        <div class="font-monospace">{{ running_version or app_version }}</div>
+      </div>
+      <div class="col-md-5"><span class="text-muted small">Running revision ({{ branch }})</span>
+        <div class="font-monospace">{{ current.short or 'unknown' }} — {{ current.subject }}</div>
+        <div class="text-muted small">{{ current.date }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Git repository ==================== -->
+<h2 class="h6 text-uppercase text-muted mt-4 mb-2" id="git"><i class="bi bi-git me-1"></i>{{ _('Git repository') }}</h2>
+{% if allows_git %}
+<div class="alert alert-light border mb-3 small">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ _('This is the repository this node downloads its own SOFTWARE from — the product\'s source code. It is not where appliance configuration is versioned') }}
+  (<a href="{{ url_for('settings.index') }}#tab-sot">{{ _('Configuration SoT') }}</a>)
+  {{ _('and not where backups are stored') }}
+  (<a href="{{ url_for('settings.index') }}#tab-backupsrv">{{ _('Backup Server') }}</a>).
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+        <!-- Repo status card -->
+        <div class="fw-card mb-3" id="card-repository">
+          <div class="fw-card-header d-flex align-items-center justify-content-between">
+            <span class="fw-card-title"><i class="bi bi-git me-2 text-accent"></i>{{ _('Repository') }}</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" id="git-edit-btn" data-js="git-edit"
+                      aria-controls="git-config-block" aria-expanded="{{ 'false' if git_configured else 'true' }}">
+                <i class="bi bi-pencil me-1"></i>{{ _('Edit') }}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" data-js="git-refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+          </div>
+          <div class="fw-card-body">
+            <div id="git-info-loading" class="text-muted" style="font-size:13px;">{{ _('Loading…') }}</div>
+            <div id="git-info-body" style="display:none;">
+              <table class="table table-sm mb-0" style="font-size:13px;">
+                <tr><th class="text-muted fw-normal" style="width:110px;">{{ _('Remote') }}</th><td id="gi-remote" class="font-monospace"></td></tr>
+                <tr><th class="text-muted fw-normal">{{ _('Branch') }}</th><td id="gi-branch"><code></code></td></tr>
+                <tr><th class="text-muted fw-normal">HEAD</th><td id="gi-commit" class="font-monospace"></td></tr>
+                <tr><th class="text-muted fw-normal">{{ _('Status') }}</th><td id="gi-status"></td></tr>
+                <tr><th class="text-muted fw-normal">{{ _('Sync') }}</th><td id="gi-sync"></td></tr>
+              </table>
+            </div>
+            {#
+               The repository is a FACT to read; it is written once, by the
+               installer, and read on every visit afterwards.  This pane showed
+               it as two cards of equal weight — "Repository" and, directly
+               under it, an always-open "Configure Repository" whose three
+               boxes render EMPTY until an async fetch fills them, one click
+               away from overwriting a working origin with blanks.  A form is
+               what the operator needs in exactly one state: a node that was
+               never given a remote.  So it lives inside the card it describes,
+               behind Edit, and opens by itself only when there is nothing
+               there to lose.
+            #}
+            {% if not git_configured %}
+            <div class="alert alert-warning py-2 px-3 mt-3 mb-0" id="git-unconfigured" style="font-size:13px;">
+              <i class="bi bi-exclamation-triangle me-1"></i>{{ _('This node has no update repository. Set one below to update it from git — or, if this installation is updated with signed packages, choose Signed packages only under Update methods.') }}
+            </div>
+            {% endif %}
+            <div id="git-config-block" class="mt-3"{% if git_configured %} hidden{% endif %}>
+              <h6 class="text-muted mb-3" style="font-size:13px;">
+                <i class="bi bi-gear me-1"></i>{{ _('Configure Repository') }}
+              </h6>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">{{ _('Remote URL') }} <span class="text-muted">{{ _('(without token)') }}</span></label>
+              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="{{ _('https://git.example.com/satom/satom.git') }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">{{ _('Token') }} <span class="text-muted">{{ _('(optional, embedded in URL)') }}</span></label>
+              <input type="password" id="gc-token" class="form-control fw-form-control font-monospace" placeholder="{{ _('Leave blank to keep current token') }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">{{ _('Branch') }}</label>
+              <input type="text" id="gc-branch" class="form-control fw-form-control font-monospace" placeholder="{{ _('main') }}">
+            </div>
+            <button class="btn btn-sm fw-btn-primary" data-js="git-configure">
+              <i class="bi bi-save me-1"></i>{{ _('Apply') }}
+            </button>
+            <div id="gc-out" class="mt-3" style="display:none;">
+              <pre id="gc-pre" class="fw-pre"></pre>
+            </div>
+            </div>
+          </div>
+        </div>
+    <div class="card mb-3" id="card-available-update"><div class="card-header d-flex justify-content-between align-items-center">
+        <strong>{{ _('Available update') }}</strong>
+        <span>
+          <button id="check-btn" class="btn btn-fw-primary btn-sm" data-js="check-updates" type="button">
+            <i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Check for updates') }}</button>
+          <span id="check-spin" class="ms-2 d-none"><span class="spinner-border spinner-border-sm"></span></span>
+        </span></div>
+      <div class="card-body">
+        <div id="update-info" class="text-muted small">{{ _('Click') }} <em>{{ _('Check for updates') }}</em> {{ _('to query the git remote.') }}</div>
+
+        <form id="apply-form" method="post" action="{{ url_for('self_update.apply') }}" class="d-none mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="target" id="apply-target" value="">
+          <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" name="do_pip" id="do_pip" checked>
+            <label class="form-check-label small" for="do_pip">Update Python dependencies (<code>pip install -r requirements.txt</code>)</label>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="do_migrate" id="do_migrate" checked>
+            <label class="form-check-label small" for="do_migrate">Run DB migrations (<code>flask db upgrade</code>)</label>
+          </div>
+          {# Shown by the check when the repository offers an OLDER version
+             than the one running (a newer package is installed): the apply
+             refuses without it, server-side (update_methods.check_git_request). #}
+          <div class="form-check mb-2 d-none" id="git-downgrade-wrap">
+            <input class="form-check-input" type="checkbox" name="allow_downgrade" id="git-allow-downgrade">
+            <label class="form-check-label small text-danger" for="git-allow-downgrade">
+              {{ _('I understand this is a') }} <strong>{{ _('downgrade') }}</strong>{{ _(': the repository offers an older version than the one running, and database migrations are not reversed.') }}</label>
+          </div>
+          {% set is_primary = this_role == 'primary' %}
+          {% set has_peers = nodes|length > 1 %}
+          {% set unlocked = (not is_primary) or (not has_peers) or (validated and validated.target) %}
+          <button type="submit" class="btn {{ 'btn-danger' if is_primary else 'btn-success' }} btn-sm"
+                  id="apply-btn" {{ 'disabled' if (is_primary and has_peers and not unlocked) else '' }}>
+            <i class="bi bi-download me-1"></i>
+            Apply update to {{ 'PRIMARY' if is_primary else 'this node' }}</button>
+          {% if is_primary and has_peers and not unlocked %}
+            <div class="alert alert-warning small mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>
+              <strong>{{ _('Safeguard active.') }}</strong> {{ _('This is the PRIMARY. Update the standby to the new revision first; once it passes its health check, this button unlocks.') }}</div>
+          {% elif is_primary and has_peers and unlocked %}
+            <div class="alert alert-success small mt-2 mb-0"><i class="bi bi-shield-check me-1"></i>
+              Standby validated <code>{{ validated.target[:12] }}</code> — the primary is cleared to update.</div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+        <!-- Recent commits -->
+        <div class="fw-card mb-3" id="card-recent-commits">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent Commits') }}</span>
+          </div>
+          <div class="fw-card-body p-0">
+            <ul id="git-commits" class="list-group list-group-flush" style="font-size:12px;">
+              <li class="list-group-item text-muted">{{ _('Loading…') }}</li>
+            </ul>
+          </div>
+        </div>
+        <details class="fw-card" id="card-manual-git-console">
+          <summary class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Manual Git Console') }}</span>
+            <span class="text-muted small ms-2">{{ _('advanced') }}</span>
+          </summary>
+          <div class="fw-card-body">
+            <div class="alert alert-warning py-2 px-3 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('Expert use. A pull, reset or checkout typed here moves the running code with none of an update\'s steps — no libraries, no migrations, no restart, no standby first. To update, use Apply above.') }}</div>
+            <p class="text-muted mb-2" style="font-size:12px;">One git command per line. Leading <code>git</code> is optional. <code>#</code> lines are comments. Git-only — not an arbitrary shell.</p>
+            <textarea id="git-console-input" class="form-control fw-form-control font-monospace mb-2" rows="5"
+              placeholder="remote -v&#10;log --oneline -5&#10;fetch origin"></textarea>
+            <button class="btn btn-sm btn-outline-secondary" data-js="git-console-run">
+              <i class="bi bi-play me-1"></i>{{ _('Run') }}
+            </button>
+            <div id="git-console-out" class="mt-3" style="display:none;">
+              <pre id="git-console-pre" class="fw-pre"></pre>
+            </div>
+          </div>
+        </details>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-light border small mb-3" id="git-off">
+  <i class="bi bi-slash-circle me-1"></i>{{ _('Updates from the git repository are switched off on this installation (Update methods): the repository is not fetched and nothing is applied from it.') }}
+  {% if this_role == 'standby' %}{{ _('This standby still follows its primary over the HA link.') }}{% endif %}
+</div>
+{% endif %}
+
+<!-- Deploy automation (reconciler) -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-robot me-1"></i>{{ _('Deploy automation') }}</strong>
+    {% if deploy_mode == 'auto' %}<span class="badge bg-success ms-2">{{ _('AUTO — reconciler drives') }}</span>
+    {% else %}<span class="badge bg-secondary ms-2">{{ _('MANUAL — observe only') }}</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('self_update.set_deploy_mode') }}" class="row g-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <select name="mode" class="form-select form-select-sm">
+          <option value="manual" {% if deploy_mode != 'auto' %}selected{% endif %}>{{ _('Manual — I apply updates by hand') }}</option>
+          <option value="auto" {% if deploy_mode == 'auto' %}selected{% endif %}>{{ _('Auto — reconciler deploys (standby first, then primary)') }}</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="{{ _('Change automation on the PRIMARY node — this node\'s database is read-only') }}"{% endif %}>{{ _('Save') }}</button>
+      </div>
+      <div class="col-12 small text-muted">
+        <strong>{{ _('Auto') }}</strong>: the <code>satom-reconciler</code> service (both nodes) checks
+        <code>origin/{{ branch }}</code> every 60s and, when behind, drives the staged rollout —
+        the STANDBY updates and health-validates first, then the PRIMARY. A failed step auto-rolls-back
+        and the reconciler backs off. <strong>{{ _('Manual') }}</strong>: the reconciler only observes and logs the
+        drift; you apply with the buttons above. Every tick is written to
+        <code>journalctl -u satom-reconciler</code>. Replicated setting — set it on the primary.
+      </div>
+      {% if not allows_git %}
+      <div class="col-12 small"><span class="fw-badge fw-badge-secondary">{{ _('Signed packages only') }}</span>
+        {{ _('The primary\'s reconciler does not fetch any repository (decision: disabled). A standby\'s reconciler still follows its primary, so in AUTO a package applied on the primary reaches the standby by itself.') }}</div>
+      {% endif %}
+    </form>
+    <hr class="my-2">
+    {# THIS node's own reconciler tick, from its node-local state/ file. The
+       replicated record below is published by the PRIMARY only, so on a
+       standby it describes the primary -- it is shown separately, labelled. #}
+    {% set rl = reconcile_local %}
+    <div class="small" id="reconcile-local">
+      <span class="text-muted">{{ _('This node\'s reconciler, last tick:') }}</span>
+      {% if rl %}
+        <span class="fw-badge fw-badge-{{ 'danger' if rl.decision in ('fetch-error', 'error') else 'success' if rl.decision == 'up-to-date' else 'info' }}">{{ rl.decision }}</span>
+        {{ _('on') }} <span class="font-monospace">{{ rl.node }} ({{ rl.role }})</span>,
+        {{ rl.behind }} {{ _('behind') }} — <em>{{ rl.detail }}</em>
+        <span class="text-muted">({{ rl.at | localtime }})</span>
+        {% if rl.decision == 'fetch-error' %}
+        <div class="mt-1"><span class="fw-badge fw-badge-danger">{{ _('cannot fetch') }}</span>
+          {{ _('since') }} {{ (rl.fetch_error_since or rl.at) | localtime }}
+          ({{ rl.fetch_failures or 1 }} {{ _('failed attempt(s) in a row') }}){% if rl.error %}: <code>{{ rl.error }}</code>{% endif %}
+          {% if this_role == 'standby' %}<div class="text-muted">{{ _('The primary\'s HA link card shows this too, and repairs the primary\'s side: Software Update & HA on the primary, or') }} <code>satom ha check</code> {{ _('there.') }}</div>{% endif %}
+        </div>
+        {% endif %}
+      {% else %}
+        <span class="text-muted">{{ _('no tick recorded on this node yet — satom-reconciler is not running here, or has not ticked since it started.') }}</span>
+      {% endif %}
+    </div>
+    {% if reconcile and (not rl or reconcile.node != rl.node) and reconcile.node != this_node %}
+    <div class="small mt-1" id="reconcile-primary">
+      <span class="text-muted">{{ _('Primary\'s reconciler (replicated record):') }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ reconcile.decision }}</span>
+      {{ _('on') }} <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
+      {{ reconcile.behind }} {{ _('behind') }}
+      <span class="text-muted">({{ reconcile.at | localtime }})</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# HA link [SATOM-HA-LINK]: can the standby fetch code from THIS node? The
+   standby's own reconciler record is read over /healthz/reconciler (its
+   data/ is a copy of ours, so nothing local can answer this), and this node's
+   login path is read with loginctl. Repair = restart systemd-logind here,
+   through the privileged runner; preview first, then confirm. #}
+{% set hl = ha_link %}
+{% set hl_badge = {'ok': 'success', 'warning': 'warning', 'broken': 'danger'} %}
+{% set hl_label = {'ok': _('healthy'), 'warning': _('check'), 'broken': _('broken'), 'n/a': _('not applicable here')} %}
+{# Only where there is an HA pair (views.self_update.ha_link_shown). #}
+{% if ha_link_shown %}
+<div class="fw-card mb-3" id="ha-link-card">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-link-45deg me-2 text-accent"></i>{{ _('HA link — can the standby fetch code from this node?') }}</span>
+    <span id="ha-link-verdict" class="fw-badge fw-badge-{{ hl_badge.get(hl.verdict, 'secondary') }}">{{ hl_label.get(hl.verdict, hl.verdict) }}</span>
+  </div>
+  <div class="fw-card-body small">
+    {% if hl.error %}
+      <div class="alert alert-warning small mb-2">{{ _('The HA link check failed:') }} {{ hl.error }}</div>
+    {% endif %}
+    <div id="ha-link-body">
+    {% if hl.applicable %}
+      {% for s in hl.standby %}
+        <div class="mb-1"><span class="text-muted">{{ _('Standby') }}</span>
+          <span class="fw-badge fw-badge-{{ {'in-sync': 'success', 'fetch-error': 'danger'}.get(s.state, 'warning') }}">{{ s.state }}</span>
+          {{ s.text }}</div>
+      {% else %}
+        <div class="mb-1 text-muted">{{ _('No standby is registered in the HA node registry, so nothing fetches from this node.') }}</div>
+      {% endfor %}
+    {% elif hl.repair and hl.repair.refusal %}
+      <div class="mb-1 text-muted">{{ hl.repair.refusal }}</div>
+    {% endif %}
+    {% if hl.logind %}
+      <div class="mb-1"><span class="text-muted">{{ _('Login service on this node (systemd-logind):') }}</span>
+        {% if hl.logind.responsive is sameas false %}<span class="fw-badge fw-badge-danger">{{ _('not responding') }}</span>
+        {% elif hl.logind.responsive is none %}<span class="fw-badge fw-badge-secondary">{{ _('unknown') }}</span>
+        {% elif hl.logind.stuck %}<span class="fw-badge fw-badge-danger">{{ hl.logind.stuck|length }} {{ _('stuck login(s)') }}</span>
+        {% else %}<span class="fw-badge fw-badge-success">{{ _('answering') }}</span>{% endif %}
+        <span class="text-muted">{{ hl.logind.sessions }} {{ _('session(s),') }} {{ hl.logind.opening }} {{ _('opening; logins of') }} <code>{{ hl.logind.user }}</code> {{ _('count as stuck after 60 s in "opening"') }}</span>
+      </div>
+    {% endif %}
+    {% if hl.sshd %}
+      <div class="mb-1"><span class="text-muted">sshd:</span>
+        {% if hl.sshd.ok %}<span class="fw-badge fw-badge-success">{{ _('answering') }}</span> <code>{{ hl.sshd.banner }}</code>
+        {% else %}<span class="fw-badge fw-badge-danger">{{ _('not answering') }}</span> {{ hl.sshd.error }}{% endif %}
+      </div>
+    {% endif %}
+    {% if hl.problems %}
+      <ul class="mb-2 mt-2">
+        {% for p in hl.problems %}
+          <li><span class="fw-badge fw-badge-{{ 'danger' if p.severity == 'critical' else 'warning' }}">{{ p.code }}</span> {{ p.text }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="ha-link-recheck">
+        <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Re-check') }}</button>
+      <button type="button" data-js="ha-link-repair"
+              class="btn btn-sm {{ 'btn-danger' if hl.repair and hl.repair.recommended else 'btn-outline-danger' }}"
+              {% if not (hl.repair and hl.repair.allowed) %}disabled title="{{ hl.repair.refusal if hl.repair else '' }}"{% endif %}>
+        <i class="bi bi-wrench-adjustable me-1"></i>{{ _('Repair HA link…') }}</button>
+      <span class="text-muted">{{ _('CLI:') }} <code>satom ha check</code> · <code>sudo satom ha repair --yes</code> · <code>satom show runbook ha-link</code></span>
+    </div>
+    <div id="ha-link-preview" class="d-none mt-2 p-2" style="border:1px solid var(--fw-border, #dee2e6);border-radius:6px;">
+      <div class="fw-bold mb-1">{{ _('Restart systemd-logind on') }} <span class="font-monospace">{{ this_node }}</span>?</div>
+      <div class="text-muted">{{ _('This repair:') }}</div>
+      <ul id="ha-link-does" class="mb-1"></ul>
+      <div class="text-muted">{{ _('It does not:') }}</div>
+      <ul id="ha-link-does-not" class="mb-2"></ul>
+      <button type="button" class="btn btn-sm btn-danger" data-js="ha-link-confirm">{{ _('Restart systemd-logind now') }}</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="ha-link-cancel">{{ _('Cancel') }}</button>
+    </div>
+    <div id="ha-link-progress" class="d-none mt-2" role="status" aria-live="polite"></div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Live status of the running update -->
+<div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>{{ _('Update in progress') }}</strong>
+  <span id="live-state" class="badge bg-secondary ms-2">{{ _('queued') }}</span></div>
+  <div class="card-body">
+    {# What the runner is doing RIGHT NOW. Steps only land when they finish, and
+       the slow ones (database backup, offline pip install, migrations, restart)
+       take minutes: without this line the panel sat still and a working update
+       looked hung. #}
+    <div id="live-current" class="small mb-2 d-none" role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm me-2" style="color:var(--fw-accent);" aria-hidden="true"></span>
+      <span id="live-current-text"></span>
+    </div>
+    <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
+  </div>
+</div>
+
+<!-- UPDATE SOURCES  [SATOM-UPDATE-SOURCES]
+     Where Software Update finds packages and where Libraries checks and
+     installs from. Each source on its own; the token is write-only. Moved
+     here from Settings > General on 2026-11-24 [SATOM-UPDATE-METHODS]. -->
+<div id="update-sources">
+    <div class="row g-3 mb-3" id="us-card">
+      <div class="col-12">
+        <div class="fw-card" id="card-update-sources">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Update sources') }}</span>
+          </div>
+          <div class="fw-card-body">
+            <div class="form-text mb-2">{{ _('Where this installation looks for updates. Leave a source on Default, or point it at an internal pipeline or mirror — public (URL only) or with a user and token. Changing a source changes where the files come from, not whether they are trusted: update packages are still verified against this node’s trust store. Both nodes of an HA pair use the same sources.') }}</div>
+            <div class="row g-3">
+              {% for kind, title, icon, hint, placeholder in [
+                   ('feed', _('Update packages'), 'bi-cloud-download', _('The feed (latest.json) Software Update & HA reads to find and download the newest signed package.'), 'https://pipeline.example.com/satom/latest.json'),
+                   ('index', _('Python libraries'), 'bi-boxes', _('Python (pip) libraries only: the package index the Libraries card checks and the updater installs from (a pip “simple” index: Nexus, Artifactory, devpi, GitLab…). System packages (apt, zypper, dnf) keep coming from the operating system’s repositories.'), 'https://nexus.example.com/repository/pypi/simple')] %}
+              <div class="col-lg-6 us-src" data-kind="{{ kind }}">
+                <div class="fw-card-header px-0 pt-0 pb-1">
+                  <span class="fw-card-title" style="font-size:13px;"><i class="bi {{ icon }} me-2 text-accent"></i>{{ title }}</span>
+                </div>
+                <div class="text-muted mb-2" style="font-size:11px;">{{ hint }}</div>
+                <label class="form-label mb-1" style="font-size:12px;" for="us-{{ kind }}-mode">{{ _('Source') }}</label>
+                <select class="form-select form-select-sm mb-1 us-mode" id="us-{{ kind }}-mode">
+                  <option value="default">{{ _('Default') }}</option>
+                  <option value="custom">{{ _('Custom URL') }}</option>
+                </select>
+                <div class="text-muted mb-2 us-default" style="font-size:11px;"></div>
+                <div class="us-custom" style="display:none;">
+                  <input type="url" class="form-control form-control-sm font-monospace mb-2 us-url" id="us-{{ kind }}-url"
+                         placeholder="{{ placeholder }}" aria-label="{{ _('Custom URL') }}">
+                  <label class="form-label mb-1" style="font-size:12px;" for="us-{{ kind }}-auth">{{ _('Authentication') }}</label>
+                  <select class="form-select form-select-sm mb-2 us-auth" id="us-{{ kind }}-auth">
+                    <option value="none">{{ _('None — public URL') }}</option>
+                    <option value="basic">{{ _('User + token') }}</option>
+                  </select>
+                  <div class="row g-2 us-cred" style="display:none;">
+                    <div class="col-6"><input type="text" class="form-control form-control-sm us-user" autocomplete="off"
+                                              placeholder="{{ _('User') }}" aria-label="{{ _('User') }}"></div>
+                    <div class="col-6"><input type="password" class="form-control form-control-sm us-token" autocomplete="new-password"
+                                              placeholder="{{ _('Token') }}" aria-label="{{ _('Token') }}"></div>
+                  </div>
+                </div>
+                <div class="d-flex gap-2 mt-2">
+                  <button type="button" class="btn btn-sm btn-outline-secondary us-test"><i class="bi bi-plug me-1"></i>{{ _('Test') }}</button>
+                  <button type="button" class="btn btn-sm btn-primary us-save"><i class="bi bi-check2 me-1"></i>{{ _('Save') }}</button>
+                </div>
+                <div class="us-msg mt-2" style="font-size:11px;"></div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+</div>
+
+<!-- ==================== Signed packages ==================== -->
+<h2 class="h6 text-uppercase text-muted mt-4 mb-2" id="packages"><i class="bi bi-box-seam me-1"></i>{{ _('Signed packages') }}</h2>
+{% if not allows_packages %}
+<div class="alert alert-light border small mb-3" id="packages-off">
+  <i class="bi bi-slash-circle me-1"></i>{{ _('Signed update packages are switched off on this installation (Update methods). API packs and kbpacks are knowledge, not code, and are still taken below.') }}
+</div>
+{% endif %}
+{# One upload for the three files (2026-10-30), routed by name in
+   views.self_update.upload_any. #}
+<div class="card mb-3" id="upload">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-upload me-1"></i>{{ _('Upload') }}</strong>
+    <span class="text-muted small">{{ _('for nodes with no internet: one file at a time') }}</span>
+  </div>
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.upload_any') }}"
+          class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div style="min-width:18rem;flex:1 1 18rem;">
+        <label class="form-label small mb-1" for="up-file">{{ _('File') }}</label>
+        <input class="form-control form-control-sm" type="file" id="up-file" name="file"
+               accept=".gz,.tgz,application/gzip">
+      </div>
+      <button class="btn btn-fw-primary btn-sm" type="submit">
+        <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
+    </form>
+    <table class="table table-sm small mb-0" id="up-kinds">
+      <tbody>
+        {% if allows_packages %}
+        <tr id="up-kind-delta"><td class="text-nowrap"><code>satom-update-&lt;version&gt;-from-{{ app_version }}.tar.gz</code></td>
+            <td><strong>{{ _('Download this one.') }}</strong>
+              {{ _('Delta update for this node (it runs %(v)s): only the files that changed, a few MB. Staged under Offline update package, with its preflight, then Apply.', v=app_version) }}</td></tr>
+        <tr id="up-kind-full"><td class="text-nowrap"><code>satom-update-&lt;version&gt;.tar.gz</code></td>
+            <td>{{ _('Full update package (tens of MB): applies from any supported version. Use it only when the release has no delta from %(v)s or the preflight refuses the delta.', v=app_version) }}</td></tr>
+        {% endif %}
+        <tr><td class="text-nowrap"><code>satom-apipack-&lt;version&gt;.tar.gz</code></td>
+            <td>{{ _('API pack of a SATOM release: listed under API packs & kbpacks, then Import selected.') }}</td></tr>
+        <tr><td class="text-nowrap"><code>satom-kbpack-&lt;date&gt;.tar.gz</code></td>
+            <td>{{ _('kbpack (rolling knowledge): listed under API packs & kbpacks, then Import selected. Its .sha256 is published next to it.') }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if allows_packages %}
+<div class="row g-3">
+  <!-- ==================== offline update package ==================== -->
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-box-seam me-1"></i>{{ _('Offline update package') }}</strong>
+        <span class="text-muted small">{{ _('for nodes with no route to a git repository') }}</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          {{ _('Download a signed update package, upload it here, and apply it without any network access. The package carries the application code and every pinned Python wheel.') }} <strong>{{ _('Only packages signed by a key in this node\'s trust store are accepted') }}</strong> {{ _('— the check is repeated by the privileged runner as root, not just by this page.') }}
+        </p>
+
+        <!-- trust store -->
+        <div class="mb-3">
+          <div class="text-muted small mb-1">Trust store
+            <code>{{ trust.dir }}</code></div>
+          {% if trust.problem %}
+            <div class="alert alert-danger py-2 mb-0 small">
+              <i class="bi bi-shield-exclamation me-1"></i>{{ trust.problem }}<br>
+              {{ _('No package can be applied until this is fixed. A trust store that is not root-owned would let a compromised web worker install its own key.') }}
+            </div>
+          {% elif not trust.entries %}
+            <div class="alert alert-warning py-2 mb-0 small">
+              <i class="bi bi-key me-1"></i>No trusted key installed, so every
+              package is refused. Install one as root:
+              <code>satom execute trust add-key /path/to/release.pub</code>
+            </div>
+          {% else %}
+            <ul class="list-unstyled mb-0 small">
+              {% for k in trust.entries %}
+                <li><i class="bi bi-shield-check text-success me-1"></i>
+                  <span class="font-monospace">{{ k.fingerprint }}</span>
+                  <span class="text-muted">{{ k.comment or k.name }}</span></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+
+        <!-- system-upgrade feed (satom-system-upgrades/latest.json) -->
+        <div class="mb-3" id="feed-box">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="feed-check-btn">
+              <i class="bi bi-cloud-download me-1"></i>{{ _('Check for a newer package online') }}</button>
+            <span class="small text-muted" id="feed-msg">{{ _('Reads the update feed (latest.json) set in Update sources above — by default the public repository. Nothing is downloaded until you press Download.') }}</span>
+          </div>
+          <div class="d-none mt-2 small" id="feed-offer">
+            <span id="feed-offer-text"></span>
+            <button type="button" class="btn btn-fw-primary btn-sm ms-2" id="feed-dl-btn">
+              <i class="bi bi-download me-1"></i>{{ _('Download & stage') }}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-1 d-none" id="feed-dl-full-btn"
+                    title="{{ _('The full package applies to any supported version. Use it when the preflight refuses the delta.') }}">
+              {{ _('Full package instead') }}</button>
+          </div>
+          <div class="d-none mt-2" id="feed-progress" role="status" aria-live="polite">
+            <div class="progress mb-1" style="height:6px;"><div class="progress-bar" id="feed-bar" style="width:0%"></div></div>
+            <div class="small" id="feed-progress-msg"></div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <!-- upload -->
+          <div class="col-lg-5">
+            <div class="small text-muted">{{ _('Upload') }} <code>satom-update-&lt;version&gt;-from-{{ app_version }}.tar.gz</code>
+              ({{ _('the delta for this node, a few MB') }}) {{ _('in') }} <a href="#upload">{{ _('Upload') }}</a>.
+              {{ _('The full') }} <code>satom-update-&lt;version&gt;.tar.gz</code>
+              {{ _('only when there is no delta from this version.') }}</div>
+
+            {% if uploads %}
+            <div class="mt-3">
+              <div class="text-muted small mb-1">{{ _('Staged on this node') }}</div>
+              <ul class="list-group list-group-flush" id="pkg-list">
+                {% for u in uploads %}
+                <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
+                  <button type="button" class="btn btn-link btn-sm p-0 text-start"
+                          data-js="pkg-select" data-name="{{ u.name }}">
+                    <span class="font-monospace">{{ u.name }}</span></button>
+                  <span>
+                    <span class="text-muted small me-2">{{ (u.size / 1048576)|round(1) }} MB</span>
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('self_update.package_delete') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="name" value="{{ u.name }}">
+                      <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
+                              title="{{ _('Remove from staging') }}"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- preflight -->
+          <div class="col-lg-7">
+            <div class="text-muted small mb-1">{{ _('Preflight') }}</div>
+            <div id="pkg-preflight" class="small text-muted">
+              {% if uploads %}Select a staged package to check what applying it would do.
+              {% else %}Upload a package to see the preflight report.{% endif %}
+            </div>
+
+            <form id="pkg-apply-form" method="post" class="d-none mt-3"
+                  action="{{ url_for('self_update.package_apply') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="name" id="pkg-apply-name" value="">
+              <div class="form-check mb-1 d-none" id="pkg-downgrade-wrap">
+                <input class="form-check-input" type="checkbox"
+                       name="allow_downgrade" id="pkg-allow-downgrade">
+                <label class="form-check-label small text-danger" for="pkg-allow-downgrade">
+                  {{ _('I understand this is a') }} <strong>{{ _('downgrade') }}</strong>{{ _(': database migrations are not reversed, and the backup taken below is the way back.') }}</label>
+              </div>
+              <button type="submit" class="btn btn-danger btn-sm" id="pkg-apply-btn">
+                <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Apply package to this node') }}</button>
+              <div class="form-text">{{ _('A database backup is taken first; the service restarts; a failed health check rolls the node back automatically.') }}</div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+<div class="row g-3" id="api-packs">
+  <!-- ==================== API library packs ==================== -->
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-journal-code me-1"></i>{{ _('API packs & kbpacks') }}</strong>
+        <span class="text-muted small">{{ _('vendor API knowledge for nodes with no appliance, no internet or no crawler') }}</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI blocks the catalog does not name, per firmware build. It never carries a configuration or the name of a device.') }}
+          <strong>{{ _('Local data always wins:') }}</strong> {{ _('what this node measured or wrote itself is never replaced. A copy a pack wrote is replaced only by a pack built from a newer knowledge snapshot, whatever its lane (an API pack over a knowledge pack only when both are equally recent). Every imported row records which pack it came from. A pack is verified only with the keys of its lane (satom show trust); a 2.x pack with the update trust store.') }}
+        </p>
+        {% if api_packs.error %}
+          <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ api_packs.error }}</div>
+        {% endif %}
+        {% if api_packs.role == 'standby' %}
+          <div class="alert alert-warning py-2 small"><i class="bi bi-hdd-network me-1"></i>
+            {{ _('This node is the standby: its database is read-only, so packs are imported on the primary. The library replicates here, and the data sync copies the release notes and field schemas.') }}</div>
+        {% elif api_packs.pending %}
+          <div class="alert alert-info py-2 small" id="apk-pending"><i class="bi bi-info-circle me-1"></i>
+            {{ _('This release ships packs that have not been imported on this node yet:') }}
+            {% for p in api_packs.pending %}
+              <code>{{ p.name }}</code>{% if p.series == 'knowledge' %} ({{ _('kbpack') }}){% endif %}
+              — <a href="{{ url_for('self_update.index', apipack='shipped:' + p.name, _anchor='api-packs') }}">{{ _('Review and import it') }}</a>{% if not loop.last %};{% endif %}
+            {% endfor %}
+            {{ _('— or all of them from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
+        {% endif %}
+
+        {# One row per pack, full card width. Only the newest shipped pack of a
+           lineage is listed: the older ones stay in the code tree (a release
+           payload carries only its own pack) and the newest carries them all. #}
+        {% set shipped_all = api_packs.packs|selectattr('source', 'equalto', 'shipped')|list %}
+        {% set shipped = shipped_all|rejectattr('superseded')|list %}
+        {% set uploaded = api_packs.packs|selectattr('source', 'equalto', 'uploaded')|list %}
+        {% set purgeable = api_packs.purgeable or [] %}
+        <div class="table-responsive mb-2">
+          <table class="table table-sm small align-middle mb-0" id="apk-list">
+            <thead><tr><th>{{ _('Pack') }}</th><th>{{ _('Lane and state') }}</th>
+              <th class="text-end">{{ _('Size') }}</th><th></th></tr></thead>
+            <tbody>
+            {% for p in shipped + uploaded %}
+              <tr>
+                <td><button type="button" class="btn btn-link btn-sm p-0 text-start text-break"
+                            data-js="apk-select" data-source="{{ p.source }}" data-name="{{ p.name }}">
+                    <span class="font-monospace">{{ p.name }}</span></button></td>
+                <td><div class="d-flex flex-wrap gap-1">
+                {% if p.series == 'knowledge' %}
+                <span class="fw-badge fw-badge-info apk-kb text-nowrap" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('kbpack') }}</span>
+                {% elif p.series == 'api_pack' %}
+                <span class="fw-badge fw-badge-success apk-lane text-nowrap" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
+                {% endif %}
+                {% if p.name in purgeable %}
+                <span class="fw-badge fw-badge-secondary apk-old" title="{{ _('A newer pack of the same series carries everything this one does. Purge old packs removes it.') }}">{{ _('superseded') }}</span>
+                {% elif p.source == 'shipped' %}
+                <span class="fw-badge fw-badge-secondary" title="{{ _('In the code tree (api-packs/): it came with this release') }}">{{ _('this release') }}</span>
+                {% else %}
+                <span class="fw-badge fw-badge-secondary">{{ _('uploaded') }}</span>
+                {% endif %}
+                {% if p.imported %}<span class="fw-badge fw-badge-success">{{ _('imported') }}</span>{% endif %}
+                </div></td>
+                <td class="text-end text-nowrap text-muted">{{ (p.size / 1048576)|round(1) }} MB</td>
+                <td class="text-end">
+                {% if p.source == 'uploaded' %}
+                  <form method="post" class="d-inline" action="{{ url_for('self_update.apipack_delete') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="name" value="{{ p.name }}">
+                    <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
+                            title="{{ _('Remove the uploaded pack') }}"><i class="bi bi-trash"></i></button>
+                  </form>
+                {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="text-muted">
+                {{ _('No pack on this node. A release that carries one has it in api-packs/; you can also upload one downloaded from the release page.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if shipped_all|length > shipped|length %}
+        <div class="text-muted small mb-2" id="apk-hidden-shipped">
+          {{ shipped_all|length - shipped|length }} {{ _('older pack(s) from earlier releases are not listed: they stay in the code tree (api-packs/), a release ships only its own pack, and the newest one carries everything they did.') }}</div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+          <div class="small text-muted">{{ _('Upload an API pack or a kbpack in') }} <a href="#upload">{{ _('Upload') }}</a>.</div>
+          <form method="post" action="{{ url_for('self_update.apipack_purge') }}" id="apk-purge"
+                data-fw-confirm-form="{{ _('Remove the uploaded packs a newer one replaces?') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-danger btn-sm" type="submit"
+                    {{ 'disabled' if not purgeable or api_packs.role == 'standby' else '' }}
+                    title="{{ _('Delete every uploaded pack that a newer pack of the same series replaces. The newest of each series is kept.') }}">
+              <i class="bi bi-trash me-1"></i>{{ _('Purge old packs') }} ({{ purgeable|length }})</button>
+          </form>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12">
+            <div id="apk-detail" class="small text-muted">
+              {% if api_packs.packs %}{{ _('Select a pack to see what it carries and what importing it would do.') }}
+              {% else %}{{ _('Upload a pack to see its contents.') }}{% endif %}
+            </div>
+            <div id="apk-pick" class="d-none mt-2">
+              <div class="d-flex flex-wrap gap-3 align-items-center mb-2 small" id="apk-filters"></div>
+              <div class="table-responsive" style="max-height:420px;overflow:auto;">
+                <table class="table table-sm small mb-2 align-middle">
+                  <thead><tr>
+                    <th style="width:28px;"><input class="form-check-input" type="checkbox" id="apk-all"
+                        title="{{ _('Tick every item that would be imported') }}"></th>
+                    <th>{{ _('Product') }}</th><th>{{ _('What') }}</th><th>{{ _('State') }}</th>
+                  </tr></thead>
+                  <tbody id="apk-items"></tbody>
+                </table>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-fw-primary btn-sm" id="apk-import-btn"
+                        {{ 'disabled' if api_packs.role == 'standby' else '' }}>
+                  <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import selected') }}</button>
+                <span class="text-muted small" id="apk-count"></span>
+              </div>
+            </div>
+            <div id="apk-progress" class="d-none mt-3" role="status" aria-live="polite">
+              <div class="progress mb-1" style="height:6px;">
+                <div class="progress-bar" id="apk-bar" style="width:0%"></div></div>
+              <div class="small" id="apk-msg"></div>
+              <ul class="small mb-0 mt-2" id="apk-results"></ul>
+            </div>
+          </div>
+        </div>
+
+        {% if api_packs.history %}
+        <div class="mt-3">
+          <div class="text-muted small mb-1">{{ _('Recent imports') }}</div>
+          <div class="table-responsive">
+          <table class="table table-sm small mb-0" id="apk-history">
+            <thead><tr><th>{{ _('When') }}</th><th>{{ _('Pack') }}</th><th>{{ _('Result') }}</th><th>{{ _('By') }}</th></tr></thead>
+            <tbody>
+            {% for h in api_packs.history %}
+              <tr>
+                <td class="text-nowrap">{{ h.at[:16]|replace('T', ' ') }}</td>
+                <td class="font-monospace text-nowrap">{{ h.version }}{% if h.lane %} <span class="fw-badge fw-badge-secondary apk-prov" title="{{ h.provenance }}">{{ h.lane }}</span>{% endif %}</td>
+                <td>{{ h.imported }} {{ _('imported') }}{% if h.errors %} · <span class="text-danger">{{ h.errors }} {{ _('failed') }}</span>{% endif %}</td>
+                <td class="text-muted">{{ h.actor }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row g-3" id="knowledge-packs">
+  <!-- ==================== Knowledge packs (online feed) ==================== -->
+  <div class="col-12">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex justify-content-between align-items-center">
+        <span class="fw-card-title"><i class="bi bi-book me-2 text-accent"></i>{{ _('kbpacks (rolling knowledge)') }}</span>
+        <span class="text-muted small">{{ _('release notes, upgrade advice and signature metadata — from signed packs') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted small">
+          {{ _('SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling kbpack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins.') }}
+        </p>
+        {% if knowledge.error %}
+          <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ knowledge.error }}</div>
+        {% endif %}
+        {% if knowledge.refusal %}
+          <div class="alert alert-warning py-2 small" id="kn-standby"><i class="bi bi-hdd-network me-1"></i>{{ knowledge.refusal }}</div>
+        {% endif %}
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="text-muted small mb-1">{{ _('Installed') }}</div>
+            <div class="table-responsive">
+            <table class="fw-table small mb-2 w-100" id="kn-installed">
+              <thead><tr><th>{{ _('Lane') }}</th><th>{{ _('Pack') }}</th><th>{{ _('Date') }}</th><th>{{ _('Age') }}</th></tr></thead>
+              <tbody>
+              {% for lane in ('api_pack', 'knowledge') %}
+                {% set row = (knowledge.installed or {}).get(lane) %}
+                <tr>
+                  <td>{{ (knowledge.lane_labels or {}).get(lane, lane) }}</td>
+                  {% if row %}
+                  <td class="font-monospace">{{ row.pack }}
+                    {% if row.covered_by %}<div class="text-muted small" title="{{ _('Not imported: this pack already holds the same or newer content.') }}">{{ _('covered by') }} {{ row.covered_by }}</div>{% endif %}
+                  </td>
+                  <td class="text-nowrap">{{ row.date or '—' }}</td>
+                  <td class="text-nowrap">
+                    {% if row.age_days is not none %}{{ row.age_days }} {{ _('day(s)') }}{% endif %}
+                    {% if row.stale %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('Older than this many days:') }} {{ knowledge.stale_days }}">{{ _('stale') }}</span>
+                    {% else %}<span class="fw-badge fw-badge-success ms-1">{{ _('current') }}</span>{% endif %}
+                  </td>
+                  {% else %}
+                  <td colspan="3" class="text-muted">{{ _('nothing imported yet') }}</td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            </div>
+            {% set last = knowledge.last or {} %}
+            <div class="small text-muted" id="kn-last">
+              {{ _('Last check:') }}
+              {% if last.status %}
+                <span class="fw-badge {{ 'fw-badge-success' if last.status in ('imported', 'current', 'downloaded') else ('fw-badge-info' if last.status == 'available' else 'fw-badge-danger') }}">{{ last.status }}</span>
+                {{ last.message }} <span class="text-nowrap">({{ (last.checked_at or '')[:16]|replace('T', ' ') }})</span>
+              {% else %}{{ _('never') }}{% endif %}
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="text-muted small mb-1">{{ _('Available from the feed') }}</div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="kn-check-btn">
+                <i class="bi bi-cloud-check me-1"></i>{{ _('Check now') }}</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="kn-dl-btn"
+                      {{ 'disabled' if knowledge.refusal else '' }}>
+                <i class="bi bi-cloud-download me-1"></i>{{ _('Download') }}</button>
+              <button type="button" class="btn btn-fw-primary btn-sm d-none" id="kn-import-btn"
+                      {{ 'disabled' if knowledge.refusal else '' }}>
+                <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import') }}</button>
+            </div>
+            <div class="small" id="kn-msg" role="status" aria-live="polite"></div>
+            <div id="kn-progress" class="d-none mt-2">
+              <div class="progress mb-1" style="height:6px;"><div class="progress-bar" id="kn-bar" style="width:0%"></div></div>
+              <div class="small" id="kn-progress-msg"></div>
+            </div>
+            <div class="small text-muted mt-2">
+              <i class="bi bi-wifi-off me-1"></i>{{ _('Air-gapped network? Download the kbpack (satom-kbpack-<date>.tar.gz) and its .sha256 on a machine with internet') }}
+              (<a href="{{ knowledge.feed_url }}" rel="noopener noreferrer" target="_blank" id="kn-manual-link">{{ _('feed') }}</a><span id="kn-manual-pack"></span>),
+              {{ _('then upload it in') }} <a href="#upload">{{ _('Upload') }}</a>
+              {{ _('and import it under') }} <a href="#api-packs">{{ _('API packs & kbpacks') }}</a>, {{ _('or run') }}
+              <code>sudo satom execute apipack import &lt;file&gt; --yes</code>.
+            </div>
+          </div>
+        </div>
+        <hr class="my-3">
+        <form method="post" action="{{ url_for('self_update.knowledge_settings') }}" class="row g-2 align-items-end" id="kn-settings">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-auto">
+            <label class="fw-form-label mb-1" for="kn-mode">{{ _('Scheduled fetch (daily)') }}</label>
+            <select class="form-select form-select-sm" id="kn-mode" name="mode">
+              {% for m, label in knowledge.modes %}
+              <option value="{{ m }}" {{ 'selected' if m == knowledge.mode else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col" style="min-width:18rem;">
+            <label class="fw-form-label mb-1" for="kn-feed">{{ _('Feed URL') }}</label>
+            <input type="url" class="form-control form-control-sm font-monospace" id="kn-feed" name="feed_url"
+                   value="{{ knowledge.feed_url }}" placeholder="{{ knowledge.default_feed_url }}" pattern="https://.*">
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-fw-primary btn-sm" type="submit" {{ 'disabled' if knowledge.refusal else '' }}>
+              <i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          </div>
+          <div class="col-12 form-text">{{ _('The feed is fetched over HTTPS with the same proxy and TLS settings as the system-upgrade feed. Empty = the default feed. The buttons above work in every mode; the mode only decides what the daily scheduled action does.') }}</div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- History (last on the page) -->
+<div class="card mb-3" id="recent-updates"><div class="card-header"><strong>{{ _('Recent updates') }}</strong></div>
+  <div class="card-body">
+    {% if not history %}
+      <p class="text-muted small mb-0">{{ _('No updates run yet.') }}</p>
+    {% else %}
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Method') }}</th><th>{{ _('Node') }}</th><th>{{ _('What') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td class="small">{{ (h.updated_at or h.started_at) | localtime }}</td>
+          <td class="small">{{ h.requested_by }}</td>
+          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">{{ _('auto') }}</span>{% else %}<span class="badge bg-light text-dark border">{{ _('manual') }}</span>{% endif %}</td>
+          {# Which way the code arrived. Only code changes have one; a service
+             restart, OS packages or a library change are neither. #}
+          <td class="small">{% if h.kind == 'package' %}{{ _('package') }}{% elif h.origin == 'code-rollback' %}{{ _('rollback') }}{% elif not h.kind and not h.package %}{{ _('git') }}{% else %}—{% endif %}</td>
+          <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
+          {# The runner records more than code updates: say what each request was. #}
+          <td class="small">
+            {% if h.kind == 'service' %}{{ h.action }} <code>{{ h.unit }}</code>
+            {% elif h.kind == 'syspkg' %}{{ _('OS packages') }}: {{ h.action }}{% if h.package %} <code>{{ h.package }}</code>{% endif %}
+            {% elif h.kind == 'clone' %}{{ _('deploy clone') }}: {{ h.action }}
+            {% elif h.action == 'upgrade' and h.package %}{{ _('library') }} <code>{{ h.package }}</code> {{ _('upgrade') }}
+            {% elif h.kind == 'package' %}{{ _('offline package') }} <code>{{ h.package }}</code>{% if h.result_sha or h.target %} <span class="font-monospace">{{ (h.result_sha or h.target)[:12] }}</span>{% endif %}
+            {% else %}<span class="font-monospace">{{ (h.result_sha or h.target or '')[:12] or '—' }}</span>{% endif %}
+          </td>
+          <td>
+            {% if h.state == 'success' %}<span class="badge bg-success">{{ _('success') }}</span>
+            {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
+            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">{{ _('running') }}</span>
+            {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#log-{{ loop.index }}"
+                    aria-expanded="false" aria-controls="log-{{ loop.index }}">
+              log{% if h.steps %} ({{ h.steps|length }}){% endif %}
+            </button>
+          </td>
+        </tr>
+        <tr class="collapse" id="log-{{ loop.index }}">
+          <td colspan="8" class="bg-body-tertiary">
+            {% if h.steps %}
+            <ol class="small mb-0 font-monospace" style="list-style:decimal inside;">
+              {% for st in h.steps %}
+              <li>
+                {% if st.ok %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}
+                {{ st.name }}{% if st.detail %} — <span class="text-muted" style="white-space:pre-wrap;">{{ st.detail }}</span>{% endif %}
+                {% if st.at %}<span class="text-muted"> · {{ st.at | localtime }}</span>{% endif %}
+              </li>
+              {% endfor %}
+            </ol>
+            {% else %}
+            <p class="text-muted small mb-0">No steps recorded{% if h.state == 'queued' %} — request is still queued (not yet picked up by the updater runner){% endif %}.</p>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+function suCsrf() {
+  var m = document.querySelector('meta[name="csrf-token"]');
+  return m ? m.content : '';
+}
+// --- Git repository [SATOM-UPDATE-METHODS] ----------------------------------
+// Moved from the Settings console with its pane (2026-11-24). The endpoints
+// stay under /settings/git/: only the page that draws them moved.
+function gitConfigure() {
+  var remote = document.getElementById("gc-remote").value.trim();
+  var token = document.getElementById("gc-token").value.trim();
+  var branch = document.getElementById("gc-branch").value.trim();
+  if (!remote && !branch) { alert("Provide at least a remote URL or branch."); return; }
+  var out = document.getElementById("gc-out");
+  var pre = document.getElementById("gc-pre");
+  out.style.display = ""; pre.textContent = "Applying…";
+  fetch("/settings/git/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": suCsrf()},
+    body: JSON.stringify({remote_url: remote, token: token, branch: branch})
+  }).then(r=>r.json()).then(d=>{
+    pre.textContent = d.transcript || d.error || "(no output)";
+    gitRefresh();
+  }).catch(e=>{ pre.textContent = "Error: " + e.message; });
+}
+function gitToggleConfig() {
+  var block = document.getElementById('git-config-block');
+  if (!block) return;
+  var opening = block.hasAttribute('hidden');
+  if (opening) { block.removeAttribute('hidden'); } else { block.setAttribute('hidden', ''); }
+  var btn = document.getElementById('git-edit-btn');
+  if (btn) btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  if (opening) {
+    var first = document.getElementById('gc-remote');
+    if (first) first.focus();
+  }
+}
+
+function gitEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function gitRefresh() {
+  document.getElementById('git-info-loading').style.display = '';
+  document.getElementById('git-info-body').style.display = 'none';
+  document.getElementById('git-commits').innerHTML = '<li class="list-group-item text-muted">Loading...</li>';
+  fetch('/settings/git/info', {headers: {'Accept': 'application/json'}})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){
+      document.getElementById('git-info-loading').style.display = 'none';
+      document.getElementById('git-info-body').style.display = '';
+      document.getElementById('gi-remote').textContent = d.remote || '-';
+      document.getElementById('gi-branch').innerHTML = '<code>' + gitEsc(d.branch) + '</code>';
+      document.getElementById('gc-remote').value = (d.remote && d.remote !== '—') ? d.remote : '';
+      document.getElementById('gc-branch').value = d.branch || '';
+      document.getElementById('gi-commit').textContent = d.commit || '-';
+      var dirty = d.dirty;
+      document.getElementById('gi-status').innerHTML = dirty
+        ? '<span class="fw-badge fw-badge-warning">dirty</span>'
+        : '<span class="fw-badge fw-badge-success">clean</span>';
+      var sync = '';
+      if (d.ahead > 0) sync += '<span class="fw-badge fw-badge-warning me-1">↑' + d.ahead + ' ahead</span>';
+      if (d.behind > 0) sync += '<span class="fw-badge fw-badge-danger me-1">↓' + d.behind + ' behind</span>';
+      if (!sync) sync = '<span class="text-muted">up to date</span>';
+      document.getElementById('gi-sync').innerHTML = sync;
+      var ul = document.getElementById('git-commits');
+      var commits = d.recent || [];
+      if (commits.length) {
+        ul.innerHTML = commits.map(function(c){
+          return '<li class="list-group-item d-flex gap-2 align-items-start py-2">'
+            + '<code class="text-muted" style="min-width:52px;">' + gitEsc(c.hash) + '</code>'
+            + '<span class="text-muted" style="min-width:70px;">' + gitEsc(c.date) + '</span>'
+            + '<span class="text-truncate">' + gitEsc(c.subject) + '</span>'
+            + '</li>';
+        }).join('');
+      } else {
+        ul.innerHTML = '<li class="list-group-item text-muted">No commits found</li>';
+      }
+    })
+    .catch(function(e){
+      document.getElementById('git-info-loading').textContent = 'Error: ' + e.message;
+    });
+}
+
+function gitConsoleRun() {
+  var script = document.getElementById('git-console-input').value.trim();
+  if (!script) return;
+  document.getElementById('git-console-out').style.display = '';
+  document.getElementById('git-console-pre').textContent = '...';
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/git/console', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    body: JSON.stringify({script: script})
+  })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){ document.getElementById('git-console-pre').textContent = d.transcript || '(no output)'; })
+    .catch(function(e){ document.getElementById('git-console-pre').textContent = 'Error: ' + e.message; });
+}
+
+
+document.addEventListener('DOMContentLoaded', function () {
+  function bind(hook, fn) {
+    var el = document.querySelector('[data-js="' + hook + '"]');
+    if (el) el.addEventListener('click', function () { fn(); });
+  }
+  bind('git-refresh', gitRefresh);
+  bind('git-configure', gitConfigure);
+  bind('git-edit', gitToggleConfig);
+  bind('git-console-run', gitConsoleRun);
+  if (document.getElementById('card-repository')) gitRefresh();
+});
+
+// --- Update sources [SATOM-UPDATE-SOURCES] ---------------------------------
+// The token is write-only: the server says only whether one is stored, and a
+// blank token field on save keeps it.
+var US_URL = "{{ url_for('settings.update_sources_state') }}";
+var US_SAVE_URL = "{{ url_for('settings.update_sources_save') }}";
+var US_TEST_URL = "{{ url_for('settings.update_sources_test') }}";
+function usBox(kind) { return document.querySelector('.us-src[data-kind="' + kind + '"]'); }
+function usSay(box, text, cls) {
+  var m = box.querySelector('.us-msg');
+  m.className = 'us-msg mt-2 ' + (cls || '');
+  m.textContent = text;
+}
+function usSync(box) {
+  var custom = box.querySelector('.us-mode').value === 'custom';
+  box.querySelector('.us-custom').style.display = custom ? '' : 'none';
+  box.querySelector('.us-default').style.display = custom ? 'none' : '';
+  box.querySelector('.us-cred').style.display =
+    (custom && box.querySelector('.us-auth').value === 'basic') ? '' : 'none';
+}
+function usFill(kind, c) {
+  var box = usBox(kind);
+  if (!box || !c) return;
+  box.querySelector('.us-mode').value = c.custom ? 'custom' : 'default';
+  box.querySelector('.us-url').value = c.url || '';
+  box.querySelector('.us-auth').value = c.auth ? 'basic' : 'none';
+  box.querySelector('.us-user').value = c.user || '';
+  var tok = box.querySelector('.us-token');
+  tok.value = '';
+  tok.placeholder = c.has_token ? 'Token stored — leave blank to keep' : 'Token';
+  box.querySelector('.us-default').textContent = 'Default: ' + (c.default_url || '');
+  usSync(box);
+  if (c.url_problem || c.problem) {
+    usSay(box, 'Cannot be used as configured: ' + (c.url_problem || c.problem), 'text-danger');
+  } else {
+    usSay(box, 'In use: ' + (c.effective_url || '') + (c.auth ? ' (user ' + c.user + ' + token)' : ''), 'text-muted');
+  }
+}
+function usForm(box) {
+  return {
+    kind: box.getAttribute('data-kind'),
+    mode: box.querySelector('.us-mode').value,
+    url: box.querySelector('.us-url').value.trim(),
+    auth: box.querySelector('.us-auth').value,
+    user: box.querySelector('.us-user').value.trim(),
+    token: box.querySelector('.us-token').value
+  };
+}
+function usPost(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': suCsrf() },
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); });
+}
+function usLoad() {
+  fetch(US_URL, { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) { usFill('feed', d.feed); usFill('index', d.index); })
+    .catch(function () {});
+}
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.us-src').forEach(function (box) {
+    box.querySelector('.us-mode').addEventListener('change', function () { usSync(box); });
+    box.querySelector('.us-auth').addEventListener('change', function () { usSync(box); });
+    box.querySelector('.us-test').addEventListener('click', function () {
+      usSay(box, 'Testing…', 'text-muted');
+      usPost(US_TEST_URL, usForm(box))
+        .then(function (d) {
+          if (d.ok) usSay(box, 'OK — ' + d.message + ' (source ' + d.source + ')', 'text-success');
+          else usSay(box, 'Failed: ' + (d.error || 'no answer'), 'text-danger');
+        })
+        .catch(function () { usSay(box, 'Failed: SATOM did not answer the request.', 'text-danger'); });
+    });
+    box.querySelector('.us-save').addEventListener('click', function () {
+      usPost(US_SAVE_URL, usForm(box))
+        .then(function (d) {
+          if (!d.ok) { usSay(box, 'Not saved: ' + (d.errors || ['rejected']).join('; '), 'text-danger'); return; }
+          usFill(box.getAttribute('data-kind'), d.config);
+          usSay(box, 'Saved. In use: ' + d.config.effective_url, 'text-success');
+          // A new index makes the Libraries card's answer stale: ask again.
+          // (The Libraries card that reads it is on Settings > General.)
+        })
+        .catch(function () { usSay(box, 'Not saved: SATOM did not answer the request.', 'text-danger'); });
+    });
+  });
+  if (document.getElementById('us-card')) usLoad();
+});
+
+</script>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function jpost(url) {
+    return fetch(url, {method: 'POST', headers: {'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest'}, credentials: 'same-origin'});
+  }
+
+  // --- Check for updates ---
+  var btn = document.querySelector('[data-js="check-updates"]');
+  if (btn) btn.addEventListener('click', function () {
+    var spin = document.getElementById('check-spin');
+    var info = document.getElementById('update-info');
+    spin.classList.remove('d-none'); btn.setAttribute('disabled', 'disabled');
+    jpost('{{ url_for("self_update.check") }}').then(function (r) { return r.json(); })
+      .then(function (d) {
+        spin.classList.add('d-none'); btn.removeAttribute('disabled');
+        if (d.error) { info.innerHTML = '<span class="text-danger">Fetch error: ' +
+          escapeHtml(d.error) + '</span>'; }
+        if (d.behind === 0) {
+          info.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>' +
+            'Up to date on <code>' + escapeHtml(d.current.short) + '</code>.</span>' +
+            (d.error ? '<div class="text-danger small">' + escapeHtml(d.error) + '</div>' : '');
+          document.getElementById('apply-form').classList.add('d-none');
+          return;
+        }
+        var html = '<div class="mb-2"><strong>' + d.behind + '</strong> new commit(s) available — ' +
+          'target <code>' + escapeHtml((d.target_sha || '').substring(0, 12)) + '</code>:</div>' +
+          '<ul class="small">';
+        d.commits.forEach(function (c) { html += '<li class="font-monospace">' + escapeHtml(c) + '</li>'; });
+        html += '</ul>';
+        // [SATOM-UPDATE-METHODS] An older VERSION than the running one (a
+        // newer package is installed): say so, and ask for the confirmation
+        // the apply refuses without.
+        var v = d.version || {};
+        var dg = document.getElementById('git-downgrade-wrap');
+        if (v.target) {
+          html += '<div class="mb-1">Version <code>' + escapeHtml(v.running || '?') + '</code> → <code>' +
+            escapeHtml(v.target) + '</code>' + (v.is_downgrade ? ' <span class="fw-badge fw-badge-danger">downgrade</span>' : '') + '</div>';
+        }
+        if (dg) { dg.classList.toggle('d-none', !v.is_downgrade); }
+        info.innerHTML = html;
+        document.getElementById('apply-target').value = d.target_sha;
+        document.getElementById('apply-form').classList.remove('d-none');
+      })
+      .catch(function () { spin.classList.add('d-none'); btn.removeAttribute('disabled');
+        info.innerHTML = '<span class="text-danger">Check failed.</span>'; });
+  });
+
+  // --- Live status polling (when redirected with ?watch=<uid>) ---
+  var watch = {{ watch|tojson }};
+  if (watch) {
+    var panel = document.getElementById('live-panel');
+    var stateEl = document.getElementById('live-state');
+    var stepsEl = document.getElementById('live-steps');
+    var curEl = document.getElementById('live-current');
+    var curText = document.getElementById('live-current-text');
+    panel.classList.remove('d-none');
+    var done = false;
+    var t0 = Date.now(), curName = null, curSince = Date.now(), nSteps = -1;
+    var cur = {state: 'queued', name: null, offline: false};
+    function fmt(ms) {
+      var s = Math.max(0, Math.floor(ms / 1000));
+      return s >= 60 ? Math.floor(s / 60) + 'm' + ('0' + (s % 60)).slice(-2) + 's' : s + 's';
+    }
+    function renderCurrent() {
+      if (done) { curEl.classList.add('d-none'); return; }
+      var now = Date.now(), txt;
+      if (cur.offline) {
+        txt = 'The service is restarting as part of the update — reconnecting… (' + fmt(now - curSince) + ')';
+      } else if (cur.state === 'queued') {
+        txt = 'Waiting for the update runner to pick the request up… (' + fmt(now - t0) + ')';
+        if (now - t0 > 30000) {
+          txt += ' — still queued: check that satom-updater.path is enabled on this node.';
+        }
+      } else if (cur.name) {
+        txt = 'Running: ' + cur.name + '… (' + fmt(now - curSince) + ')';
+      } else {
+        txt = 'Working… (' + fmt(now - curSince) + ' since the last step)';
+      }
+      curText.textContent = txt;
+      curEl.classList.remove('d-none');
+    }
+    setInterval(renderCurrent, 1000);
+    function poll() {
+      fetch('/self-update/status/' + encodeURIComponent(watch), {credentials: 'same-origin'})
+        .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+        .then(function (s) {
+          var n = (s.steps || []).length;
+          var name = (s.current && s.current.name) || null;
+          if (cur.offline || n !== nSteps || name !== curName) { curSince = Date.now(); }
+          nSteps = n; curName = name;
+          cur = {state: s.state || 'unknown', name: name, offline: false};
+          renderCurrent();
+          stateEl.textContent = s.state || 'unknown';
+          stateEl.className = 'badge ms-2 ' + ({
+            success: 'bg-success', failed: 'bg-danger', running: 'bg-warning text-dark',
+            queued: 'bg-secondary'
+          }[s.state] || 'bg-secondary');
+          stepsEl.innerHTML = '';
+          (s.steps || []).forEach(function (st) {
+            var li = document.createElement('li');
+            li.className = st.ok ? 'text-success' : 'text-danger';
+            li.textContent = st.name + (st.detail ? ' — ' + st.detail : '');
+            stepsEl.appendChild(li);
+          });
+          if (s.state === 'success' || s.state === 'failed') {
+            if (!done) { done = true; renderCurrent();
+              setTimeout(function () { window.location = '{{ url_for("self_update.index") }}'; }, 4000); }
+            return;
+          }
+          setTimeout(poll, 2500);
+        })
+        .catch(function () {  // survives the mid-update restart — and says so
+          if (!cur.offline) { cur.offline = true; curSince = Date.now(); }
+          renderCurrent();
+          setTimeout(poll, 4000);
+        });
+    }
+    poll();
+  }
+
+  // --- Promote (failover) status polling (when redirected with ?watch_promote) ---
+  var watchP = {{ watch_promote|tojson }};
+  if (watchP) {
+    var pPanel = document.getElementById('live-panel');
+    var pState = document.getElementById('live-state');
+    var pSteps = document.getElementById('live-steps');
+    if (pPanel) pPanel.classList.remove('d-none');
+    var pdone = false;
+    function pollP() {
+      fetch('/self-update/promote-status/' + encodeURIComponent(watchP), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (pState) { pState.textContent = s.state || 'unknown';
+            pState.className = 'badge ms-2 ' + ({success:'bg-success',failed:'bg-danger',running:'bg-warning text-dark'}[s.state] || 'bg-secondary'); }
+          if (pSteps) { pSteps.innerHTML = '';
+            (s.steps || []).forEach(function (st) { var li = document.createElement('li');
+              li.className = st.ok ? 'text-success' : 'text-danger';
+              li.textContent = st.name + (st.detail ? ' — ' + st.detail : ''); pSteps.appendChild(li); }); }
+          if (s.state === 'success' || s.state === 'failed') {
+            if (!pdone) { pdone = true; setTimeout(function () { window.location = '{{ url_for("self_update.index") }}'; }, 5000); }
+            return; }
+          setTimeout(pollP, 2500);
+        })
+        .catch(function () { setTimeout(pollP, 4000); });
+    }
+    pollP();
+  }
+
+
+  // --- offline update package: preflight ---------------------------------
+  var PKG_PREFLIGHT_URL = '{{ url_for("self_update.package_preflight", name="__N__") }}';
+  function pkgBadge(status) {
+    if (status === 'ok') return '<span class="badge bg-success">ok</span>';
+    if (status === 'warn') return '<span class="badge bg-warning text-dark">warn</span>';
+    return '<span class="badge bg-danger">fail</span>';
+  }
+  function pkgRender(d) {
+    var box = document.getElementById('pkg-preflight');
+    var form = document.getElementById('pkg-apply-form');
+    var rows = (d.checks || []).map(function (c) {
+      return '<tr><td class="text-nowrap pe-2">' + pkgBadge(c.status) + '</td>' +
+             '<td class="text-nowrap pe-2"><strong>' + escapeHtml(c.label) + '</strong></td>' +
+             '<td>' + escapeHtml(c.detail) + '</td></tr>';
+    }).join('');
+    var m = d.manifest || {};
+    var head = '';
+    if (m.version) {
+      head = '<div class="mb-2"><span class="font-monospace">' +
+             escapeHtml(String(m.version)) + '</span> ' +
+             '<span class="text-muted">commit ' +
+             escapeHtml(String(m.commit || '').slice(0, 12)) + '</span>' +
+             (d.signed_by ? ' <span class="text-muted">· signed by ' +
+               escapeHtml(d.signed_by.fingerprint) + '</span>' : '') + '</div>';
+    }
+    box.innerHTML = head + '<table class="table table-sm mb-0"><tbody>' + rows + '</tbody></table>';
+
+    document.getElementById('pkg-apply-name').value = d.name || '';
+    document.getElementById('pkg-downgrade-wrap')
+            .classList.toggle('d-none', !d.is_downgrade);
+    // The button is disabled, not hidden, when preflight blocks: an operator
+    // must see that applying is possible-in-principle and why it is refused
+    // now. The server re-runs preflight anyway, so this is guidance, not a gate.
+    var btn = document.getElementById('pkg-apply-btn');
+    if (d.can_apply) { btn.removeAttribute('disabled'); }
+    else { btn.setAttribute('disabled', 'disabled'); }
+    form.classList.remove('d-none');
+  }
+  function pkgLoad(name) {
+    var box = document.getElementById('pkg-preflight');
+    box.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' +
+                    'Verifying ' + escapeHtml(name) + '…';
+    fetch(PKG_PREFLIGHT_URL.replace('__N__', encodeURIComponent(name)),
+          {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(pkgRender)
+      .catch(function (e) {
+        box.innerHTML = '<span class="text-danger">Preflight failed: ' +
+                        escapeHtml(String(e)) + '</span>';
+      });
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest ? ev.target.closest('[data-js="pkg-select"]') : null;
+    if (t) { ev.preventDefault(); pkgLoad(t.getAttribute('data-name')); }
+  });
+  (function () {
+    var pre = {{ (request.args.get('pkg') or '')|tojson }};
+    if (pre) { pkgLoad(pre); }
+  })();
+
+  // --- API library packs ---------------------------------------------------
+  var APK_INSPECT_URL = '{{ url_for("self_update.apipack_inspect") }}';
+  var APK_IMPORT_URL = '{{ url_for("self_update.apipack_import") }}';
+  var APK_STATE = {
+    'new': ['fw-badge fw-badge-info', 'will be imported'],
+    'present': ['fw-badge fw-badge-secondary', 'already on this node'],
+    'local': ['fw-badge fw-badge-success', 'measured by this node — local evidence wins'],
+    'update': ['fw-badge fw-badge-warning', 'replaces a copy an older or lower-ranked pack wrote'],
+    'rejected': ['fw-badge fw-badge-danger', 'malformed item: skipped'],
+    'unknown': ['fw-badge fw-badge-secondary', 'a kind this SATOM does not import: skipped']
+  };
+  var apk = {source: '', name: '', items: [], off: {}};
+  function apkWhat(it) {
+    if (it.section === 'library') {
+      var sc = it.scope || {};
+      return 'API library · ' + (it.source || '') + ' · ' +
+             (sc.version || sc.line || it.scope_kind || '') + ' · ' +
+             (it.endpoints || 0) + ' endpoints, ' + (it.fields || 0) + ' fields';
+    }
+    if (it.kind === 'release-notes') {
+      var nv = it.new_versions || [];
+      return 'Release notes · ' + (it.versions || []).length + ' version(s)' +
+             (nv.length ? ' · new: ' + nv.join(', ') : '');
+    }
+    if (it.kind === 'field-schemas') {
+      var no = it.new_objects || [];
+      return 'Field catalog · line ' + (it.line || '') + ' · ' + (it.objects || []).length +
+             ' object(s)' + (no.length ? ' · ' + no.length + ' new' : '');
+    }
+    if (it.kind === 'field-overlay') return 'Field help overlay (admin guide)';
+    if (it.kind === 'factory-wpp') return 'Factory catalog · predefined protection profile';
+    if (it.kind === 'field-map') return 'Rename candidates · ' + (it.endpoint || '') + ' · ' +
+                                        (it.from_build || '') + ' → ' + (it.to_build || '');
+    if (it.kind === 'baseline') return 'Endpoint baseline · ' + (it.build || '') + ' (reference, never active)';
+    if (it.kind === 'signature-meta') return 'Signature metadata · ' + (it.signatures || 0) + ' id(s)';
+    if (it.section === 'cli-coverage') {
+      return 'CLI coverage · ' + (it.version || '') + ' · ' + (it.cli_only || 0) +
+             ' not in catalog, ' + (it.catalog_gap || 0) + ' catalog gap, ' +
+             (it.near_match || 0) + ' near match';
+    }
+    return it.id;
+  }
+  function apkVisible(it) {
+    return !apk.off['p:' + it.product] && !apk.off['s:' + it.section];
+  }
+  function apkCount() {
+    var n = document.querySelectorAll('#apk-items input[data-id]:checked').length;
+    document.getElementById('apk-count').textContent = n + ' item(s) selected';
+    var b = document.getElementById('apk-import-btn');
+    if (n && {{ (api_packs.role != 'standby')|tojson }}) b.removeAttribute('disabled');
+    else b.setAttribute('disabled', 'disabled');
+  }
+  function apkRenderItems() {
+    var rows = apk.items.filter(apkVisible).map(function (it) {
+      var st = APK_STATE[it.state] || ['fw-badge fw-badge-secondary', it.state];
+      var can = it.state === 'new' || it.state === 'update';
+      return '<tr><td><input class="form-check-input" type="checkbox" data-id="' +
+             escapeHtml(it.id) + '"' + (can ? ' checked' : ' disabled') + '></td>' +
+             '<td class="text-nowrap">' + escapeHtml(it.product || '') + '</td>' +
+             '<td>' + escapeHtml(apkWhat(it)) + '</td>' +
+             '<td class="text-nowrap"><span class="' + st[0] + '" title="' +
+             escapeHtml(it.warning || it.note || st[1]) + '">' + escapeHtml(it.state) + '</span>' +
+             (it.current ? ' <span class="fw-badge fw-badge-secondary apk-prov" title="current copy from">' +
+                           escapeHtml(it.current) + '</span>' : '') + '</td></tr>';
+    }).join('');
+    document.getElementById('apk-items').innerHTML = rows ||
+      '<tr><td colspan="4" class="text-muted">Nothing matches the filters.</td></tr>';
+    apkCount();
+  }
+  function apkRenderFilters() {
+    function uniq(key) {
+      var seen = {}; apk.items.forEach(function (it) { if (it[key]) seen[it[key]] = 1; });
+      return Object.keys(seen).sort();
+    }
+    var html = '<span class="text-muted">Products:</span>';
+    uniq('product').forEach(function (p) {
+      html += '<label class="form-check-label"><input class="form-check-input me-1" type="checkbox" ' +
+              'data-apk-filter="p:' + escapeHtml(p) + '" checked>' + escapeHtml(p) + '</label>';
+    });
+    html += '<span class="text-muted ms-2">Sections:</span>';
+    uniq('section').forEach(function (s) {
+      html += '<label class="form-check-label"><input class="form-check-input me-1" type="checkbox" ' +
+              'data-apk-filter="s:' + escapeHtml(s) + '" checked>' + escapeHtml(s) + '</label>';
+    });
+    document.getElementById('apk-filters').innerHTML = html;
+  }
+  function apkLoad(source, name) {
+    var box = document.getElementById('apk-detail');
+    apk = {source: source, name: name, items: [], off: {}};
+    document.getElementById('apk-pick').classList.add('d-none');
+    box.className = 'small';
+    box.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verifying ' +
+                    escapeHtml(name) + '…';
+    fetch(APK_INSPECT_URL + '?source=' + encodeURIComponent(source) + '&name=' +
+          encodeURIComponent(name), {credentials: 'same-origin',
+          headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) {
+          box.innerHTML = '<div class="alert alert-danger py-2 mb-0"><i class="bi bi-shield-exclamation me-1"></i>' +
+            escapeHtml(d.error) + '<div class="mt-1">A pack is verified with the keys of its lane ' +
+            '(<code>satom show trust</code>); a 2.x pack with the update trust store.</div></div>';
+          return;
+        }
+        apk.items = d.items || [];
+        var counts = {'new': 0, present: 0, local: 0};
+        apk.items.forEach(function (it) { counts[it.state] = (counts[it.state] || 0) + 1; });
+        box.innerHTML = '<div><span class="font-monospace">' + escapeHtml(d.version) + '</span> ' +
+          '<span class="fw-badge fw-badge-secondary apk-prov">' + escapeHtml(d.provenance || '') + '</span> ' +
+          '<span class="text-muted">built ' + escapeHtml(d.built_at || '') + ' · signed by ' +
+          escapeHtml((d.signed_by || {}).fingerprint || '') + '</span></div>' +
+          ((d.warnings || []).length ? '<div class="text-warning">' + (d.warnings || []).map(escapeHtml).join('<br>') + '</div>' : '') +
+          '<div class="text-muted">' + apk.items.length + ' item(s): ' + counts['new'] + ' new, ' +
+          counts.present + ' already present, ' + counts.local + ' measured locally</div>' +
+          (d.refusal ? '<div class="text-warning mt-1">' + escapeHtml(d.refusal) + '</div>' : '');
+        apkRenderFilters();
+        apkRenderItems();
+        document.getElementById('apk-pick').classList.remove('d-none');
+      })
+      .catch(function (e) {
+        box.innerHTML = '<span class="text-danger">Could not read the pack: ' +
+                        escapeHtml(String(e)) + '</span>';
+      });
+  }
+  function apkFollow(jobId) {
+    var wrap = document.getElementById('apk-progress');
+    var bar = document.getElementById('apk-bar');
+    var msg = document.getElementById('apk-msg');
+    var res = document.getElementById('apk-results');
+    wrap.classList.remove('d-none'); res.innerHTML = '';
+    if (window.JobsUI && window.JobsUI.trackJob) {
+      window.JobsUI.trackJob(jobId, 'API pack import');
+    }
+    function poll() {
+      fetch('/jobs/' + encodeURIComponent(jobId), {credentials: 'same-origin',
+            headers: {'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (j) {
+          bar.style.width = (j.percent || 0) + '%';
+          msg.textContent = j.message || j.status;
+          if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
+            bar.style.width = '100%';
+            bar.classList.toggle('bg-danger', j.status !== 'success');
+            if (j.error) msg.textContent = j.error;
+            ((j.result || {}).items || []).forEach(function (r) {
+              var li = document.createElement('li');
+              li.className = r.error ? 'text-danger' : (r.imported ? 'text-success' : 'text-muted');
+              li.textContent = r.id + ' — ' + (r.error || (r.imported ? 'imported' : r.state));
+              res.appendChild(li);
+            });
+            apkLoad(apk.source, apk.name);   // the states moved: re-read them
+            return;
+          }
+          setTimeout(poll, 1000);
+        })
+        .catch(function () { setTimeout(poll, 3000); });
+    }
+    poll();
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest ? ev.target.closest('[data-js="apk-select"]') : null;
+    if (t) { ev.preventDefault(); apkLoad(t.getAttribute('data-source'), t.getAttribute('data-name')); }
+  });
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t.matches && t.matches('[data-apk-filter]')) {
+      apk.off[t.getAttribute('data-apk-filter')] = !t.checked;
+      apkRenderItems();
+    } else if (t.id === 'apk-all') {
+      document.querySelectorAll('#apk-items input[data-id]:not([disabled])')
+        .forEach(function (cb) { cb.checked = t.checked; });
+      apkCount();
+    } else if (t.matches && t.matches('#apk-items input[data-id]')) {
+      apkCount();
+    }
+  });
+  var apkBtn = document.getElementById('apk-import-btn');
+  if (apkBtn) apkBtn.addEventListener('click', function () {
+    var ids = Array.prototype.map.call(
+      document.querySelectorAll('#apk-items input[data-id]:checked'),
+      function (cb) { return cb.getAttribute('data-id'); });
+    if (!ids.length) return;
+    var fd = new FormData();
+    fd.append('source', apk.source); fd.append('name', apk.name);
+    ids.forEach(function (i) { fd.append('ids', i); });
+    apkBtn.setAttribute('disabled', 'disabled');
+    fetch(APK_IMPORT_URL, {method: 'POST', body: fd, credentials: 'same-origin',
+          headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error || !d.job_id) {
+          document.getElementById('apk-progress').classList.remove('d-none');
+          document.getElementById('apk-msg').innerHTML = '<span class="text-danger">' +
+            escapeHtml(d.error || 'The import was not started.') + '</span>';
+          apkCount();
+          return;
+        }
+        apkFollow(d.job_id);
+      })
+      .catch(function (e) { apkCount();
+        document.getElementById('apk-msg').textContent = 'Import request failed: ' + e; });
+  });
+  (function () {
+    var pre = {{ (request.args.get('apipack') or '')|tojson }};
+    var cut = pre.indexOf(':');
+    if (cut > 0) { apkLoad(pre.slice(0, cut), pre.slice(cut + 1)); }
+  })();
+
+  // --- system-upgrade feed: check, then download into staging ---
+  var FEED_URL = '{{ url_for("self_update.package_feed") }}';
+  var FEED_FETCH_URL = '{{ url_for("self_update.package_fetch") }}';
+  var feedBtn = document.getElementById('feed-check-btn');
+  function feedSay(html) { document.getElementById('feed-msg').innerHTML = html; }
+  if (feedBtn) feedBtn.addEventListener('click', function () {
+    feedBtn.setAttribute('disabled', 'disabled');
+    feedSay('<span class="spinner-border spinner-border-sm me-1"></span>Checking…');
+    document.getElementById('feed-offer').classList.add('d-none');
+    fetch(FEED_URL, {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        feedBtn.removeAttribute('disabled');
+        if (!d.reachable) {
+          feedSay('<span class="text-danger">' + escapeHtml(d.error) + '</span>');
+          return;
+        }
+        var pkg = d.package || {};
+        var mb = ((pkg.size || 0) / 1048576).toFixed(1);
+        // Where the answer came from: the operator must be able to tell the
+        // public feed from an internal pipeline without opening Settings.
+        var src = ' <span class="text-muted">· source <code>' + escapeHtml(d.feed_url || '') + '</code>' +
+                  (d.authenticated ? ' (with user + token)' : '') + '</span>';
+        if (!d.newer) {
+          feedSay('<span class="text-success">Up to date</span> — the newest package is ' +
+                  escapeHtml(d.version) + ' and this node runs ' + escapeHtml(d.current_version) + '.' + src);
+          return;
+        }
+        feedSay('');
+        // A delta is built from exactly this node's version: a few MB, and the
+        // preflight proves it builds on this tree. The full package stays one
+        // click away for a node whose tree differs.
+        var full = d.full_package || {};
+        var isDelta = pkg.kind === 'delta';
+        document.getElementById('feed-offer-text').innerHTML =
+          '<strong>' + escapeHtml(d.version) + '</strong> is available (this node runs ' +
+          escapeHtml(d.current_version) + '): <code>' + escapeHtml(pkg.name) + '</code>, ' + mb +
+          ' MB' + (isDelta ? ' (delta from ' + escapeHtml(pkg.from) + '; the full package is ' +
+          ((full.size || 0) / 1048576).toFixed(1) + ' MB)' : '') +
+          (d.staged ? ' — <em>already staged below</em>' : '') + '.' + src;
+        document.getElementById('feed-dl-full-btn').classList.toggle('d-none', !isDelta);
+        document.getElementById('feed-offer').classList.remove('d-none');
+      })
+      .catch(function (e) { feedBtn.removeAttribute('disabled');
+        feedSay('<span class="text-danger">Check failed: ' + escapeHtml(e) + '</span>'); });
+  });
+  var feedDl = document.getElementById('feed-dl-btn');
+  var feedDlFull = document.getElementById('feed-dl-full-btn');
+  function feedDownload(full) {
+    feedDl.setAttribute('disabled', 'disabled');
+    if (feedDlFull) feedDlFull.setAttribute('disabled', 'disabled');
+    var wrap = document.getElementById('feed-progress');
+    var bar = document.getElementById('feed-bar');
+    var msg = document.getElementById('feed-progress-msg');
+    wrap.classList.remove('d-none');
+    msg.textContent = 'Starting the download…';
+    jpost(FEED_FETCH_URL + (full ? '?full=1' : '')).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.job_id) { msg.textContent = d.error || 'The download was not started.'; return; }
+      (function poll() {
+        fetch('/jobs/' + encodeURIComponent(d.job_id), {credentials: 'same-origin',
+              headers: {'X-Requested-With': 'XMLHttpRequest'}})
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function (j) {
+            bar.style.width = (j.percent || 0) + '%';
+            msg.textContent = j.message || j.status;
+            if (j.status === 'success') {
+              bar.style.width = '100%';
+              var name = (j.result || {}).name || '';
+              window.location = '{{ url_for("self_update.index") }}?pkg=' + encodeURIComponent(name);
+              return;
+            }
+            if (j.status === 'error' || j.status === 'cancelled') {
+              bar.classList.add('bg-danger');
+              msg.textContent = j.error || j.status;
+              feedDl.removeAttribute('disabled');
+              if (feedDlFull) feedDlFull.removeAttribute('disabled');
+              return;
+            }
+            setTimeout(poll, 1000);
+          })
+          .catch(function () { setTimeout(poll, 3000); });
+      })();
+    }).catch(function (e) { msg.textContent = 'Download request failed: ' + e;
+      feedDl.removeAttribute('disabled');
+      if (feedDlFull) feedDlFull.removeAttribute('disabled'); });
+  }
+  if (feedDl) feedDl.addEventListener('click', function () { feedDownload(false); });
+  if (feedDlFull) feedDlFull.addEventListener('click', function () { feedDownload(true); });
+
+  // --- knowledge packs: check the feed, download, import ---
+  var KN_CHECK_URL = '{{ url_for("self_update.knowledge_check") }}';
+  var KN_DL_URL = '{{ url_for("self_update.knowledge_download") }}';
+  var KN_IMPORT_URL = '{{ url_for("self_update.knowledge_import") }}';
+  var knCheck = document.getElementById('kn-check-btn');
+  var knDl = document.getElementById('kn-dl-btn');
+  var knImp = document.getElementById('kn-import-btn');
+  function knSay(html) { document.getElementById('kn-msg').innerHTML = html; }
+  if (knCheck) knCheck.addEventListener('click', function () {
+    knCheck.setAttribute('disabled', 'disabled');
+    knDl.classList.add('d-none'); knImp.classList.add('d-none');
+    knSay('<span class="spinner-border spinner-border-sm me-1"></span>Checking…');
+    jpost(KN_CHECK_URL).then(function (r) { return r.json(); }).then(function (d) {
+      knCheck.removeAttribute('disabled');
+      if (!d.reachable) { knSay('<span class="text-danger">' + escapeHtml(d.error) + '</span>'); return; }
+      var f = d.feed || {};
+      var mb = ((f.size || 0) / 1048576).toFixed(1);
+      var link = document.getElementById('kn-manual-pack');
+      if (link && f.url) { link.innerHTML = ', <a href="' + escapeHtml(f.url) + '" rel="noopener noreferrer">' + escapeHtml(f.file) + '</a>'; }
+      if (!d.newer) {
+        knSay('<span class="text-success">Up to date</span> — the newest knowledge pack is <code>' +
+              escapeHtml(f.version) + '</code>.');
+        return;
+      }
+      knSay('<strong>' + escapeHtml(f.version) + '</strong> is available: <code>' + escapeHtml(f.file) +
+            '</code>, ' + mb + ' MB' + (f.approved_at ? ', approved ' + escapeHtml(f.approved_at) : '') +
+            (f.diff_summary ? '<div class="text-muted">' + escapeHtml(typeof f.diff_summary === 'string' ? f.diff_summary : JSON.stringify(f.diff_summary)) + '</div>' : '') +
+            (d.staged ? ' — <em>already downloaded</em>' : ''));
+      if (!d.staged) knDl.classList.remove('d-none');
+      knImp.classList.remove('d-none');
+    }).catch(function (e) { knCheck.removeAttribute('disabled');
+      knSay('<span class="text-danger">Check failed: ' + escapeHtml(e) + '</span>'); });
+  });
+  function knJob(url, btn) {
+    btn.setAttribute('disabled', 'disabled');
+    var wrap = document.getElementById('kn-progress');
+    var bar = document.getElementById('kn-bar');
+    var msg = document.getElementById('kn-progress-msg');
+    wrap.classList.remove('d-none'); bar.classList.remove('bg-danger');
+    msg.textContent = 'Starting…';
+    jpost(url).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.job_id) { msg.textContent = d.error || 'Not started.'; btn.removeAttribute('disabled'); return; }
+      (function poll() {
+        fetch('/jobs/' + encodeURIComponent(d.job_id), {credentials: 'same-origin',
+              headers: {'X-Requested-With': 'XMLHttpRequest'}})
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function (j) {
+            bar.style.width = (j.percent || 0) + '%';
+            msg.textContent = j.message || j.status;
+            if (j.status === 'success') {
+              bar.style.width = '100%';
+              setTimeout(function () { window.location = '{{ url_for("self_update.index", _anchor="knowledge-packs") }}'; }, 1500);
+              return;
+            }
+            if (j.status === 'error' || j.status === 'cancelled') {
+              bar.classList.add('bg-danger'); msg.textContent = j.error || j.status;
+              btn.removeAttribute('disabled'); return;
+            }
+            setTimeout(poll, 1000);
+          })
+          .catch(function () { setTimeout(poll, 3000); });
+      })();
+    }).catch(function (e) { msg.textContent = 'Request failed: ' + e; btn.removeAttribute('disabled'); });
+  }
+  if (knDl) knDl.addEventListener('click', function () { knJob(KN_DL_URL, knDl); });
+  if (knImp) knImp.addEventListener('click', function () { knJob(KN_IMPORT_URL, knImp); });
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+
+  // --- HA link: re-check, preview, confirm, follow, show before/after ------
+  // The preview is a POST without confirm=1: the server answers the plan (or
+  // why it refuses) and changes nothing. Only the confirm button enqueues.
+  var HL_CHECK = '{{ url_for("self_update.ha_link_check") }}';
+  var HL_REPAIR = '{{ url_for("self_update.ha_link_repair") }}';
+  var HL_STATUS = '{{ url_for("self_update.ha_link_repair_status", uid="__UID__") }}';
+  var hlBadge = {ok: 'success', warning: 'warning', broken: 'danger'};
+  var hlVerdict = document.getElementById('ha-link-verdict');
+  var hlBody = document.getElementById('ha-link-body');
+  var hlPrev = document.getElementById('ha-link-preview');
+  var hlProg = document.getElementById('ha-link-progress');
+  function hlPost(confirm) {
+    return fetch(HL_REPAIR, {method: 'POST', credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: confirm ? '1' : ''})})
+      .then(function (r) { return r.json(); });
+  }
+  function hlSummary(c) {
+    if (!c) { return ''; }
+    var h = '<span class="fw-badge fw-badge-' + (hlBadge[c.verdict] || 'secondary') + '">' +
+      escapeHtml(c.verdict) + '</span>';
+    (c.standby || []).forEach(function (s) { h += ' ' + escapeHtml(s.text); });
+    if ((c.problems || []).length) {
+      h += '<ul class="mb-1">';
+      c.problems.forEach(function (p) {
+        h += '<li><code>' + escapeHtml(p.code) + '</code> ' + escapeHtml(p.text) + '</li>';
+      });
+      h += '</ul>';
+    }
+    return h;
+  }
+  function hlShowVerdict(c) {
+    if (!hlVerdict || !c) { return; }
+    hlVerdict.className = 'fw-badge fw-badge-' + (hlBadge[c.verdict] || 'secondary');
+    hlVerdict.textContent = c.verdict;
+  }
+  function hlList(id, items) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    el.innerHTML = '';
+    (items || []).forEach(function (t) {
+      var li = document.createElement('li'); li.textContent = t; el.appendChild(li);
+    });
+  }
+  var hlRecheck = document.querySelector('[data-js="ha-link-recheck"]');
+  if (hlRecheck) hlRecheck.addEventListener('click', function () {
+    hlRecheck.setAttribute('disabled', 'disabled');
+    fetch(HL_CHECK, {credentials: 'same-origin'}).then(function (r) { return r.json(); })
+      .then(function (c) {
+        hlRecheck.removeAttribute('disabled');
+        hlShowVerdict(c);
+        if (hlBody) { hlBody.innerHTML = hlSummary(c) ||
+          '<span class="text-muted">' + escapeHtml((c.repair || {}).refusal || '') + '</span>'; }
+      })
+      .catch(function () { hlRecheck.removeAttribute('disabled'); });
+  });
+  var hlRepair = document.querySelector('[data-js="ha-link-repair"]');
+  if (hlRepair) hlRepair.addEventListener('click', function () {
+    hlProg.classList.add('d-none');
+    hlPost(false).then(function (d) {
+      if (d.refused) {
+        hlProg.innerHTML = '<span class="text-danger">' + escapeHtml(d.refused) + '</span>';
+        hlProg.classList.remove('d-none');
+        return;
+      }
+      hlList('ha-link-does', d.does);
+      hlList('ha-link-does-not', d.does_not);
+      hlPrev.classList.remove('d-none');
+    }).catch(function () {
+      hlProg.innerHTML = '<span class="text-danger">Preview failed.</span>';
+      hlProg.classList.remove('d-none');
+    });
+  });
+  var hlCancel = document.querySelector('[data-js="ha-link-cancel"]');
+  if (hlCancel) hlCancel.addEventListener('click', function () { hlPrev.classList.add('d-none'); });
+  var hlConfirm = document.querySelector('[data-js="ha-link-confirm"]');
+  if (hlConfirm) hlConfirm.addEventListener('click', function () {
+    hlConfirm.setAttribute('disabled', 'disabled');
+    hlPost(true).then(function (d) {
+      hlPrev.classList.add('d-none');
+      hlConfirm.removeAttribute('disabled');
+      hlProg.classList.remove('d-none');
+      if (d.refused || !d.uid) {
+        hlProg.innerHTML = '<span class="text-danger">' + escapeHtml(d.refused || 'Not queued.') + '</span>';
+        return;
+      }
+      var before = '<div><span class="text-muted">Before:</span> ' + hlSummary(d.before) + '</div>';
+      hlProg.innerHTML = before + '<div>Queued <code>' + escapeHtml(d.uid) +
+        '</code> — waiting for the privileged runner…</div>';
+      var tries = 0;
+      (function poll() {
+        tries += 1;
+        fetch(HL_STATUS.replace('__UID__', encodeURIComponent(d.uid)), {credentials: 'same-origin'})
+          .then(function (r) { return r.json(); })
+          .then(function (s) {
+            var steps = (s.steps || []).map(function (st) {
+              return '<li>' + (st.ok ? '✓ ' : '✗ ') + escapeHtml(st.name) +
+                (st.detail ? ' — ' + escapeHtml(st.detail) : '') + '</li>';
+            }).join('');
+            var html = before + '<div>Runner: <strong>' + escapeHtml(s.state) + '</strong></div>' +
+              (steps ? '<ol class="mb-1">' + steps + '</ol>' : '');
+            if (s.done) {
+              html += '<div><span class="text-muted">After:</span> ' + hlSummary(s.after) + '</div>';
+              if (s.after) { hlShowVerdict(s.after); }
+              if (s.after && s.after.verdict !== 'ok') {
+                html += '<div class="text-muted">The standby retries every minute; re-check in a minute ' +
+                  'if it still reports a fetch error from before the repair.</div>';
+              }
+              hlProg.innerHTML = html;
+              return;
+            }
+            hlProg.innerHTML = html;
+            if (tries < 60) { setTimeout(poll, 2000); }
+          })
+          .catch(function () { if (tries < 60) { setTimeout(poll, 2000); } });
+      })();
+    }).catch(function () {
+      hlConfirm.removeAttribute('disabled');
+      hlProg.innerHTML = '<span class="text-danger">Could not queue the repair.</span>';
+      hlProg.classList.remove('d-none');
+    });
+  });
+})();
+</script>
+{% endblock %}

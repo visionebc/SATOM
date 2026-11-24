@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}Collection — Administrator{% endblock %}
+{% block content %}
+{% set can_write = current_user.can('config_write') %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-cloud-download me-2"></i>{{ _('Metrics collection') }}</h4>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('One row per (device, collector). Each collector turns ONE device call into many series in the local metrics store — the interval is yours to set, per target. Devices in maintenance are skipped automatically.') }}</p>
+  </div>
+  {% if can_write %}
+  <form method="post" action="{{ url_for('metrics_admin.run_now') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>{{ _('Run sweep now') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-database-check me-1"></i>{{ _('Metrics store (VictoriaMetrics, this node)') }}</strong></div>
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap gap-4 align-items-center small">
+      <span>Status:
+        {% if vm.up %}<span class="badge bg-success">{{ _('up') }}</span>
+        {% else %}<span class="badge bg-danger">DOWN</span> <code>{{ vm.detail }}</code>{% endif %}
+      </span>
+      <span>Endpoint: <code>{{ vm.url }}</code> (loopback only — queries go through this console)</span>
+      {% if vm.series is not none %}<span>{{ _('Series:') }} <strong>{{ vm.series }}</strong></span>{% endif %}
+      <span class="text-muted">{{ _('Raw retention 396 days at full resolution — no rollup averaging.') }}</span>
+    </div>
+    {# Peer dual-write: whether this node's samples also exist on the peer. #}
+    <div class="d-flex flex-wrap gap-3 align-items-center small mt-2" id="mc-peer">
+      <span>{{ _('Peer dual-write:') }}
+        {% if not peer.enabled %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>
+        {% elif peer.redundant %}<span class="fw-badge fw-badge-success">{{ peer.state }}</span>
+        {% elif peer.alarm %}<span class="fw-badge fw-badge-danger">{{ peer.state }}</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">{{ peer.state }}</span>{% endif %}
+      </span>
+      {% if peer.enabled %}
+      <span>{{ _('Peer:') }} <code>{{ peer.host or '—' }}</code></span>
+      <span>{{ _('Last success:') }} {{ (peer.last_success_at or '')|replace('T', ' ') or _('never') }}</span>
+      {% if peer.consecutive_failures %}<span class="text-danger">{{ _('Consecutive failures:') }} {{ peer.consecutive_failures }}</span>{% endif %}
+      {% if peer.last_error %}<span class="text-muted">{{ peer.last_error|truncate(120) }}</span>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# Store snapshots + per-node store state. Both are fetched after the page
+   (/snapshots asks the local store, /stores asks the peer) so a render never
+   waits on store or peer I/O. Snapshots never expire, so the list sits next
+   to the trigger and deletion is explicit. #}
+<div class="card mb-3" id="mc-store-card"
+     data-snapshots-url="{{ url_for('metrics_admin.snapshots') }}"
+     data-stores-url="{{ url_for('metrics_admin.stores') }}"
+     data-snapshot-post="{{ url_for('metrics_admin.snapshot') }}"
+     data-can-write="{{ '1' if can_write else '0' }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-camera me-1"></i>{{ _('Store snapshots and nodes') }}</strong>
+    {% if can_write %}
+    <form method="post" action="{{ url_for('metrics_admin.snapshot') }}" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-camera me-1"></i>{{ _('Take snapshot') }}</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    <div class="mb-2"><strong>{{ _('Nodes') }}</strong>
+      <ul class="mb-0" id="mc-stores"><li class="text-muted">{{ _('Loading…') }}</li></ul></div>
+    <div><strong>{{ _('Snapshots') }}</strong>
+      <ul class="mb-0" id="mc-snapshots"><li class="text-muted">{{ _('Loading…') }}</li></ul></div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var card = document.getElementById('mc-store-card');
+  if (!card) { return; }
+  var canWrite = card.dataset.canWrite === '1';
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function li(text, cls) {
+    var el = document.createElement('li');
+    el.textContent = text;
+    if (cls) { el.className = cls; }
+    return el;
+  }
+  fetch(card.dataset.storesUrl, {credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var ul = document.getElementById('mc-stores');
+      ul.textContent = '';
+      (d.nodes || []).forEach(function (n) {
+        var s = n.store || {};
+        var txt = (n.node || '?') + (n.is_local ? ' (this node)' : '') + ': ' +
+                  (s.state || '?') + (s.series != null ? ' · ' + s.series + ' series' : '') +
+                  (n.last_write_at ? ' · last write ' + n.last_write_at : '') +
+                  (s.detail ? ' · ' + s.detail : '');
+        ul.appendChild(li(txt, s.up ? '' : 'text-muted'));
+      });
+      if (!ul.children.length) { ul.appendChild(li('No node reported.', 'text-muted')); }
+    })
+    .catch(function () {
+      var ul = document.getElementById('mc-stores');
+      ul.textContent = '';
+      ul.appendChild(li('Could not read the node stores.', 'text-danger'));
+    });
+  fetch(card.dataset.snapshotsUrl, {credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var ul = document.getElementById('mc-snapshots');
+      ul.textContent = '';
+      if (!d.ok) {
+        ul.appendChild(li('Could not list snapshots' + (d.detail ? ': ' + d.detail : '.'), 'text-danger'));
+        return;
+      }
+      (d.snapshots || []).forEach(function (name) {
+        var row = li(name + ' ', 'font-monospace');
+        if (canWrite) {
+          var f = document.createElement('form');
+          f.method = 'post';
+          f.action = card.dataset.snapshotPost;
+          f.className = 'd-inline';
+          var t = document.createElement('input');
+          t.type = 'hidden'; t.name = 'csrf_token'; t.value = csrf;
+          var n = document.createElement('input');
+          n.type = 'hidden'; n.name = 'delete'; n.value = name;
+          var b = document.createElement('button');
+          b.className = 'btn btn-sm btn-outline-danger py-0';
+          b.textContent = 'Delete';
+          f.addEventListener('submit', function (ev) {
+            if (!window.confirm('Delete snapshot ' + name + '?')) { ev.preventDefault(); }
+          });
+          f.appendChild(t); f.appendChild(n); f.appendChild(b);
+          row.appendChild(f);
+        }
+        ul.appendChild(row);
+      });
+      if (!ul.children.length) { ul.appendChild(li('No snapshots.', 'text-muted')); }
+    })
+    .catch(function () {
+      var ul = document.getElementById('mc-snapshots');
+      ul.textContent = '';
+      ul.appendChild(li('Could not list snapshots.', 'text-danger'));
+    });
+})();
+</script>
+
+<div class="card">
+  <div class="card-header"><strong><i class="bi bi-collection me-1"></i>{{ _('Scrape targets') }}</strong></div>
+  <div class="card-body">
+    {% if not targets %}
+      <div class="alert alert-secondary small mb-0">No targets yet — they are provisioned when an appliance is saved, and again on every sweep (scheduled action <code>metrics_scrape</code>, or the button above).</div>
+    {% else %}
+    <table class="table table-sm table-hover align-middle mb-2">
+      <thead><tr>
+        <th>{{ _('Device') }}</th><th>{{ _('Collector') }}</th><th style="width:170px;">{{ _('Interval (min)') }}</th>
+        <th>{{ _('Enabled') }}</th><th>{{ _('Last run (UTC)') }}</th><th>{{ _('Status') }}</th><th>{{ _('Series') }}</th><th>{{ _('ms') }}</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in targets %}
+        <tr>
+          <td class="small font-monospace">
+            {{ t.device }} <span class="text-muted">({{ t.kind }})</span>
+            {# The row's two forms live here, empty; the inputs and buttons in
+               the other cells attach via the form= attribute — a <form> tag
+               spanning <td>s is invalid HTML and browsers silently hoist it. #}
+            <form id="sv-{{ t.id }}" method="post" action="{{ url_for('metrics_admin.update_target', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="_redirect" value="1">
+            </form>
+            <form id="tg-{{ t.id }}" method="post" action="{{ url_for('metrics_admin.update_target', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="_redirect" value="1">
+              <input type="hidden" name="enabled" value="{{ '0' if t.enabled else '1' }}">
+            </form>
+          </td>
+          <td class="small">{{ collectors[t.collector].label if t.collector in collectors else t.collector }}</td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="number" class="form-control" name="interval_min" form="sv-{{ t.id }}" value="{{ t.interval_min }}" min="1" max="1440" style="max-width:80px;"{{ '' if can_write else ' disabled' }}>
+              {% if t.params.top_n %}
+              <span class="input-group-text">{{ _('top') }}</span>
+              <input type="number" class="form-control" name="top_n" form="sv-{{ t.id }}" value="{{ t.params.top_n }}" min="1" max="200" style="max-width:70px;"{{ '' if can_write else ' disabled' }}>
+              {% endif %}
+            </div>
+          </td>
+          {# The toggle is a BUTTON, not a link: it POSTs and changes state, and
+             a bare <button class="btn-link"> reads as navigation. Same
+             btn-outline-light chrome as the save button in the last column so a
+             row has one visual language. #}
+          <td class="text-nowrap">
+            {% if t.enabled %}<span class="badge bg-success">{{ _('on') }}</span>{% else %}<span class="badge bg-secondary">{{ _('off') }}</span>{% endif %}
+            {% if can_write %}
+            <button class="btn btn-outline-light btn-sm py-0 ms-1" form="tg-{{ t.id }}"
+                    title="{{ 'Stop collecting this target' if t.enabled else 'Start collecting this target' }}">
+              <i class="bi {{ 'bi-pause-fill' if t.enabled else 'bi-play-fill' }} me-1"></i>{{ 'Disable' if t.enabled else 'Enable' }}</button>
+            {% endif %}
+          </td>
+          <td class="small">{{ t.last_run_at|replace('T', ' ') or '—' }}</td>
+          <td class="small">
+            {% if t.last_status == 'ok' %}<span class="badge bg-success">{{ _('ok') }}</span>
+            {% elif t.last_status == 'error' %}<span class="badge bg-danger" title="{{ t.last_detail }}">{{ _('error') }}</span>
+            {% else %}<span class="badge bg-secondary">{{ _('never') }}</span>{% endif %}
+            {% if t.last_detail %}<div class="text-muted" style="max-width:260px;">{{ t.last_detail|truncate(80) }}</div>{% endif %}
+          </td>
+          <td class="small">{{ t.last_series }}</td>
+          <td class="small">{{ t.last_ms }}</td>
+          <td class="text-end">
+            {% if can_write %}
+            <button class="btn btn-outline-light btn-sm py-0" form="sv-{{ t.id }}" title="{{ _('save interval / top-N') }}"><i class="bi bi-check2"></i></button>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-muted small mb-0">{{ _('Cost tiers:') }} <em>{{ _('box / policies / interfaces') }}</em> {{ _('are one call per device (cheap — safe at 3 min for a whole fleet).') }} <em>{{ _('traffic / transactions') }}</em> {{ _('are one call') }} <strong>{{ _('per policy') }}</strong>{{ _(', so they run less often and only against the top-N policies by live connection rate. The device total is always collected.') }}</p>
+    {% endif %}
+
+    {# Beyond the device APIs (services/snmp_collect, services/syslog_receiver):
+       the two collectors that do not read the appliance's own REST/CLI. #}
+    <div class="row g-3 mt-1" id="mc-beyond">
+      <div class="col-lg-5">
+        <div class="border rounded p-2 h-100">
+          <strong><i class="bi bi-broadcast me-1"></i>{{ _('SNMP polling') }}</strong>
+          <span class="text-muted small ms-1">{{ _('v2c, opt-in per appliance (edit the appliance)') }}</span>
+          <table class="table table-sm small mb-1 mt-1">
+            <thead><tr><th>{{ _('Device') }}</th><th>{{ _('SNMP') }}</th><th>{{ _('Last poll') }}</th></tr></thead>
+            <tbody>
+            {% for s in beyond.snmp %}
+              <tr>
+                <td><a href="{{ url_for('appliances.edit', id=s.id) }}" class="font-monospace">{{ s.name }}</a> <span class="text-muted">({{ s.kind }})</span></td>
+                <td>{% if s.enabled and s.has_community %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span> <span class="text-muted">:{{ s.port }}</span>
+                    {% elif s.enabled %}<span class="fw-badge fw-badge-warning">{{ _('no community') }}</span>
+                    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}</td>
+                <td>{% if s.target and s.target.last_status %}<span class="fw-badge fw-badge-{{ 'success' if s.target.last_status == 'ok' else 'danger' }}">{{ s.target.last_status }}</span>
+                    <span class="text-muted">{{ (s.target.last_run_at or '')|replace('T', ' ') }}</span>
+                    {% if s.target.last_detail %}<div class="text-muted">{{ s.target.last_detail|truncate(70) }}</div>{% endif %}
+                    {% else %}<span class="text-muted">—</span>{% endif %}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" class="text-muted">{{ _('No appliance in this ADOM.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <div class="text-muted small">{{ _('Series:') }} <code>satom_snmp_sysuptime_seconds</code>, <code>satom_snmp_if_*</code>, <code>satom_snmp_cpu_pct</code>, <code>satom_snmp_mem_pct</code>; {{ _('a failed poll writes') }} <code>satom_scrape_up{collector="snmp"} 0</code>.</div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="border rounded p-2 h-100" id="mc-syslog">
+          <strong><i class="bi bi-inbox me-1"></i>{{ _('Syslog receiver') }}</strong>
+          {% set sl = beyond.syslog %}
+          {% if sl.running %}<span class="fw-badge fw-badge-success ms-1">{{ _('listening') }}</span> <code>{{ sl.bind }}</code>
+          {% elif sl.config.enabled %}<span class="fw-badge fw-badge-danger ms-1">{{ _('not running') }}</span> <span class="text-muted small">{{ sl.error or sl.reason or _('the scheduler has not reported yet') }}</span>
+          {% else %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('off') }}</span>{% endif %}
+          <div class="small text-muted mt-1">
+            {{ _('Received:') }} {{ sl.received or 0 }}
+            {% if sl.dropped %}· {{ _('Dropped:') }} {% for reason, n in sl.dropped.items() %}<span class="text-danger">{{ n }} {{ reason }}</span>{{ ', ' if not loop.last }}{% endfor %}{% endif %}
+            {% if sl.known_sources is defined %}· {{ _('Known senders:') }} {{ sl.known_sources }}{% endif %}
+            {% if sl.checked_at %}· {{ _('Journalled:') }} {{ sl.checked_at|replace('T', ' ') }}{% endif %}
+          </div>
+          {% if sl.strangers %}
+          <div class="small mt-1" id="mc-syslog-strangers">
+            <span class="text-danger">{{ _('Dropped senders (not a registered appliance):') }}</span>
+            {% for s in sl.strangers[:10] %}
+            <div><code>{{ s.ip }}</code> · {{ s.count }} {{ _('message(s)') }} · {{ _('last') }} {{ (s.last_at or '')|replace('T', ' ') }}
+              {% if s.retired_name %}· <strong>{{ _('was %(name)s, de-registered %(when)s — remove this receiver from its syslog settings, or register it again', name=s.retired_name, when=(s.retired_at or '')[:10]) }}</strong>{% endif %}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if sl.per_device %}
+          <table class="table table-sm small mb-1 mt-1">
+            <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Messages') }}</th><th>{{ _('Last') }}</th><th>{{ _('Severity') }}</th></tr></thead>
+            <tbody>{% for name, d in sl.per_device.items() %}
+              <tr><td class="font-monospace">{{ name }}</td><td>{{ d.count }}</td><td class="text-muted">{{ (d.last_at or '')|replace('T', ' ') }}</td><td>{{ d.last_severity }}</td></tr>
+            {% endfor %}</tbody>
+          </table>
+          {% endif %}
+          {% if can_write %}
+          <form method="post" action="{{ url_for('metrics_admin.syslog_settings') }}" class="row g-2 align-items-end small mt-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-auto"><div class="form-check"><input type="checkbox" class="form-check-input" name="enabled" id="sl-enabled" {{ 'checked' if sl.config.enabled }}><label class="form-check-label" for="sl-enabled">{{ _('Enabled') }}</label></div></div>
+            <div class="col-auto"><label class="form-label mb-0">{{ _('Bind address') }}</label><input type="text" class="form-control form-control-sm" name="bind_host" value="{{ sl.config.bind_host }}"></div>
+            <div class="col-auto"><label class="form-label mb-0">{{ _('Port') }}</label><input type="number" class="form-control form-control-sm" name="bind_port" min="1" max="65535" value="{{ sl.config.bind_port }}"></div>
+            <div class="col-auto"><div class="form-check"><input type="checkbox" class="form-check-input" name="tcp" id="sl-tcp" {{ 'checked' if sl.config.tcp }}><label class="form-check-label" for="sl-tcp">TCP</label></div></div>
+            <div class="col-md-4"><label class="form-label mb-0">{{ _('Extra sender networks') }}</label><input type="text" class="form-control form-control-sm" name="extra_sources" value="{{ sl.config.extra_sources }}" placeholder="198.51.100.0/24, 192.0.2.7"></div>
+            <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">{{ _('Save') }}</button></div>
+            <div class="col-12 form-text">{{ _('Senders are the appliances\' management addresses; anything else is dropped and counted. UDP always; port 514 needs a redirect or CAP_NET_BIND_SERVICE on the scheduler unit (default 5514). The listener runs in the scheduler sidecar on the primary.') }}</div>
+            <div class="col-12 form-text">{{ _('Switching the receiver on does not open this node\'s packet filter: allow the port (UDP, and TCP if enabled) from the appliances\' management networks on every node, primary and standby.') }}</div>
+          </form>
+          {% endif %}
+          {% if beyond.is_global and sl.recent %}
+          <details class="mt-2"><summary class="small">{{ _('Recent messages') }} ({{ sl.recent|length }}, {{ _('newest last, secrets redacted') }})</summary>
+            <div style="max-height:260px;overflow:auto;">
+            <table class="table table-sm small mb-0 font-monospace">
+              <tbody>{% for m in sl.recent %}
+                <tr><td class="text-muted text-nowrap">{{ m.at|replace('T', ' ') }}</td><td>{{ m.device }}</td><td>{{ m.severity }}</td><td>{{ m.text }}</td></tr>
+              {% endfor %}</tbody>
+            </table></div>
+          </details>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Absence is not health: a device that yields no targets would otherwise
+       appear nowhere on this page and read as covered. #}
+    {% if gaps %}
+    <div class="alert alert-warning small mt-3 mb-0">
+      <strong><i class="bi bi-exclamation-triangle me-1"></i>{{ gaps|length }} device(s) with no collection</strong>
+      <ul class="mb-0 mt-1">
+        {% for g in gaps %}
+        <li><span class="font-monospace">{{ g.name }}</span>
+            <span class="text-muted">({{ g.kind }})</span> — {{ g.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

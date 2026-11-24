@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Jobs') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-list-task me-2 text-accent"></i>{{ _('Jobs') }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Every background task — running and executed. Pause, resume or stop a job;
+      see who launched it, where it runs and how far it got.
+      {% if is_admin %}You are seeing <strong>{{ _('all users\'') }}</strong> jobs.{% else %}You are seeing your own jobs.{% endif %}
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="jm-live" class="fw-badge" title="{{ _('Auto-refreshing every 3s') }}">
+      <i class="bi bi-arrow-repeat me-1"></i><span id="jm-count">–</span> {{ _('jobs') }}
+    </span>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body py-2 d-flex flex-wrap align-items-center gap-2">
+    <select id="jm-status" class="form-select form-select-sm" style="width:auto;">
+      <option value="">{{ _('All states') }}</option>
+      <option value="running">{{ _('Running') }}</option>
+      <option value="paused">{{ _('Paused') }}</option>
+      <option value="pausing">{{ _('Pausing') }}</option>
+      <option value="cancelling">{{ _('Stopping') }}</option>
+      <option value="pending">{{ _('Pending') }}</option>
+      <option value="success">{{ _('Success') }}</option>
+      <option value="cancelled">{{ _('Stopped') }}</option>
+      <option value="error">{{ _('Error') }}</option>
+    </select>
+    <input id="jm-search" type="search" class="form-control form-control-sm" style="max-width:260px;"
+           placeholder="{{ _('Filter by title, type, user, device…') }}">
+    <div class="form-check form-switch ms-auto mb-0" style="font-size:13px;">
+      <input class="form-check-input" type="checkbox" id="jm-active-only">
+      <label class="form-check-label" for="jm-active-only">{{ _('Active only') }}</label>
+    </div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="table fw-table mb-0" id="jm-table">
+        <thead>
+          <tr>
+            <th style="width:112px;">{{ _('Status') }}</th>
+            <th>{{ _('Job') }}</th>
+            <th style="width:150px;" class="jm-c-progress">{{ _('Progress') }}</th>
+            <th style="width:120px;" class="jm-c-owner">{{ _('Owner') }}</th>
+            <th style="width:170px;" class="jm-c-where">{{ _('Where') }}</th>
+            <th style="width:120px;" class="jm-c-started">{{ _('Started') }}</th>
+            <th style="width:1%;" class="text-end">{{ _('Actions') }}</th>
+          </tr>
+        </thead>
+        <tbody id="jm-body">
+          <tr><td colspan="7" class="text-center text-muted py-5">{{ _('Loading…') }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+#jm-table td { vertical-align: middle; font-size: 13px; }
+.jm-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
+  padding:3px 9px; border-radius:20px; white-space:nowrap; }
+.jm-badge .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.jm-st-running    { color:#1D4ED8; background:rgba(59,130,246,.12); }
+.jm-st-pending    { color:#3D4550; background:rgba(148,163,184,.16); }
+.jm-st-pausing, .jm-st-paused { color:#7A5700; background:rgba(251,191,36,.16); }
+.jm-st-cancelling { color:#9A3412; background:rgba(249,115,22,.14); }
+.jm-st-cancelled  { color:#7A5700; background:rgba(251,191,36,.12); }
+.jm-st-success    { color:#15692A; background:rgba(16,185,129,.14); }
+.jm-st-error      { color:#8B1C2A; background:rgba(239,68,68,.12); }
+.jm-st-running .dot { animation: jmPulse 1.4s ease infinite; }
+@keyframes jmPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+/* Nothing in a cell may force the table wider than the card: long tokens
+   (job IDs, api-token owners, error messages) wrap or clamp instead. */
+.jm-title { font-weight:600; overflow-wrap:anywhere; }
+.jm-type  { font-size:11px; color:#64748b; overflow-wrap:anywhere; }
+.jm-id    { font-family:var(--bs-font-monospace,ui-monospace,monospace); font-size:11px;
+  color:#64748b; cursor:pointer; }
+.jm-id:hover { color:#3b82f6; text-decoration:underline; }
+.jm-msg   { font-size:11px; color:#64748b; overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.jm-track { height:6px; background:rgba(148,163,184,.15); border-radius:6px; overflow:hidden; }
+.jm-bar   { height:100%; border-radius:6px; transition:width .3s ease;
+  background:linear-gradient(90deg,#3b82f6,#8b5cf6); }
+.jm-bar.ok{ background:#10b981; } .jm-bar.err{ background:#ef4444; } .jm-bar.warn{ background:#fbbf24; }
+.jm-pct   { font-size:11px; color:#64748b; margin-top:2px; white-space:nowrap; }
+.jm-chip  { display:inline-block; font-size:11px; color:#3D4550; background:rgba(148,163,184,.10);
+  border:1px solid rgba(148,163,184,.25); border-radius:6px; padding:1px 7px; margin:1px 2px 1px 0;
+  max-width:100%; overflow-wrap:anywhere; }
+.jm-btn   { font-size:11px; font-weight:600; padding:3px 9px; border-radius:7px; white-space:nowrap;
+  border:1px solid rgba(148,163,184,.35); background:rgba(148,163,184,.08); color:inherit; }
+.jm-btn:hover { background:rgba(148,163,184,.18); }
+.jm-btn.stop:hover { background:rgba(239,68,68,.18); border-color:#ef4444; }
+.jm-btn.pause:hover, .jm-btn.resume:hover { background:rgba(251,191,36,.18); border-color:#fbbf24; }
+.jm-btn[disabled] { opacity:.45; pointer-events:none; }
+.jm-detail td { background:var(--fw-content-bg); }
+.jm-steps { margin:0 0 8px; font-size:12px; }
+.jm-steps-h { font-weight:600; color:#3D4550; margin-bottom:4px; }
+.jm-steps ol { margin:0; padding-left:22px; max-height:240px; overflow:auto; }
+.jm-steps li { color:#1f2937; line-height:1.5; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+.jm-steps li.bad { color:#8B1C2A; }
+.jm-steps .t { color:#6b7280; } .jm-steps .o { font-weight:600; }
+.jm-detail pre { font-size:11px; max-height:280px; overflow:auto; margin:0;
+  white-space:pre-wrap; word-break:break-word; }
+tr.jm-row { cursor:pointer; }
+.jm-act   { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+/* Narrow screens: Owner/Where (<1400) and Started (<1200) fold into the Job
+   cell as chips instead of squeezing the Job column to a sliver. */
+.jm-inline { display:none; margin-top:4px; }
+.jm-inline .jm-i-started { display:none; }
+@media (max-width: 1399.98px) {
+  #jm-table .jm-c-owner, #jm-table .jm-c-where { display:none; }
+  .jm-inline { display:block; }
+}
+@media (max-width: 1199.98px) {
+  #jm-table .jm-c-started { display:none; }
+  .jm-inline .jm-i-started { display:inline-block; }
+  #jm-table th.jm-c-progress { width:110px !important; }
+  .jm-btn .jm-lbl { display:none; }   /* icon-only Pause/Resume/Stop; title keeps the word */
+}
+</style>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var POLL_MS = 3000;
+  var body = document.getElementById('jm-body');
+  if (!body) return;
+  var stateSel = document.getElementById('jm-status');
+  var search = document.getElementById('jm-search');
+  var activeOnly = document.getElementById('jm-active-only');
+  var countEl = document.getElementById('jm-count');
+  var timer = null, open = {}, lastJobs = [];
+  var focusId = (function () { try {
+      return new URLSearchParams(location.search).get('focus'); } catch (e) { return null; } })();
+  var focusDone = false;
+  if (focusId) open[focusId] = true;   // deep-link from the job toast: auto-expand it
+  var ACTIVE = { pending:1, running:1, cancelling:1, pausing:1, paused:1 };
+  var LABEL = { running:'Running', pending:'Pending', pausing:'Pausing…', paused:'Paused',
+                cancelling:'Stopping…', cancelled:'Stopped', success:'Success', error:'Error' };
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? (m.getAttribute('content') || '') : '';
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso + (iso.indexOf('Z') < 0 ? 'Z' : ''));
+    if (isNaN(d)) return esc(iso);
+    return d.toLocaleString(undefined, { month:'short', day:'numeric',
+      hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+  function fmtDur(j) {
+    var a = new Date((j.created || '') + 'Z');
+    var b = j.finished ? new Date(j.finished + 'Z') : new Date();
+    var s = Math.max(0, Math.floor((b - a) / 1000));
+    if (isNaN(s)) return '—';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+    return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+  }
+  function ownerChip(j) {
+    return j.by ? '<span class="jm-chip"><i class="bi bi-person"></i> ' + esc(j.by) + '</span>' : '—';
+  }
+  function whereChips(j, inline) {
+    var out = [], m = j.meta || {};
+    if (m.device) out.push('<span class="jm-chip"><i class="bi bi-hdd"></i> ' + esc(m.device) + '</span>');
+    else if (m.appliance) out.push('<span class="jm-chip"><i class="bi bi-hdd"></i> ' + esc(m.appliance) + '</span>');
+    if (m.devices && m.devices.length) out.push('<span class="jm-chip">' + m.devices.length + ' devices</span>');
+    if (m.filename) out.push('<span class="jm-chip">' + esc(m.filename) + '</span>');
+    if (j.host) out.push('<span class="jm-chip" title="Server process running this job">'
+      + esc(j.host) + (j.pid ? ' · pid ' + esc(j.pid) : '') + '</span>');
+    return out.join('') || (inline ? '' : '<span class="text-muted">—</span>');
+  }
+  function actionBtns(j) {
+    var b = [];
+    var canCtl = j.cancelable !== false;
+    if (ACTIVE[j.status]) {
+      if (canCtl && (j.status === 'running' || j.status === 'pending'))
+        b.push('<button class="jm-btn pause" data-act="pause" data-id="' + esc(j.id) + '" title="Pause"><i class="bi bi-pause-fill"></i><span class="jm-lbl"> Pause</span></button>');
+      if (j.status === 'pausing' || j.status === 'paused')
+        b.push('<button class="jm-btn resume" data-act="resume" data-id="' + esc(j.id) + '" title="Resume"><i class="bi bi-play-fill"></i><span class="jm-lbl"> Resume</span></button>');
+      if (canCtl && j.status !== 'cancelling')
+        b.push('<button class="jm-btn stop" data-act="cancel" data-id="' + esc(j.id) + '" title="Stop"><i class="bi bi-stop-fill"></i><span class="jm-lbl"> Stop</span></button>');
+      if (!canCtl)
+        b.push('<span class="jm-chip" title="This task cannot be interrupted once started">locked</span>');
+    }
+    b.push('<button class="jm-btn" data-act="detail" data-id="' + esc(j.id) + '" title="Details"><i class="bi bi-chevron-expand"></i></button>');
+    return '<div class="jm-act">' + b.join('') + '</div>';
+  }
+  function barClass(st) {
+    if (st === 'success') return 'ok';
+    if (st === 'error') return 'err';
+    if (st === 'paused' || st === 'pausing' || st === 'cancelled' || st === 'cancelling') return 'warn';
+    return '';
+  }
+  function rowHtml(j) {
+    var st = j.status || 'pending';
+    var html =
+      '<tr class="jm-row" data-id="' + esc(j.id) + '">' +
+      '<td><span class="jm-badge jm-st-' + esc(st) + '"><span class="dot"></span>' + (LABEL[st] || esc(st)) + '</span></td>' +
+      '<td><div class="jm-title">' + esc(j.title || j.type) + '</div>' +
+      '<div class="jm-type">' + esc(j.type || '') + ' · <span class="jm-id" data-act="copy" data-id="' + esc(j.id) + '" title="Click to copy job ID">' + esc(j.id) + '</span></div>' +
+      (j.message ? '<div class="jm-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div>' : '') +
+      '<div class="jm-inline">' + (j.by ? ownerChip(j) : '') + whereChips(j, true) +
+      '<span class="jm-chip jm-i-started" title="Started · duration"><i class="bi bi-clock"></i> ' +
+      fmtTime(j.created) + ' · ' + fmtDur(j) + '</span></div></td>' +
+      '<td class="jm-c-progress"><div class="jm-track"><div class="jm-bar ' + barClass(st) + '" style="width:' + (j.percent || 0) + '%"></div></div>' +
+      '<div class="jm-pct">' + (j.percent || 0) + '%</div></td>' +
+      '<td class="jm-c-owner">' + ownerChip(j) + '</td>' +
+      '<td class="jm-c-where">' + whereChips(j) + '</td>' +
+      '<td class="jm-c-started">' + fmtTime(j.created) + '<div class="jm-pct" title="Duration">' + fmtDur(j) + '</div></td>' +
+      '<td class="text-end">' + actionBtns(j) + '</td></tr>';
+    if (open[j.id]) {
+      // Device jobs log one step per device call: show them as a list, not
+      // buried in the JSON dump.
+      var meta = Object.assign({}, j.meta || {});
+      var steps = meta.steps || [];
+      delete meta.steps;
+      var stepsHtml = '';
+      if (steps.length) {
+        stepsHtml = '<div class="jm-steps"><div class="jm-steps-h">Steps' +
+          (meta.step_count > steps.length ? ' (last ' + steps.length + ' of ' + meta.step_count + ')' : '') +
+          '</div><ol>' + steps.map(function (s) {
+            return '<li class="' + (s.ok === false ? 'bad' : '') + '"><span class="t">' + esc((s.at || '').slice(11)) +
+              '</span> ' + esc(s.label) + (s.outcome ? ' <span class="o">' + esc(s.outcome) + '</span>' : '') +
+              (s.ms != null ? ' <span class="t">' + (s.ms < 1000 ? s.ms + ' ms' : (s.ms / 1000).toFixed(1) + ' s') + '</span>' : '') + '</li>';
+          }).join('') + '</ol></div>';
+      }
+      var det = { meta: meta, result: j.result, error: j.error,
+                  cancel_requested: j.cancel_requested, pause_requested: j.pause_requested,
+                  host: j.host, pid: j.pid, created: j.created, updated: j.updated,
+                  finished: j.finished };
+      html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="7">' +
+        '<div class="d-flex justify-content-end mb-1"><button class="jm-btn" data-act="copydetail" data-id="' + esc(j.id) + '"><i class="bi bi-clipboard me-1"></i>Copy</button></div>' +
+        stepsHtml + '<pre>' + esc(JSON.stringify(det, null, 2)) + '</pre></td></tr>';
+    }
+    return html;
+  }
+  function render(list) {
+    lastJobs = list;
+    var q = (search.value || '').toLowerCase();
+    var rows = list.filter(function (j) {
+      if (activeOnly.checked && !ACTIVE[j.status]) return false;
+      if (!q) return true;
+      var hay = [j.title, j.type, j.by, j.message, j.id,
+                 JSON.stringify(j.meta || {})].join(' ').toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    countEl.textContent = rows.length;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">' +
+        '<i class="bi bi-list-task" style="font-size:30px;opacity:.4;"></i>' +
+        '<p class="mb-0 mt-2" style="font-size:13px;">No jobs match.</p></td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(rowHtml).join('');
+    if (focusId && !focusDone) {
+      var frow = body.querySelector('tr.jm-row[data-id="' + focusId + '"]');
+      if (frow) { focusDone = true;
+        try { frow.scrollIntoView({ block: 'center' });
+              frow.style.outline = '2px solid #8b5cf6'; } catch (e) {} }
+    }
+  }
+  function selectionInBody() {
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    var n = sel.anchorNode;
+    n = n && n.nodeType === 1 ? n : (n ? n.parentNode : null);
+    return !!(n && body.contains(n));
+  }
+  function refresh() {
+    var url = '/jobs/all?limit=100' +
+      (stateSel.value ? '&status=' + encodeURIComponent(stateSel.value) : '');
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.jobs) return;
+        // Don't rebuild the table (and destroy the user's text selection)
+        // while they are selecting/copying an error. Keep data fresh, defer render.
+        if (selectionInBody()) { lastJobs = d.jobs; return; }
+        render(d.jobs);
+      })
+      .catch(function () {});
+  }
+  function act(action, id, btn) {
+    if (action === 'detail') { open[id] = !open[id]; render(lastJobs); return; }
+    if (action === 'copy') {
+      if (navigator.clipboard) navigator.clipboard.writeText(id).catch(function () {});
+      if (btn) { var t = btn.textContent; btn.textContent = 'copied ✓';
+        setTimeout(function () { btn.textContent = t; }, 900); }
+      return;
+    }
+    if (action === 'copydetail') {
+      var pre = document.querySelector('[data-detail="' + id + '"] pre');
+      var txt = pre ? pre.textContent : '';
+      if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function () {});
+      if (btn) { var tc = btn.innerHTML; btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+        setTimeout(function () { btn.innerHTML = tc; }, 1200); }
+      return;
+    }
+    if (action === 'cancel' && !window.confirm(
+        'Stop this job? It will halt at its next safe checkpoint.')) return;
+    if (btn) btn.disabled = true;
+    fetch('/jobs/' + encodeURIComponent(id) + '/' + action,
+          { method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf() } })
+      .then(function (r) { return r.json().catch(function () { return null; }); })
+      .then(function (d) {
+        if (d && d.error) window.alert(d.error);
+        refresh();
+      })
+      .catch(function () { if (btn) btn.disabled = false; });
+  }
+  body.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-act]');
+    if (btn) { e.stopPropagation(); act(btn.getAttribute('data-act'), btn.getAttribute('data-id'), btn); return; }
+    var row = e.target.closest('tr.jm-row');
+    if (row) { var id = row.getAttribute('data-id'); open[id] = !open[id]; render(lastJobs); }
+  });
+  stateSel.addEventListener('change', refresh);
+  activeOnly.addEventListener('change', function () { render(lastJobs); });
+  search.addEventListener('input', function () { render(lastJobs); });
+
+  function loop() { refresh(); timer = setTimeout(loop, POLL_MS); }
+  loop();
+  // Turbo Drive keeps the document alive across visits — stop polling when the
+  // page body is swapped away so we don't poll forever from a dead reference.
+  document.addEventListener('turbo:before-render', function h() {
+    if (timer) clearTimeout(timer);
+    document.removeEventListener('turbo:before-render', h);
+  });
+})();
+</script>
+{% endblock %}

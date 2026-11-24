@@ -1,0 +1,352 @@
+"""Dry-run-capable FortiWeb config-write wrapper.
+
+Every structured config mutation (Configuration editor, Provisioning, template
+apply, scheduled config/upgrade actions) goes through ``FortiWebOps`` so that:
+
+  * **dry-run** (the default) computes the would-be request WITHOUT contacting
+    the device — safe and verifiable headless;
+  * a **real apply** snapshots before/after, writes a ``ChangeHistory`` row and
+    an audit entry, and never raises on a dead device (returns ok=False + error).
+
+This is the single device-write entry point the higher-level features share.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Any
+
+from ..clients.fortiweb import FortiWebClient
+from ..models import ChangeHistory, db
+from . import delete_guard, secret_mask
+from .audit import log_action
+
+# Server-managed / read-only keys stripped from any payload before a write.
+#
+# FortiWeb REJECTS a write that echoes back an auto-assigned id with
+# ``errcode 10 "CMDB failed to be saved"`` — the single hardest-won lesson from
+# the desktop standalone's clone path. A GET payload carries the object's own
+# unique id (``policy-id`` / ``profile-id`` / ``server-pool-id`` / ``vserver-id``
+# / ``health-id`` …, all ``*-id``) and the positional ``index`` on system/vip;
+# re-POSTing any of them collides in the CMDB. So every write (Configuration,
+# Provisioning, template apply, clone, the object editor) must strip them.
+#
+# Mirrors the standalone ``_clean_for_write``: drop ``q_*``/``_*`` metadata,
+# ``*_val`` select-companions, every ``*-id`` and ``index``, plus the explicit
+# read-only flags. Plain ``id`` and underscore ``*_id`` (``signature_id`` /
+# ``main_class_id`` — real sub-row keys) are KEPT; FortiWeb reassigns a stale
+# top-level ``id`` on create. This matches what ``field_schema.is_noise`` already
+# hides from the editor, so the write layer can never carry a field the form hid.
+_STRIP_PREFIXES = ("q_", "_")
+_STRIP_SUFFIXES = ("_val", "-id")
+_STRIP_KEYS = {
+    "ref", "mkey_ref", "can_view", "can_clone", "is_default", "index",
+    "sub_table_id", "sub_table_action", "flag", "seq",
+}
+
+_METHOD = {"create": "POST", "update": "PUT", "delete": "DELETE"}
+
+
+def _is_readonly_key(k: str) -> bool:
+    """True if *k* is a server-managed key a write must never echo back."""
+    if not isinstance(k, str):
+        return False
+    if k in _STRIP_KEYS:
+        return True
+    if any(k.startswith(p) for p in _STRIP_PREFIXES):
+        return True
+    if any(k.endswith(s) for s in _STRIP_SUFFIXES):
+        return True
+    return False
+
+
+def sanitize_payload(data: Any) -> Any:
+    """Drop server-managed/read-only keys so a PUT/POST doesn't echo them back.
+
+    Recurses into nested dicts AND into list-of-dict sub-tables (e.g. an inline
+    ``pserver-list``), so a cloned/echoed object is clean at every depth.
+    """
+    if not isinstance(data, dict):
+        return data
+    clean = {}
+    for k, v in data.items():
+        if _is_readonly_key(k):
+            continue
+        if isinstance(v, dict):
+            clean[k] = sanitize_payload(v)
+        elif isinstance(v, list):
+            clean[k] = [sanitize_payload(it) if isinstance(it, dict) else it for it in v]
+        else:
+            clean[k] = v
+    return clean
+
+
+def _path(endpoint: str, mkey: str | None, sub_mkey: str | None = None) -> str:
+    ep = (endpoint or "").lstrip("/")
+    if mkey:
+        sep = "&" if "?" in ep else "?"
+        ep = f"{ep}{sep}mkey={mkey}"
+        if sub_mkey:
+            ep = f"{ep}&sub_mkey={sub_mkey}"
+    return ep
+
+
+def _current_username() -> str:
+    try:
+        from flask_login import current_user
+        if current_user and current_user.is_authenticated:
+            return current_user.username
+    except Exception:  # noqa: BLE001 — outside a request context
+        pass
+    return "system"
+
+
+class OpResult(dict):
+    """Plain dict result: ok/action/endpoint/mkey/dry_run/request/before/after/error."""
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.get("ok"))
+
+
+class FortiWebOps:
+    def __init__(self, appliance):
+        self.appliance = appliance
+        self._client = None
+
+    @property
+    def client(self) -> FortiWebClient:
+        if self._client is None:
+            self._client = FortiWebClient(self.appliance)
+        return self._client
+
+    # -- dry-run (pure, no device contact) --------------------------------
+    def preview(self, action: str, endpoint: str, mkey: str | None, data: Any, sub_mkey: str | None = None) -> OpResult:
+        method = _METHOD.get(action, "POST")
+        payload = None if action == "delete" else sanitize_payload(data)
+        return OpResult(
+            ok=True, action=action, endpoint=endpoint, mkey=mkey, dry_run=True,
+            request={"method": method, "path": _path(endpoint, mkey, sub_mkey), "body": payload},
+            before=None, after=payload, error="",
+        )
+
+    # -- real apply (device contact + snapshot + audit) -------------------
+    def _record(self, action, endpoint, mkey, before, after, dry_run, error="",
+                forced=False, refresh=None):
+        """One ChangeHistory row + one audit line. A create names no mkey in
+        its request: the object's own name (from the payload) is recorded, so
+        the audit search finds "x" (2026-11-01: ``mkey=None`` on every create).
+        ``refresh`` (``object_refresh.after_write``) adds the re-read verdict
+        and what happened to SATOM's copy, as their own keys -- never inside
+        ``detail``, whose ``error=`` runs to the end of the string
+        (``drift_attribution._ERR_RE``)."""
+        if not mkey and action == "create":
+            from .object_refresh import _name_of
+            mkey = _name_of(after) or None
+        extra = {}
+        if isinstance(refresh, dict):
+            extra["verify"] = str((refresh.get("verify") or {}).get("verdict") or "")
+            extra["cache"] = str(refresh.get("why") or "")
+        try:
+            db.session.add(ChangeHistory(
+                appliance_id=getattr(self.appliance, "id", None),
+                endpoint=endpoint or "", mkey=mkey or "", action=action,
+                # Secrets masked: the payload may carry a password typed at
+                # apply time, and the snapshot the device's ENC ciphertext.
+                before=json.dumps(secret_mask.mask(before)) if before is not None else "",
+                after=json.dumps(secret_mask.mask(after)) if after is not None else "",
+                dry_run=dry_run, username=_current_username(), ts=datetime.utcnow(),
+            ))
+            db.session.commit()
+        except Exception:  # noqa: BLE001
+            db.session.rollback()
+        log_action(f"config.{action}", target=endpoint or "",
+                   appliance_id=getattr(self.appliance, "id", None),
+                   detail=(f"mkey={mkey} dry_run={dry_run} error={error}"
+                           + (" ref_check=forced" if forced else "")), **extra)
+
+    @staticmethod
+    def _response_ok(resp):
+        """``(ok, error)`` for a FortiWeb write response.
+
+        FortiWeb returns HTTP 200 with a body ``errcode`` on logical errors (and
+        sometimes HTTP 500 + errcode), so HTTP status alone is not enough: a write
+        is OK only when the body ``errcode`` is 0/absent.
+        """
+        if resp is None:
+            return False, "no response"
+        status = getattr(resp, "status_code", 0)
+        if status >= 400:
+            # FortiWeb error bodies still carry the real reason (e.g. HTTP 500
+            # + errcode -56 "Empty value isn't allowed.") — surface it instead
+            # of an opaque status code.
+            err = "HTTP %s" % status
+            try:
+                body = resp.json()
+                res = body.get("results") if isinstance(body, dict) else None
+                holder = res if isinstance(res, dict) else (
+                    body if isinstance(body, dict) else {})
+                code = holder.get("errcode")
+                if code not in (None, ""):
+                    err = ("HTTP %s — errcode %s: %s"
+                           % (status, code, holder.get("message", ""))).strip()
+            except Exception:  # noqa: BLE001 — non-JSON error body
+                pass
+            return False, err
+        try:
+            body = resp.json()
+        except Exception:  # noqa: BLE001 - non-JSON 2xx -> ok
+            return True, ""
+        res = body.get("results") if isinstance(body, dict) else None
+        code = res.get("errcode") if isinstance(res, dict) else (
+            body.get("errcode") if isinstance(body, dict) else None)
+        if code not in (None, 0):
+            holder = res if isinstance(res, dict) else (body if isinstance(body, dict) else {})
+            return False, ("errcode %s: %s" % (code, holder.get("message", ""))).strip()
+        return True, ""
+
+    def _apply(self, action, endpoint, mkey, data, sub_mkey=None, forced=False) -> OpResult:
+        method = _METHOD.get(action, "POST")
+        payload = None if action == "delete" else sanitize_payload(data)
+        path = _path(endpoint, mkey, sub_mkey)
+        req = {"method": method, "path": path, "body": payload}
+        before = None
+        try:  # best-effort before-snapshot — never fatal
+            resp = self.client.api_call("GET", path)
+            before = resp.json() if resp is not None and resp.status_code < 400 else None
+        except Exception:  # noqa: BLE001
+            before = None
+        try:
+            resp = self.client.api_call(method, path, payload)
+            ok, err = self._response_ok(resp)
+            # Targeted rediscovery + verification: re-read what this write
+            # touched (one object or one sub-table) right here, for every
+            # caller at once — the cache follows the device, and ``verify``
+            # says whether the device now HOLDS what was sent (an accepted
+            # write is not proof: builds answer 200 and drop a field). The
+            # verdict is reported; failing on it is the caller's call.
+            refresh = None
+            if ok:
+                # A job that wrote here asks this device's pages to redraw.
+                from . import jobs as _jobs
+                _jobs.note_write(getattr(self.appliance, "id", None))
+                from . import object_refresh
+                refresh = object_refresh.after_write(self.appliance, self.client,
+                                                     action, path, payload)
+            # recorded AFTER the re-read, so the line says what it found
+            self._record(action, endpoint, mkey, before, payload, False, err,
+                         forced=forced, refresh=refresh)
+            if ok:
+                v = refresh.get("verify") or {}
+                if v.get("verdict") == object_refresh.MISMATCH:
+                    log_action(f"config.{action}.not_applied", target=endpoint or "",
+                               appliance_id=getattr(self.appliance, "id", None),
+                               detail="mkey=%s %s" % (mkey, object_refresh.describe_mismatch(v)))
+            return OpResult(ok=ok, action=action, endpoint=endpoint, mkey=mkey,
+                            dry_run=False, request=req, before=before, after=payload, error=err,
+                            cache_refresh=refresh,
+                            verify=(refresh or {}).get("verify"))
+        except Exception as exc:  # noqa: BLE001
+            self._record(action, endpoint, mkey, before, payload, False, str(exc))
+            return OpResult(ok=False, action=action, endpoint=endpoint, mkey=mkey,
+                            dry_run=False, request=req, before=before, after=payload, error=str(exc))
+
+    def create(self, endpoint, data, *, mkey=None, dry_run=True) -> OpResult:
+        return self.preview("create", endpoint, mkey, data) if dry_run else self._apply("create", endpoint, mkey, data)
+
+    def update(self, endpoint, mkey, data, *, dry_run=True, sub_mkey=None,
+               expect=None, overwrite=False) -> OpResult:
+        """``expect`` ({field: the value the operator's form loaded}) turns on
+        the stale-value check: the object is read first and a field the device
+        now holds differently -- neither the loaded value nor the new one --
+        refuses the save (``conflict``) instead of overwriting a change nobody
+        saw (another user, a job, the device's own GUI/CLI). The dry run checks
+        too. ``overwrite`` is the operator's explicit "save mine anyway"; it is
+        audited (``config.update.overwrote``) and reported (``overwrote``)."""
+        stale = self._stale(endpoint, mkey, sub_mkey, data, expect) if expect else {}
+        if stale and not overwrite:
+            return self._conflict(endpoint, mkey, sub_mkey, data, stale, dry_run)
+        res = (self.preview("update", endpoint, mkey, data, sub_mkey) if dry_run
+               else self._apply("update", endpoint, mkey, data, sub_mkey))
+        if stale:
+            res["overwrote"] = stale
+            if not dry_run and res.ok:
+                log_action("config.update.overwrote", target=endpoint or "",
+                           appliance_id=getattr(self.appliance, "id", None),
+                           detail="mkey=%s fields=%s" % (mkey or sub_mkey or "",
+                                                          ",".join(sorted(stale))))
+        return res
+
+    def _stale(self, endpoint, mkey, sub_mkey, data, expect) -> dict:
+        """``object_refresh.stale_fields`` against a fresh read of the object;
+        {} when it cannot be read (an unreadable object never blocks: the
+        write itself then says what is wrong)."""
+        from . import object_refresh
+        path = _path(endpoint, mkey, sub_mkey)
+        try:
+            res = object_refresh._read(self.client, path)
+        except Exception:  # noqa: BLE001
+            return {}
+        if res is None or res is object_refresh._ABSENT:
+            return {}
+        q = object_refresh._split(path)[1]
+        obj = object_refresh.object_at(res, str(q.get("sub_mkey") or q.get("mkey") or mkey or ""))
+        return object_refresh.stale_fields(expect, data, obj)
+
+    def _conflict(self, endpoint, mkey, sub_mkey, data, stale, dry_run) -> OpResult:
+        """The refused save: nothing sent; SATOM's copy of the object is
+        re-read so the operator's Reload shows what the device holds (the
+        FortiWeb-layout dialogs draw from that copy -- without this a Reload
+        would show the same stale value and refuse again)."""
+        from . import object_refresh
+        path = _path(endpoint, mkey, sub_mkey)
+        error = object_refresh.describe_stale(stale)
+        try:
+            object_refresh.after_write(self.appliance, self.client, "update", path, None)
+        except Exception:  # noqa: BLE001 — the refusal stands either way
+            pass
+        payload = sanitize_payload(data)
+        if not dry_run:
+            self._record("update", endpoint, mkey, None, payload, False, error)
+        return OpResult(ok=False, action="update", endpoint=endpoint, mkey=mkey,
+                        dry_run=dry_run, request={"method": "PUT", "path": path, "body": payload},
+                        before=None, after=payload, error=error, conflict=stale)
+
+    def delete(self, endpoint, mkey, *, dry_run=True, sub_mkey=None,
+               check_refs=True, force=False) -> OpResult:
+        """Delete ``mkey``, refusing by default while other objects still name it.
+
+        The guard runs on the DRY-RUN too, on purpose. Every delete surface in
+        the app previews first and applies only after the operator confirms, so
+        checking only the apply would show a clean "would delete" and then fail
+        the confirmed action -- a preview that hides a certain refusal is worse
+        than no preview.
+
+        ``check_refs=False`` is for writers that legitimately delete what they
+        just created or are rebuilding in the same batch (sub-table replace-set,
+        job rollback); it is a call-site decision so it stays reviewable.
+        ``force`` is the operator's override for a refcount the firmware got
+        wrong -- it is recorded in the audit detail like any other apply.
+        """
+        blocked = ''
+        if check_refs and not force and mkey and not sub_mkey:
+            try:
+                client = self.client
+            except Exception:  # noqa: BLE001 - no client: nothing verified
+                client = None
+            blocked, info = delete_guard.check(client, endpoint, mkey)
+            if blocked:
+                if not dry_run:
+                    # A confirmed destructive action that was stopped belongs in
+                    # the audit trail; a preview does not (nothing was asked of
+                    # the device yet).
+                    self._record("delete", endpoint, mkey, None, None, False, blocked)
+                return OpResult(
+                    ok=False, action="delete", endpoint=endpoint, mkey=mkey,
+                    dry_run=dry_run, request={"method": "DELETE",
+                                              "path": _path(endpoint, mkey, sub_mkey),
+                                              "body": None},
+                    before=None, after=None, error=blocked, blocked=info)
+        return (self.preview("delete", endpoint, mkey, None, sub_mkey) if dry_run
+                else self._apply("delete", endpoint, mkey, None, sub_mkey,
+                                 forced=bool(force and check_refs)))

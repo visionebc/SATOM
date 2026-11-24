@@ -1,0 +1,377 @@
+"""Desired-state template library — web port of the desktop ``TemplateLibrary``.
+
+Stores reusable Web Protection Profile / system / Server Policy / structure
+templates as versioned JSON in the ``templates`` table. This is desired-state
+only: applying a template to a live device is a separate, audited action — the
+library itself never touches an appliance.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Any
+
+from ..models import Template, TemplateReviewEvent, db
+
+# Friendly labels for the template kinds, for the UI.
+KIND_LABELS = {
+    Template.KIND_WEB_PROTECTION: "Web Protection Profile",
+    Template.KIND_SERVER_POLICY: "Server Policy",
+    Template.KIND_SYSTEM: "System Profile",
+    Template.KIND_STRUCTURE: "Structure",
+}
+
+
+def list_templates(kind: str | None = None) -> list[Template]:
+    """All templates VISIBLE TO THE ACTIVE ADOM (product-scoped), optionally
+    filtered by kind, newest first. FortiADC sessions see only 'fortiadc'
+    templates, FortiWeb everything else, Global all."""
+    from .product_scope import scope_query
+    query = scope_query(Template.query, Template.product)
+    if kind:
+        query = query.filter_by(kind=kind)
+    return query.order_by(Template.kind, Template.name, Template.version.desc()).all()
+
+
+def config_template_collection(template: Template) -> str | None:
+    """The bare cmdb collection a ``config:<section>`` template captures.
+
+    Config templates authored by "Save as template" carry the source object's
+    REST endpoint on their first sub-object node; ``None`` means the body
+    declares no endpoint (a freeform "New template" body we cannot attribute to a
+    single object type). Used to scope a section's library to the object type
+    currently being viewed.
+    """
+    from .objform import collection_of
+
+    body = template.body_dict
+    endpoint = None
+    subs = body.get("subobjects")
+    if isinstance(subs, list):
+        for node in subs:
+            if isinstance(node, dict) and node.get("endpoint"):
+                endpoint = node["endpoint"]
+                break
+    endpoint = endpoint or body.get("endpoint")   # single-object body shape
+    return collection_of(endpoint) if endpoint else None
+
+
+def list_config_templates(kind: str, collection: str | None = None) -> list[Template]:
+    """Config-section templates, scoped to the object type being viewed.
+
+    Every ``config:<section>`` template shares a section-level kind, so a section
+    with several object types (System -> Global, NTP, DNS...) would otherwise
+    show EVERY type's templates on EVERY type's page. When ``collection`` is the
+    object type currently selected, keep only templates captured from THAT type
+    -- plus freeform templates that declare no endpoint (so an authored template
+    we cannot attribute is never hidden). No ``collection`` -> the whole section
+    (unchanged behaviour).
+    """
+    rows = list_templates(kind)
+    if not collection:
+        return rows
+    from .objform import collection_of
+
+    target = collection_of(collection)
+    return [t for t in rows
+            if (tc := config_template_collection(t)) is None or tc == target]
+
+
+def get_template(template_id: int) -> Template | None:
+    """One template, or ``None`` when the active ADOM (and the signed-in
+    profile's ADOMs) would not list it. Every by-id view goes through here;
+    it used to read the row raw, so a template the list hid was one URL away.
+    Outside a request (workers) the scope is the whole fleet, as before."""
+    from .product_scope import scope_query
+    return (scope_query(Template.query, Template.product)
+            .filter(Template.id == template_id).first())
+
+
+def managed_wpp_names(appliance_id=None) -> set[str]:
+    """Names of Web Protection Profiles governed by an APPROVED template.
+
+    A profile whose name matches an approved ``web-protection-profile`` template
+    is TEMPLATE-MANAGED: it is read-only everywhere except Administrator →
+    Template Library, and editing it there deploys to the whole fleet. This is the
+    team rule that keeps per-device drift out of templated profiles.
+
+    ``appliance_id`` scopes the answer to one device: a template that has
+    device bindings (:mod:`services.template_bindings`) governs its bound
+    devices only; one without bindings governs every device of its ADOM, as
+    before. ``None`` = the union (locked on ANY device) — the conservative
+    answer for a caller that has no device in hand.
+    """
+    from . import template_bindings as tb
+    try:
+        scope = tb.locked_families(Template.KIND_WEB_PROTECTION)
+    except Exception:  # noqa: BLE001 — no bindings table yet: the global rule
+        db.session.rollback()
+        scope = {}
+    rows = (Template.query
+            .filter_by(kind=Template.KIND_WEB_PROTECTION,
+                       status=Template.STATUS_APPROVED)
+            .all())
+    if appliance_id is not None:
+        from ..models import Appliance
+        appl = db.session.get(Appliance, int(appliance_id))
+        kind = getattr(appl, "kind", None)
+        rows = [t for t in rows if (t.product or "fortiweb") == kind
+                and tb.governs(scope.get(t.name), appliance_id)]
+    names: set[str] = set()
+    for t in rows:
+        if t.name:
+            names.add(t.name)
+        # Also honour a body whose root object carries a different name than the
+        # library entry (a template captured under an alias).
+        try:
+            body = t.body_dict or {}
+            root = body.get("data") or {}
+            inner = root.get("data") if isinstance(root.get("data"), dict) else root
+            n = (inner or {}).get("name")
+            if n:
+                names.add(str(n))
+        except Exception:  # noqa: BLE001 — a malformed body never breaks the lock
+            continue
+    return names
+
+
+def latest_approved_wpp_template(name: str) -> Template | None:
+    """The newest APPROVED web-protection-profile template for ``name``."""
+    return (Template.query
+            .filter_by(kind=Template.KIND_WEB_PROTECTION, name=name,
+                       status=Template.STATUS_APPROVED)
+            .order_by(Template.version.desc())
+            .first())
+
+
+def _next_version(kind: str, name: str) -> int:
+    latest = (Template.query.filter_by(kind=kind, name=name)
+              .order_by(Template.version.desc()).first())
+    return (latest.version + 1) if latest else 1
+
+
+def _normalize_exceptions(exceptions: Any) -> str:
+    """Validate/canonicalise an optional exceptions blob to a JSON string.
+
+    Accepts ``None``/empty (stored as ``""``), a dict/list, or a JSON string.
+    Raises ``ValueError`` if a provided string is not valid JSON.
+    """
+    if exceptions is None:
+        return ""
+    if isinstance(exceptions, str):
+        text = exceptions.strip()
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(text)
+        except ValueError as exc:
+            raise ValueError(f"Exceptions is not valid JSON: {exc}") from exc
+    else:
+        parsed = exceptions
+    if not isinstance(parsed, (dict, list)):
+        raise ValueError("Template exceptions must be a JSON object or array")
+    return json.dumps(parsed, separators=(",", ":"), sort_keys=True)
+
+
+#: Columns a stamp may set (``services.template_compat``).
+_STAMP_FIELDS = ("source_firmware", "api_version", "source_appliance_id",
+                 "source_appliance", "provenance", "adapted_from_id")
+
+
+def save_template(kind: str, name: str, body: Any, *, note: str = "",
+                  author: str = "", exceptions: Any = None,
+                  new_version: bool = True, stamp: dict | None = None) -> Template:
+    """Create a template (or a new version of an existing name).
+
+    ``body`` may be a dict or a JSON string; it is validated and stored as
+    canonical JSON. ``exceptions`` is an optional JSON blob (dict/list or JSON
+    string) persisted alongside the body. Raises ``ValueError`` on an invalid
+    kind or malformed body/exceptions. Accepts the built-in kinds as well as the
+    per-section ``config:<section>`` kinds (validated via ``is_valid_kind``).
+
+    ``stamp`` records the firmware build the body was written for
+    (``template_compat.stamp_from_appliance`` / ``stamp_authored`` /
+    ``inherit_stamp``). The body is then checked against that build and the
+    verdict stored in ``compat_check``. A save without a stamp is kept (API and
+    legacy callers) and says so: provenance ``authored`` with no firmware.
+    """
+    if not Template.is_valid_kind(kind):
+        raise ValueError(f"Unknown template kind: {kind}")
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Template name is required")
+
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body or "{}")
+        except ValueError as exc:
+            raise ValueError(f"Body is not valid JSON: {exc}") from exc
+    else:
+        parsed = body
+    if not isinstance(parsed, dict):
+        raise ValueError("Template body must be a JSON object")
+
+    exc_json = _normalize_exceptions(exceptions)
+
+    stamp_data = stamp
+    from .product_scope import stamp
+    version = _next_version(kind, name) if new_version else 1
+    row = Template(
+        kind=kind, name=name, version=version,
+        body=json.dumps(parsed, separators=(",", ":"), sort_keys=True),
+        exceptions=exc_json,
+        note=(note or "").strip(), author=(author or "").strip(),
+        product=stamp() or "fortiweb",
+    )
+    _apply_stamp(row, stamp_data)
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _apply_stamp(row: Template, stamp: dict | None) -> None:
+    """Write the firmware stamp and the body's check against that build."""
+    from . import template_compat as tc
+    stamp = stamp or {}
+    for f in _STAMP_FIELDS:
+        if f in stamp:
+            setattr(row, f, stamp[f])
+    row.source_firmware = row.source_firmware or ""
+    row.provenance = stamp.get("provenance") or Template.PROV_AUTHORED
+    tc.record_self_check(row)
+
+
+def clone_template(template_id: int, new_name: str | None = None) -> Template:
+    """Clone a template (body + exceptions) under a new name.
+
+    The copy is always unlocked. ``version`` is 1 for a brand-new name, or the
+    next version if the chosen name already exists for that kind. Raises
+    ``ValueError`` if the source template does not exist.
+    """
+    src = db.session.get(Template, template_id)
+    if src is None:
+        raise ValueError(f"Template {template_id} not found")
+    name = (new_name or "").strip() or f"{src.name} (copy)"
+    version = _next_version(src.kind, name)
+    row = Template(
+        kind=src.kind, name=name, version=version,
+        body=src.body, exceptions=src.exceptions or "",
+        note=src.note or "", author=src.author or "", locked=False,
+        product=src.product or "fortiweb",
+    )
+    # The copy is the same body, so it was written for the same build. Its
+    # validations are NOT copied: approval belongs to the version approved.
+    _apply_stamp(row, {f: getattr(src, f) for f in _STAMP_FIELDS
+                       if f != "provenance"} | {"provenance": src.provenance
+                                                or Template.PROV_LEGACY})
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def delete_template(template_id: int) -> bool:
+    """Delete a template by id. Locked templates are refused. Returns True if
+    a row was removed."""
+    row = db.session.get(Template, template_id)
+    if row is None or row.locked:
+        return False
+    db.session.delete(row)
+    db.session.commit()
+    return True
+
+
+#: Recorded on the review event of an approval by the template's own author.
+SELF_APPROVAL_NOTE = ("Self-approved: Settings › General allows administrators "
+                      "to approve their own changes.")
+
+
+def self_approval_allowed(user) -> bool:
+    """True when *user* may approve their own template: Settings › General ›
+    *Administrators may approve their own changes* is on (SA-0008) AND *user*
+    is an administrator (``user_manage``). Everyone else stays under the
+    four-eyes rule, whatever the switch says."""
+    from ..models import Permission
+    from . import settings_store
+    try:
+        is_admin = bool(user is not None and user.can(Permission.USER_MANAGE))
+    except Exception:  # noqa: BLE001 — an anonymous/odd user is not an admin
+        is_admin = False
+    return is_admin and settings_store.admin_self_approval()
+
+
+def approve_template(template_id: int, reviewer: str, *, self_ok: bool = False) -> Template:
+    """Mark a template APPROVED (fleet-deployable). Clears any prior rejection
+    reason. Raises ``ValueError`` if the template does not exist.
+
+    ``self_ok`` lets the author approve their own template; the caller passes
+    :func:`self_approval_allowed` of the signed-in user. The API never does:
+    a token approving the template it authored is exactly what four-eyes is
+    for."""
+    row = db.session.get(Template, template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    # Four-eyes: the author may not approve their own template. A template-
+    # managed Web Protection Profile deploys fleet-wide the moment it is
+    # approved, so a self-approval would let one person push a change to every
+    # device unchecked. A template with no recorded author (legacy) is not
+    # self-approvable by anyone, so it is left alone.
+    author = (row.author or "").strip()
+    own = bool(author) and author == (reviewer or "").strip()
+    if own and not self_ok:
+        raise ValueError("You cannot approve your own template — it must be "
+                         "reviewed by someone else. An administrator can allow "
+                         "administrators to approve their own changes in "
+                         "Settings › General.")
+    row.status = Template.STATUS_APPROVED
+    row.reject_reason = ""
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_APPROVE, reviewer,
+                         SELF_APPROVAL_NOTE if own else "")
+    db.session.commit()
+    return row
+
+
+def reject_template(template_id: int, reviewer: str, reason: str = "") -> Template:
+    """Mark a template REJECTED with an author-visible reason. Raises
+    ``ValueError`` if the template does not exist."""
+    row = db.session.get(Template, template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    row.status = Template.STATUS_REJECTED
+    row.reject_reason = (reason or "").strip()
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_REJECT, reviewer, reason)
+    db.session.commit()
+    return row
+
+
+def unapprove_template(template_id: int, reviewer: str) -> Template:
+    """Revoke approval — returns the template to PENDING so it can be
+    re-reviewed. Raises ``ValueError`` if the template does not exist."""
+    row = db.session.get(Template, template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    row.status = Template.STATUS_PENDING
+    row.reject_reason = ""
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_REVOKE, reviewer)
+    db.session.commit()
+    return row
+
+
+def _record_review_event(template_id: int, action: str, reviewer: str,
+                         reason: str = "") -> None:
+    """Queue an approval-history row (committed by the caller's commit)."""
+    db.session.add(TemplateReviewEvent(
+        template_id=template_id, action=action,
+        reviewer=(reviewer or "").strip(), reason=(reason or "").strip()))
+
+
+def review_history(template_id: int) -> list[TemplateReviewEvent]:
+    """Full approval timeline for a template, newest first."""
+    return (TemplateReviewEvent.query.filter_by(template_id=template_id)
+            .order_by(TemplateReviewEvent.created_at.desc(),
+                      TemplateReviewEvent.id.desc()).all())

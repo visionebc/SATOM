@@ -1,0 +1,313 @@
+"""Granular permission catalog + legacy (coarse) compatibility mapping.
+
+The app historically had five coarse permission keys (``view``, ``backup``,
+``config_write``, ``registry_edit``, ``user_manage``) baked into a fixed
+3-role table. Profiles introduce a fine-grained ``area.action`` catalog that
+admins compose freely, while the five coarse keys remain the *enforcement*
+vocabulary used by every existing decorator and template.
+
+A profile stores a set of GRANULAR keys. ``derive_coarse`` projects that set
+onto the legacy coarse keys so the old gates light up unchanged — that is the
+entire back-compat contract (see ``tests/test_permissions.py``).
+"""
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Areas (display order + labels for the matrix UI)
+# ---------------------------------------------------------------------------
+
+AREAS: list[dict] = [
+    {"key": "monitoring", "label": "Monitoring", "icon": "bi-search",
+     "desc": "Search, status dashboards, fleet overview"},
+    {"key": "protection", "label": "Web Protection", "icon": "bi-shield-shaded",
+     "desc": "WAF profiles, signatures, exceptions"},
+    {"key": "network", "label": "Network", "icon": "bi-hdd-network",
+     "desc": "Server objects, virtual servers, architecture & analysis"},
+    {"key": "operations", "label": "Operations", "icon": "bi-gear-wide-connected",
+     "desc": "Provisioning, templates, structure, scheduled actions, change requests"},
+    {"key": "backups", "label": "Backups", "icon": "bi-database",
+     "desc": "Download, restore and import configuration backups"},
+    {"key": "registry", "label": "API Registry", "icon": "bi-box-seam",
+     "desc": "Endpoint registry & API explorer"},
+    {"key": "audit", "label": "Audit Log", "icon": "bi-journal-text",
+     "desc": "Read the application audit trail"},
+    {"key": "appliances", "label": "Appliances", "icon": "bi-hdd-rack",
+     "desc": "Device inventory and appliance actions (console, rediscovery, upgrade)"},
+    {"key": "studio", "label": "Studio", "icon": "bi-code-slash",
+     "desc": "Python Console, Report Studio, Lua Studio and Script Library — admin code tools"},
+    {"key": "users", "label": "Users", "icon": "bi-people",
+     "desc": "Manage application users"},
+    {"key": "profiles", "label": "Profiles", "icon": "bi-person-badge",
+     "desc": "Define permission profiles (administrative)"},
+    {"key": "advisor", "label": "Scout (AI assistant)", "icon": "bi-stars",
+     "desc": "Chat assistant for WAF/Lua help and report search; provider/API-key configuration"},
+    {"key": "wiki", "label": "Wiki", "icon": "bi-journal-richtext",
+     "desc": "Operations › Wiki: articles users write for each other, by ADOM, profile and group"},
+    {"key": "webserver", "label": "Web Server Manager", "icon": "bi-hdd-network",
+     "desc": "Linux ADOM: manage web servers over SSH with your own account (files, sites, "
+             "certificates, packages, services, cron, users, SSH)"},
+    {"key": "diagrams", "label": "Diagrams", "icon": "bi-diagram-3",
+     "desc": "Diagram Studio: draw, import (draw.io, Visio, SVG, PDF, images), publish into the "
+             "Diagrams menu and export diagrams; symbol libraries"},
+    {"key": "observability", "label": "Observability", "icon": "bi-activity",
+     "desc": "The Observability area at /observability/: its own views plus Monitoring "
+             "(device and SATOM health, metrics, analysis, monitors, service checks, "
+             "dashboards, reports)"},
+]
+
+_AREA_LABELS = {a["key"]: a["label"] for a in AREAS}
+
+
+def _p(key: str, label: str, desc: str, admin_only: bool = False) -> dict:
+    return {"key": key, "area": key.split(".", 1)[0], "action": key.split(".", 1)[1],
+            "label": label, "desc": desc, "admin_only": admin_only}
+
+
+# ---------------------------------------------------------------------------
+# Granular permission catalog
+# ---------------------------------------------------------------------------
+
+GRANULAR_PERMISSIONS: list[dict] = [
+    _p("monitoring.view", "View monitoring", "See search, status and dashboards"),
+    _p("monitoring.probe_free", "Probe free targets",
+       "Point the certificate inspector and the transaction tracer at a\n       host SATOM does not manage. Inventory destinations never need this."),
+    _p("monitoring.reveal_secrets", "Reveal traced credentials",
+       "Show cookie, Authorization and API-key VALUES in the transaction "
+       "tracer and include them in its HAR export. Never written to the audit "
+       "log; without it those values stay redacted.", admin_only=True),
+
+    _p("protection.view", "View protection", "Browse WAF profiles, signatures, exceptions"),
+    _p("protection.edit", "Edit protection", "Author/stage web-protection changes"),
+    _p("protection.apply", "Apply protection", "Push web-protection changes to a device"),
+
+    _p("network.view", "View network", "Browse server objects, virtual servers, topology"),
+    _p("network.edit", "Edit network", "Author/stage network-object changes"),
+    _p("network.apply", "Apply network", "Push network-object changes to a device"),
+
+    _p("operations.view", "View operations", "See provisioning, templates, schedules, change requests"),
+    _p("operations.apply", "Run operations", "Provision, run scheduled actions, roll a template out to the fleet"),
+    _p("operations.template_save", "Save templates",
+       "Create or edit a template (saved as a pending draft)"),
+    _p("operations.template_apply", "Apply template to a device",
+       "Push a template's config to a single appliance (any approval status)"),
+    _p("operations.template_approve", "Approve templates",
+       "Approve or reject a pending template, making it fleet-deployable", admin_only=True),
+
+    _p("backups.view", "View backups", "List existing backups"),
+    _p("backups.create", "Create backups", "Download configuration backups"),
+    _p("backups.restore", "Restore backups",
+       "Import Backup (offline parser) and, together with Manage users, the "
+       "appliance Restore page (vault and live config restore)"),
+
+    _p("registry.view", "View registry", "Browse the endpoint registry & API explorer"),
+    _p("registry.edit", "Edit registry", "Modify the endpoint registry"),
+    _p("registry.execute_write", "Execute write API calls",
+       "Run POST/PUT/DELETE/PATCH in the API Explorer (GET is always allowed)"),
+
+    _p("audit.view", "View audit log", "Read the application audit trail"),
+
+    _p("appliances.view", "View appliances", "See the appliance inventory"),
+    _p("appliances.edit", "Edit appliances", "Add, edit or delete appliances"),
+    _p("appliances.apply", "Run appliance actions",
+       "Run console commands, start/stop rediscovery, upgrade preparation, "
+       "upgrade, boot partition and HA failover (viewing the Policy Inspector "
+       "and rediscovery status needs only View appliances)"),
+    _p("appliances.view_maintenance", "View maintenance devices",
+       "See appliances placed in maintenance mode (hidden from operators)", admin_only=True),
+
+    _p("studio.python_console", "Python Console",
+       "Run sandboxed Python against the app's datasets", admin_only=True),
+    _p("studio.plugin_studio", "Report Studio",
+       "Author custom server-side views (plugins)", admin_only=True),
+    _p("studio.lua_studio", "Lua Studio",
+       "Author, lint and deploy device Lua scripts", admin_only=True),
+    _p("operations.scripts_run", "Run scripts",
+       "Run published Script Library scripts offered to operators, and keep "
+       "saved runs on a cron schedule"),
+    _p("studio.script_library", "Script Library",
+       "Write, test and publish sandboxed Python scripts with a form "
+       "operators fill in", admin_only=True),
+
+    _p("users.view", "View users", "See the user list"),
+    _p("users.manage", "Manage users",
+       "Create, edit, delete, reset and re-profile users", admin_only=True),
+
+    _p("profiles.manage", "Manage profiles",
+       "Create, edit, clone and delete permission profiles", admin_only=True),
+
+    _p("advisor.use", "Use Scout",
+       "Chat with Scout, the AI assistant: WAF false-positive triage, Lua drafting, report search"),
+    _p("advisor.configure", "Configure Scout",
+       "Manage AI providers, models and API keys; enable/disable external providers and tools",
+       admin_only=True),
+
+    _p("wiki.view", "Read the Wiki",
+       "Open Operations › Wiki and read the articles whose ADOMs, profiles "
+       "and groups include you"),
+    _p("wiki.write", "Write Wiki articles",
+       "Create articles and edit your own; choose their topic, tags, ADOMs, "
+       "profiles and groups"),
+    _p("webserver.view", "Open the Web Server Manager",
+       "Linux ADOM: see the managed servers and READ them (files, sites, certificates, "
+       "packages, services, logs, users) with an SSH credential you may use"),
+    _p("webserver.files", "Change files",
+       "Write, upload, move, delete, chmod/chown, compress and extract files on a server"),
+    _p("webserver.sites", "Change sites and certificates",
+       "Create, edit, enable and delete virtual hosts, .htaccess rules and TLS certificates"),
+    _p("webserver.system", "Administer servers",
+       "Packages, services, cron jobs, scripts, firewall and fail2ban, accounts and the SSH "
+       "server; add servers and keep scripts in the library"),
+    _p("webserver.root", "Run as root (sudo)",
+       "Let the Web Server Manager use sudo through a credential that allows it. Without "
+       "this, every operation runs as the SSH account only"),
+    _p("webserver.credentials", "Manage shared server credentials",
+       "See every credential of every server, share service credentials with other "
+       "operators, and manage or revoke anyone's", admin_only=True),
+
+    _p("diagrams.view", "Open diagrams",
+       "Open Diagram Studio's library and the published diagrams of the Diagrams menu, "
+       "and export what you can see"),
+    _p("diagrams.edit", "Edit diagrams",
+       "Create, edit, save, restore, duplicate and delete diagrams and their folders"),
+    _p("diagrams.import", "Import diagrams",
+       "Upload draw.io, Visio, SVG, PDF and image files for recognition"),
+    _p("diagrams.publish", "Publish diagrams",
+       "Publish and unpublish diagrams in the Diagrams menu and choose their menu folder"),
+    _p("diagrams.libraries", "Manage symbol libraries",
+       "Import and delete operator symbol libraries (ZIP of SVG icons)", admin_only=True),
+    # Operator request 2026-11-17: Monitoring moved into /observability/, and
+    # the whole area is behind ONE extra key. Operators and administrators hold
+    # it by default (system profiles below); a read-only profile does not, and
+    # an administrator grants it per profile. It is a GATE, not a grant: each
+    # page still needs its own key (view, config_write…) on top of it.
+    _p("observability.access", "Open Observability",
+       "Enter /observability/: the Observability views and the Monitoring pages "
+       "(device and SATOM health, metrics, analysis, monitors, service checks, "
+       "dashboards, reports). Each page still needs its own permission as well."),
+
+    _p("wiki.moderate", "Moderate the Wiki",
+       "Read and edit every article whatever its audience, and manage the "
+       "topic tree", admin_only=True),
+]
+
+
+def all_keys() -> set[str]:
+    return {p["key"] for p in GRANULAR_PERMISSIONS}
+
+
+def is_valid_key(key: str) -> bool:
+    return key in all_keys()
+
+
+# ---------------------------------------------------------------------------
+# Coarse (legacy) projection — the enforcement vocabulary used everywhere.
+# ---------------------------------------------------------------------------
+
+COARSE_KEYS = ("view", "backup", "config_write", "registry_edit", "user_manage")
+
+# legacy coarse key  <-  any of these granular keys (presence implies the coarse)
+_DERIVE: dict[str, set[str]] = {
+    "view": {
+        "monitoring.view", "monitoring.probe_free", "monitoring.reveal_secrets",
+        "protection.view", "network.view", "operations.view",
+        "backups.view", "registry.view", "audit.view", "appliances.view",
+    },
+    "backup": {"backups.create", "backups.restore"},
+    "config_write": {
+        "protection.edit", "protection.apply",
+        "network.edit", "network.apply",
+        "operations.apply",
+        "operations.template_save", "operations.template_apply",
+        "operations.template_approve",
+        "appliances.edit", "appliances.apply",
+    },
+    "registry_edit": {"registry.edit"},
+    "user_manage": {"users.manage"},
+}
+
+
+def derive_coarse(granular: set[str]) -> set[str]:
+    """Project a set of granular keys onto the legacy coarse keys."""
+    g = set(granular)
+    out: set[str] = set()
+    for coarse, triggers in _DERIVE.items():
+        if g & triggers:
+            out.add(coarse)
+    return out
+
+
+def coarse_to_granular(coarse: set[str]) -> set[str]:
+    """Inverse of :func:`derive_coarse` — used only as a fallback for users
+    that still have a legacy ``role`` and no assigned profile, so that newer
+    granular gates keep working for them too."""
+    out: set[str] = set()
+    for c in coarse:
+        out |= _DERIVE.get(c, set())
+    return out
+
+
+def expand(granular: set[str]) -> set[str]:
+    """Effective permission set for a granular profile: the granular keys plus
+    the legacy coarse keys they imply."""
+    g = set(granular)
+    return g | derive_coarse(g)
+
+
+# ---------------------------------------------------------------------------
+# System profiles — reproduce the legacy 3-role behavior EXACTLY when expanded.
+# ---------------------------------------------------------------------------
+
+_READ_KEYS = {
+    "monitoring.view", "protection.view", "network.view", "operations.view",
+    "backups.view", "registry.view", "audit.view", "appliances.view",
+    "wiki.view",
+    "diagrams.view",
+}
+
+_OPERATOR_EXTRA = {
+    "observability.access",
+    "webserver.view", "webserver.files", "webserver.sites",
+    "advisor.use",
+    "wiki.write",
+    "diagrams.edit", "diagrams.import", "diagrams.publish",
+    "operations.scripts_run",
+    "backups.create", "backups.restore",
+    "protection.edit", "protection.apply",
+    "network.edit", "network.apply",
+    "operations.apply",
+    "operations.template_save", "operations.template_apply",
+    "appliances.edit", "appliances.apply",
+}
+
+SYSTEM_PROFILES: dict[str, set[str]] = {
+    "readonly": set(_READ_KEYS),
+    "operator": set(_READ_KEYS) | set(_OPERATOR_EXTRA),
+    "admin": all_keys(),
+}
+
+# Human-facing descriptions for the seeded system profiles.
+SYSTEM_PROFILE_META = {
+    "readonly": "Read-only access to every section. Cannot change anything.",
+    "operator": "Read everything plus manage appliances, protection, network, "
+                "backups and operations. No user or registry administration.",
+    "admin": "Full access, including user and profile administration.",
+}
+
+# The capabilities that let a user administer access itself. Anti-lockout logic
+# guarantees at least one ACTIVE user always retains BOTH of these.
+ADMIN_CAPABILITIES: set[str] = {"users.manage", "profiles.manage"}
+
+
+def role_to_profile_name(role: str) -> str:
+    """Map a legacy role string to its seeded system-profile name."""
+    return role if role in SYSTEM_PROFILES else "readonly"
+
+
+def coarse_for_role_label(effective: set[str]) -> str:
+    """Best-effort legacy ``role`` string for an effective permission set, so
+    role-based UI (badges, counters) keeps rendering sensibly."""
+    if "user_manage" in effective:
+        return "admin"
+    if "config_write" in effective:
+        return "operator"
+    return "readonly"

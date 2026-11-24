@@ -1,0 +1,87 @@
+{# ============================================================================
+   Observability top bar, drawn by base.html for SATOM's pages under
+   /observability/ (the Monitoring views, 2026-11-17). Same markup, ids and
+   classes as the app's own top bar (app/observability_lab/templates/base.html)
+   so its shell.js drives both: menu collapse, search, live/health pills,
+   notifications. Two differences, both because these pages are SATOM's:
+
+   * the ADOM selector — Monitoring is scoped by ADOM, the app is not; the
+     choice is the per-tab ADOM (``_adom``), exactly like SATOM's switcher;
+   * an ADOM-confined account gets no search, pills or bell: they read the
+     app's API, which refuses such an account.
+   ========================================================================= #}
+<header class="obs-topbar" aria-label="{{ _('Top bar') }}">
+  <button class="obs-tb-btn" id="obs-sb-toggle" type="button" aria-controls="obs-sidebar" aria-expanded="true" title="{{ _('Collapse menu') }} ( [ )">
+    <i class="bi bi-layout-sidebar" aria-hidden="true"></i><span class="visually-hidden">{{ _('Toggle menu') }}</span>
+  </button>
+  <a class="obs-brand" href="{{ request.script_root }}/observability/{% if obs_confined %}monitoring/{% endif %}">
+    <span class="obs-brand-mark" aria-hidden="true"><i class="bi bi-activity"></i></span>
+    <span>SATOM <span class="obs-brand-sub">Observability</span></span>
+  </a>
+
+  {% if not obs_confined %}
+  <div class="obs-search" role="search">
+    <i class="bi bi-search" aria-hidden="true"></i>
+    <label class="visually-hidden" for="obs-q">{{ _('Search sources, diagrams, interfaces, policies, back-ends') }}</label>
+    <input id="obs-q" class="form-control" type="search" autocomplete="off" spellcheck="false"
+           placeholder="{{ _('Search interfaces, policies, back-ends, diagrams…') }}"
+           role="combobox" aria-expanded="false" aria-controls="obs-q-results" aria-autocomplete="list"
+           data-url="{{ request.script_root }}/observability/api/v1/search">
+    <span class="obs-kbd" aria-hidden="true">/</span>
+    <div id="obs-q-results" class="obs-search-results" role="listbox" aria-label="{{ _('Search results') }}" hidden></div>
+  </div>
+  {% else %}
+  <div class="obs-search obs-search-off" aria-hidden="true"></div>
+  {% endif %}
+
+  <div class="obs-tb-group">
+    {% set _choices = obs_adoms %}
+    {% if _choices|length > 1 %}
+    <div class="dropdown">
+      <button class="obs-tb-btn obs-adom-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false"
+              title="{{ _('ADOM the Monitoring pages show') }}">
+        <i class="bi bi-diagram-2" aria-hidden="true"></i>
+        <span class="obs-tb-label">{{ (_choices|selectattr('current')|map(attribute='title')|first) or _('Global') }}</span>
+        <i class="bi bi-chevron-down small" aria-hidden="true"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end" aria-label="{{ _('ADOM') }}">
+        <li><h6 class="dropdown-header">{{ _('ADOM') }}</h6></li>
+        {% for c in _choices %}
+        <li><a class="dropdown-item {{ 'active' if c.current }}" href="{{ c.href }}" {{ 'aria-current="true"'|safe if c.current }}>{{ c.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if not obs_confined %}
+    <span id="obs-live-pill" class="obs-pill st-none obs-hide-sm" role="status" aria-live="polite" title="{{ _('Time of the last successful collection') }}">
+      <span class="dot" aria-hidden="true"></span><span class="obs-tb-label-live">{{ _('Checking…') }}</span>
+    </span>
+    <span id="obs-health-pill" class="obs-pill st-none" title="{{ _('Global health: failing reads, back-ends down, links down, stale sources') }}">
+      <i class="bi bi-heart-pulse" aria-hidden="true"></i><span>…</span>
+    </span>
+    <span class="obs-tb-sep obs-hide-sm" aria-hidden="true"></span>
+    <div class="dropdown">
+      <button class="obs-tb-btn" id="obs-bell" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{{ _('Notifications') }}">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        <span id="obs-bell-count" class="obs-bell-count" hidden></span>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end obs-notif" aria-labelledby="obs-bell">
+        <div class="obs-notif-head">{{ _('Needs attention') }} <span id="obs-notif-total" class="ms-auto text-muted small"></span></div>
+        <div id="obs-notif-list"><div class="obs-notif-empty">{{ _('Loading…') }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="dropdown">
+      <button class="obs-tb-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="{{ _('Account menu for') }} {{ current_user.username }}">
+        <span class="obs-avatar" aria-hidden="true">{{ current_user.username[:1]|upper }}</span>
+        <span class="obs-tb-label">{{ current_user.username }}</span><i class="bi bi-chevron-down small" aria-hidden="true"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><h6 class="dropdown-header">{{ current_user.username }}</h6></li>
+        <li><a class="dropdown-item" href="{{ request.script_root }}/"><i class="bi bi-box-arrow-up-left me-2" aria-hidden="true"></i>{{ _('Back to SATOM') }}</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>{{ _('Sign out') }}</a></li>
+      </ul>
+    </div>
+  </div>
+</header>

@@ -1,0 +1,452 @@
+"""Firmware repository (Infrastructure -> Firmware).
+
+Admin-only store of FortiWeb/FortiADC ``.out`` firmware images. The binary lives
+on disk under ``<data>/firmware/<id>/<filename>`` (never in SQLite); the DB row
+keeps metadata plus a sha256 for integrity. A stored image can later feed the
+appliance Upgrade action (deferred wiring) instead of re-uploading every time.
+
+Mirrors the upload pattern in ``app/views/import_backup.py`` (ext allowlist,
+flash + redirect, ``log_action`` audit) and gates every route on
+``Permission.USER_MANAGE`` (admin) — both legacy roles and the new profiles
+resolve that coarse key, so it is stable across the in-flight RBAC refactor.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+
+from werkzeug.utils import secure_filename
+import shutil
+
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
+from flask_login import current_user, login_required
+from flask_wtf.csrf import validate_csrf
+
+from ..auth.decorators import require_permission
+from ..extensions import csrf, db
+from ..models import Appliance, Permission, visible_appliances
+from ..models_firmware import FirmwareImage
+from ..services import device_context, jobs as jobsvc
+from ..services.audit import log_action
+
+bp = Blueprint("firmware", __name__, url_prefix="/firmware")
+
+_ALLOWED_EXT = {".out"}
+# Products that manage firmware images. Derived LIVE from the ADOM registry
+# (``cap_firmware``); ``product not in _PRODUCTS`` works on the live sequence.
+from ..branding import live_products as _live_products  # noqa: E402
+
+_PRODUCTS = _live_products("firmware")
+
+#: The two artefact families Fortinet publishes. Ordered: the default first.
+IMAGE_KINDS = ("upgrade", "install")
+IMAGE_KIND_LABELS = {
+    "upgrade": "Upgrade — apply to a running appliance",
+    "install": "Install — build a new machine from nothing",
+}
+#: Install images are per-hypervisor; upgrade images are not.
+INSTALL_HYPERVISORS = ("kvm", "vmware")
+HYPERVISOR_LABELS = {"kvm": "KVM / Proxmox (.qcow2)",
+                     "vmware": "VMware ESXi (.ovf / .ova)"}
+#: Install media are NOT ``.out``. A FortiWeb VM install ships as a zip of an
+#: OVF plus VMDKs, or as a qcow2; a FortiADC install image is a qcow2 too.
+#: Rejecting them because the upgrade path only ever saw ``.out`` is what made
+#: this page structurally unable to hold install media at all.
+_INSTALL_EXT = {".out", ".zip", ".qcow2", ".ova", ".ovf", ".vmdk", ".img",
+                ".gz", ".tgz"}
+
+
+def allowed_ext(image_kind: str) -> set:
+    """Extensions accepted for a given artefact family.
+
+    Kept a function rather than a dict lookup at the call site so both upload
+    paths (multipart and resumable) cannot drift apart — they already had two
+    copies of the same hardcoded ``.out`` check.
+    """
+    return set(_INSTALL_EXT) if image_kind == "install" else set(_ALLOWED_EXT)
+
+
+def _firmware_root() -> str:
+    """Directory holding firmware folders.
+
+    Derived from the SQLite DB location so it sits next to ``fortinet.db`` in
+    ``data/`` in production AND is automatically isolated per test (the test DB
+    lives in a tmp dir), so the suite never writes into the live data dir.
+    """
+    uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "") or ""
+    if uri.startswith("sqlite:///"):
+        base = os.path.dirname(uri[len("sqlite:///"):])
+    else:
+        base = os.path.join(os.path.dirname(current_app.root_path), "data")
+    d = os.path.join(base, "firmware")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _sha256_of(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _wants_json() -> bool:
+    """The AJAX (jobs framework) path — the browser's XHR sets this header; a
+    plain form POST (JS disabled) falls through to the synchronous path."""
+    return (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or (request.form.get("ajax") or "") in ("1", "true"))
+
+
+def _derive_meta(filename: str, version: str, build: str) -> tuple[str, str]:
+    """Fill ``(version, build)`` from a Fortinet firmware filename.
+
+    Only ever fills what the operator left EMPTY: a typed value is a decision,
+    the filename is a guess, and overruling the first with the second would
+    silently file an image under a version nobody chose. A name that carries
+    neither token leaves both empty rather than inventing one.
+
+    The parsing itself is delegated to ``backup_server.parse_fw_version`` — the
+    backup-server pull path already derives these same two fields from these same
+    names, and a second regex here would be a second author of one rule.
+    """
+    if version and build:
+        return version, build
+    from ..services.backup_server import parse_fw_version
+    v, b = parse_fw_version(filename or "")
+    return (version or v), (build or b)
+
+
+def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
+                     user_id: int = 0, link: str | None = None):
+    """Background worker: sha256 the just-uploaded image (reporting progress so
+    the toast has a real bar) and stamp the row. Runs in a daemon thread with a
+    fresh app context — NO request/current_user here, so the audit row is written
+    in the request, not here. Raises a bell notification for the uploading user
+    on success/failure (``link`` is resolved in the request and passed in, since
+    ``url_for`` can't build a URL from this thread)."""
+    from ..services import notifications as notify
+    with app.app_context():
+        try:
+            fw = db.session.get(FirmwareImage, image_id)
+            if fw is None:
+                raise ValueError(f"firmware row {image_id} not found")
+            total = os.path.getsize(dest_path)
+            h = hashlib.sha256()
+            read = 0
+            with open(dest_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(4 * 1024 * 1024), b""):
+                    h.update(chunk)
+                    read += len(chunk)
+                    if total:
+                        jobsvc.set_progress(job_id, int(read * 100 / total),
+                                            "Verifying integrity…")
+            fw.sha256 = h.hexdigest()
+            fw.size_bytes = total
+            db.session.commit()
+            from ..services import backup_server as _bksrv
+            _bksrv.write_manifest()  # keep manifest.json in step after upload
+            filename, size_mb = fw.filename, fw.size_mb()
+        except Exception as exc:  # noqa: BLE001 — notify, then let run_async mark error
+            if user_id:
+                notify.push(user_id, "Firmware upload failed",
+                            kind=notify.Notification.KIND_ERROR,
+                            body=str(exc)[:400], link=link)
+            raise
+        jobsvc.finish_success(
+            job_id, message=f"{filename} ready — {size_mb} MB",
+            result={"image_id": image_id, "filename": filename,
+                    "size_mb": size_mb, "reload": True,
+                    # WHERE to refresh. Resolved in the request (url_for
+                    # cannot build a URL from this thread) and carried
+                    # here, because the client's fallback is a hardcoded
+                    # "/firmware" that stopped matching anything the day
+                    # this page moved under the /web ADOM prefix - so the
+                    # stored-firmware table sat stale until a manual F5.
+                    "reload_path": link})
+        if user_id:
+            notify.push(user_id, f"Firmware image ready: {filename}",
+                        kind=notify.Notification.KIND_SUCCESS,
+                        body=f"SHA-256 verified — {size_mb} MB. Ready for upgrades.",
+                        link=link)
+    return None
+
+
+@bp.route("/", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def index():
+    # ADOM scoping. This is applied on the QUERY, not in the template: a
+    # hidden row is still a row the page fetched, and the JSON/partial callers
+    # would keep leaking it. Global sees everything; a concrete ADOM sees only
+    # its own product's images.
+    _q = FirmwareImage.query
+    _adom = getattr(g, "product", None)
+    if _adom and _adom != "global":
+        _q = _q.filter(FirmwareImage.product == _adom)
+    images = _q.order_by(FirmwareImage.created_at.desc()).all()
+    # Product dropdown is driven LIVE from the ADOM registry (cap_firmware) so a
+    # new firmware-capable product (e.g. FortiAnalyzer) shows up without edits.
+    from ..branding import products_with, get_product
+    _all_fw = list(products_with("firmware"))
+    # In a concrete ADOM the product is not a choice — offering the dropdown
+    # would invite an upload the POST handler is going to overrule anyway.
+    _offer = [_adom] if (_adom and _adom != "global" and _adom in _all_fw) \
+        else _all_fw
+    fw_products = [{"key": k, "name": get_product(k).get("name", k.title())}
+                   for k in _offer]
+    # Device identity banner (host/line/zone/dept) for the ACTIVE ADOM so the
+    # Firmware page carries the same header as the product home. Generic by
+    # product scope (g.product): current selection, else the sole appliance of
+    # that product. Not FortiAnalyzer-specific.
+    header_dev = device_context.current_appliance()
+    _scope = getattr(g, "product", None)
+    if _scope and _scope != "global" and (
+            header_dev is None or header_dev.kind != _scope):
+        _same = visible_appliances().filter(Appliance.kind == _scope).all()
+        header_dev = _same[0] if len(_same) == 1 else None
+    # Per-box downgrade deep-links moved to Appliances > (device) >
+    # Appliance Actions > Downgrade; this page keeps the rollback guidance.
+    return render_template("firmware/index.html", images=images,
+                           fw_products=fw_products, header_dev=header_dev,
+                           adom_scope=(_adom or "global"),
+                           image_kinds=IMAGE_KINDS,
+                           hypervisors=INSTALL_HYPERVISORS)
+
+
+@bp.route("/upload", methods=["POST"])
+@csrf.exempt
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def upload():
+    # Exempt from the AUTOMATIC CSRF check — which, with WTF_CSRF_SSL_STRICT,
+    # also validates the Referer — because a Background Fetch upload is issued by
+    # the browser/Service Worker and may not carry a Referer. We STILL require a
+    # valid CSRF token, validated manually from the header (AJAX / Background
+    # Fetch) or the hidden field (classic form), so the endpoint is no less safe.
+    _tok = (request.headers.get("X-CSRFToken")
+            or request.headers.get("X-CSRF-Token")
+            or request.form.get("csrf_token"))
+    # Honour WTF_CSRF_ENABLED=False (tests) exactly like CSRFProtect does —
+    # a manual validate_csrf() call ignores that flag on its own.
+    if current_app.config.get("WTF_CSRF_ENABLED", True):
+        try:
+            validate_csrf(_tok)
+        except Exception:
+            if _wants_json():
+                return jsonify({"error": "Invalid or missing CSRF token — "
+                                         "reload the page and try again."}), 400
+            flash("Your session expired — please reload and try again.", "warning")
+            return redirect(url_for("firmware.index"))
+
+    file = request.files.get("image")
+    version = (request.form.get("version") or "").strip()
+    product = (request.form.get("product") or "fortiweb").strip().lower()
+    platform = (request.form.get("platform") or "").strip().lower()
+    if platform not in ("hw", "vm"):
+        platform = ""          # anything else = universal / any
+    build = (request.form.get("build") or "").strip()
+    notes = (request.form.get("notes") or "").strip()
+
+    if product not in _PRODUCTS:
+        product = "fortiweb"
+    # The ADOM overrules the form. The product select is not rendered in a
+    # concrete ADOM, but a hand-crafted POST would otherwise file a FortiWeb
+    # image under FortiADC. Scope comes from the request, never from a field
+    # the client controls — same rule as ProvisionRun.product.
+    _adom = getattr(g, "product", None)
+    if _adom and _adom != "global" and _adom in _PRODUCTS:
+        product = _adom
+
+    image_kind = (request.form.get("image_kind") or "upgrade").strip().lower()
+    if image_kind not in IMAGE_KINDS:
+        image_kind = "upgrade"
+    hypervisor = (request.form.get("hypervisor") or "").strip().lower()
+    if image_kind != "install" or hypervisor not in INSTALL_HYPERVISORS:
+        hypervisor = ""
+    ext = os.path.splitext(file.filename)[1].lower() if file and file.filename else ""
+    # Fortinet's own naming carries both version and build
+    # (``FWB_KVM-v7.6.8.M-build1128-FORTINET.out``), so re-typing them is only a
+    # chance to get them wrong. Typed values win; an unparseable name leaves
+    # them empty and the required-version check below still fires.
+    version, build = _derive_meta(file.filename if file else "", version, build)
+    # Hardware vs VM comes from Fortinet's own file name (FWB_KVM-… / FWB_1000E-…);
+    # a platform the operator picked is a decision and is never overruled.
+    from ..services.backup_server import parse_fw_platform
+    _plat, _hyp = parse_fw_platform(file.filename if file else "")
+    if not platform:
+        platform = _plat
+    if image_kind == "install" and not hypervisor and _hyp in INSTALL_HYPERVISORS:
+        hypervisor = _hyp
+
+    # Validate — return JSON to the AJAX path, flash+redirect to the classic one.
+    err = None
+    if file is None or not file.filename:
+        err = "Please choose a firmware .out file to upload."
+    elif not version:
+        err = "A firmware version is required (e.g. 7.6.4)."
+    elif ext not in allowed_ext(image_kind):
+        err = (f'Unsupported file type "{ext}" for an {image_kind} image. '
+               f'Accepted: {", ".join(sorted(allowed_ext(image_kind)))}.')
+    if err:
+        if _wants_json():
+            return jsonify({"error": err}), 400
+        flash(err, "warning")
+        return redirect(url_for("firmware.index"))
+
+    # Insert the row first to mint an id, then stream the upload into its folder.
+    safe_name = secure_filename(file.filename) or "firmware.out"
+    fw = FirmwareImage(
+        product=product, platform=platform, version=version,
+        image_kind=image_kind, hypervisor=hypervisor,
+        build=build or None, filename=safe_name, stored_path="",
+        notes=notes or None,
+        uploaded_by=getattr(current_user, "username", "") or "",
+    )
+    db.session.add(fw)
+    db.session.flush()  # assigns fw.id without committing
+
+    dest_dir = os.path.join(_firmware_root(), str(fw.id))
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, safe_name)
+    try:
+        file.save(dest_path)  # Werkzeug streams to disk — no full read into RAM
+        fw.stored_path = dest_path
+        fw.size_bytes = os.path.getsize(dest_path)
+    except Exception as exc:  # noqa: BLE001 — never 500 on a bad upload
+        db.session.rollback()
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        if _wants_json():
+            return jsonify({"error": f"Upload failed: {exc}"}), 500
+        flash(f"Upload failed: {exc}", "danger")
+        return redirect(url_for("firmware.index"))
+
+    if _wants_json():
+        # Transfer is done (the browser already showed its upload bar); defer the
+        # expensive sha256 to a background job and return immediately so the
+        # bottom-right toast can track "Verifying…" without holding the request.
+        fw.sha256 = ""
+        db.session.commit()
+        log_action(
+            "firmware.upload",
+            target=f"{product} {version} ({safe_name})",
+            extra={"id": fw.id, "size_bytes": fw.size_bytes, "sha256": "pending",
+                   "platform": platform, "build": build},
+        )
+        image_id = fw.id
+        uid = getattr(current_user, "id", 0) or 0
+        link = url_for("firmware.index")
+        job = jobsvc.create_job(
+            "firmware_finalize", f"Verifying {safe_name}", cancelable=False,
+            by=getattr(current_user, "username", "") or "",
+            meta={"image_id": image_id, "filename": safe_name},
+        )
+        jobsvc.run_async(
+            current_app._get_current_object(), job["id"],
+            lambda app, jid: _finalize_upload(app, jid, image_id, dest_path,
+                                              uid, link),
+        )
+        return jsonify({"job_id": job["id"], "image_id": image_id,
+                        "filename": safe_name}), 202
+
+    # ── Classic synchronous path (JS disabled): unchanged behaviour ──
+    try:
+        fw.sha256 = _sha256_of(dest_path)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        flash(f"Upload failed: {exc}", "danger")
+        return redirect(url_for("firmware.index"))
+
+    log_action(
+        "firmware.upload",
+        target=f"{product} {version} ({safe_name})",
+        extra={"id": fw.id, "size_bytes": fw.size_bytes, "sha256": fw.sha256,
+               "platform": platform, "build": build},
+    )
+    flash(f'Firmware "{safe_name}" ({product} {version}) uploaded — '
+          f"{fw.size_mb()} MB.", "success")
+    return redirect(url_for("firmware.index"))
+
+
+def _image_in_scope(image_id):
+    """One image by id, under the same ADOM rule as the list: a concrete ADOM
+    reaches only its own product's images, Global reaches all."""
+    fw = db.session.get(FirmwareImage, image_id)
+    _adom = getattr(g, "product", None)
+    if fw is not None and _adom and _adom != "global" and fw.product != _adom:
+        return None
+    return fw
+
+
+@bp.route("/<int:image_id>/download", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def download(image_id):
+    fw = _image_in_scope(image_id)
+    if fw is None or not fw.stored_path or not os.path.exists(fw.stored_path):
+        abort(404)
+    return send_file(fw.stored_path, as_attachment=True, download_name=fw.filename)
+
+
+@bp.route("/<int:image_id>/delete", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def delete(image_id):
+    fw = _image_in_scope(image_id)
+    if fw is None:
+        abort(404)
+    folder = os.path.dirname(fw.stored_path) if fw.stored_path else None
+    meta = f"{fw.product} {fw.version} ({fw.filename})"
+    fw_id = fw.id
+    db.session.delete(fw)
+    db.session.commit()
+    if folder and os.path.isdir(folder):
+        shutil.rmtree(folder, ignore_errors=True)
+    from ..services import backup_server as _bksrv
+    _bksrv.write_manifest()  # keep manifest.json in step after a removal
+    log_action("firmware.delete", target=meta, extra={"id": fw_id})
+    flash(f"Deleted firmware {meta}.", "success")
+    return redirect(url_for("firmware.index"))
+
+
+@bp.route("/manifest.json", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def manifest():
+    """Machine-readable firmware inventory, regenerated from the DB on demand.
+    Auto-updated on every pull/upload/delete so it never drifts (closes the
+    'manifest maintained by hand' gap)."""
+    from ..services import backup_server as _bksrv
+    return jsonify(_bksrv.read_manifest())
+
+
+@bp.route("/parse-name", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def parse_name():
+    """What the upload form's autofill reads (filename only — no bytes move).
+
+    Deliberately the SAME parser the two POST handlers use, so the value shown
+    pre-filled in the form is exactly the value the server would have stored on
+    its own. A JS-side regex would be a second author and would drift.
+    """
+    from ..services.backup_server import parse_fw_platform
+    name = request.args.get("filename") or ""
+    v, b = _derive_meta(name, "", "")
+    platform, hypervisor = parse_fw_platform(name)
+    return jsonify({"version": v, "build": b,
+                    "platform": platform, "hypervisor": hypervisor})

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% from "_ui.html" import page_header, empty_state, ago %}
+{% block title %}Sources{% endblock %}
+{% block content %}
+{{ page_header('Sources', 'Devices and inventories Observability reads — always read-only', 'plug') }}
+<div class="obs-card-grid obs-card-grid-lg">
+  {% for s in sources %}
+  <article class="fw-card obs-src-card">
+    <div class="obs-src-head">
+      <span class="obs-src-icon" aria-hidden="true"><i class="bi bi-shield-check"></i></span>
+      <div class="flex-grow-1 min-w-0">
+        <a class="obs-src-name" href="{{ url_for('sources.detail', sid=s.id) }}">{{ s.name }}</a>
+        <div class="small text-muted text-truncate">{{ kinds.get(s.kind, s.kind) }} · {{ s.host }}:{{ s.port }}</div>
+      </div>
+      {{ status_badge(s.last_status) }}
+    </div>
+    <dl class="obs-src-facts">
+      <dt>Build</dt><dd class="text-truncate" title="{{ s.build }}">{{ s.build or 'unknown' }}</dd>
+      <dt>Reads</dt><dd>{{ reads.get(s.id, (0, 0))[0] }}/{{ reads.get(s.id, (0, 0))[1] }} OK</dd>
+      <dt>Last run</dt><dd>{{ ago(s.last_run_at) }}</dd>
+      <dt>Every</dt><dd>{{ s.interval_s // 60 }} min{% if not s.enabled %} · <span class="obs-chip st-none"><i class="bi bi-pause-fill" aria-hidden="true"></i> disabled</span>{% endif %}</dd>
+      <dt>TLS</dt><dd>{% if s.tls_verify %}<span class="obs-chip st-ok"><i class="bi bi-lock-fill" aria-hidden="true"></i> verified</span>{% else %}<span class="obs-chip st-stale"><i class="bi bi-unlock-fill" aria-hidden="true"></i> not verified</span>{% endif %}</dd>
+    </dl>
+    {% if s.last_error %}<p class="small text-danger mb-2" role="note"><i class="bi bi-x-octagon-fill" aria-hidden="true"></i> {{ s.last_error }}</p>{% endif %}
+    <div class="obs-src-actions">
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('sources.detail', sid=s.id) }}">Open</a>
+      <form method="post" action="{{ url_for('sources.collect_now', sid=s.id) }}" class="obs-busy-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-primary"><span class="obs-btn-label"><i class="bi bi-cloud-download" aria-hidden="true"></i> Collect now</span></button></form>
+    </div>
+  </article>
+  {% endfor %}
+  <article class="fw-card obs-src-card obs-src-add">
+    <div class="obs-src-head"><span class="obs-src-icon" aria-hidden="true"><i class="bi bi-database"></i></span>
+      <div><div class="obs-src-name">From SATOM's inventory</div><div class="small text-muted">Add or edit a device in SATOM › Devices</div></div></div>
+    <ul class="obs-kind-list">
+      {% for k, label in kinds.items() %}<li><i class="bi bi-check-circle-fill st-ok" aria-hidden="true"></i> {{ label }}</li>{% endfor %}
+      {% for k, label in planned.items() %}<li class="text-muted"><i class="bi bi-hourglass-split" aria-hidden="true"></i> {{ label }} <span class="obs-chip st-none">planned</span></li>{% endfor %}
+    </ul>
+    {% if satom_planned %}<div class="small text-muted mt-2">In SATOM, no connector here yet: {% for d in satom_planned %}{{ d.name }} ({{ d.kind }}){{ ', ' if not loop.last }}{% endfor %}.</div>{% endif %}
+    <a class="btn btn-sm btn-outline-primary mt-2" href="{{ satom_root }}/appliances/"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> SATOM devices</a>
+  </article>
+</div>
+{% if not sources and not current_user.is_admin %}<div class="fw-card">{{ empty_state('plug', 'No sources yet', 'SATOM has no FortiWeb or FortiGate you can see.') }}</div>{% endif %}
+<p class="small text-muted mt-3"><i class="bi bi-shield-lock" aria-hidden="true"></i> Every source is one of SATOM's devices. The configuration is read from SATOM's cache; only live state, counters and back-end health are read from the device, GET only, with the credential SATOM holds (never copied here).</p>
+{% endblock %}

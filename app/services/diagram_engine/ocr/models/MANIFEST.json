@@ -1,0 +1,33 @@
+{
+  "files": {
+    "ch_PP-OCRv4_det_infer.onnx": {
+      "description": "PP-OCRv4 text detection (DB); language-independent",
+      "license": "Apache-2.0",
+      "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+      "size": 4745517,
+      "source": "rapidocr_onnxruntime 1.4.4 wheel (PyPI), rapidocr_onnxruntime/models/ch_PP-OCRv4_det_infer.onnx"
+    },
+    "ch_ppocr_mobile_v2.0_cls_infer.onnx": {
+      "description": "PP-OCR mobile v2.0 text-direction classifier (0/180 degrees)",
+      "license": "Apache-2.0",
+      "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
+      "size": 585532,
+      "source": "rapidocr_onnxruntime 1.4.4 wheel (PyPI), rapidocr_onnxruntime/models/ch_ppocr_mobile_v2.0_cls_infer.onnx"
+    },
+    "latin_PP-OCRv5_mobile_rec.onnx": {
+      "description": "PP-OCRv5 Latin text recognition (mobile, CTC)",
+      "license": "Apache-2.0",
+      "sha256": "7888113072263cb471b93f66dd5e2ad70548dc526fa1ace760d0d973dd121498",
+      "size": 8042023,
+      "source": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx"
+    },
+    "latin_dict.txt": {
+      "description": "Latin character dictionary (836 entries, one per line): PostProcess.character_dict of the model's inference.yml",
+      "license": "Apache-2.0",
+      "sha256": "ccbcc45730b3fbbd9050c5bc74db6a99067141ef1035e3d14889a84a6b9b1aff",
+      "size": 2616,
+      "source": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml (sha256 0bbe984570f597af3638e50bdf2e8276f3ab26a61966096538b3b0d1849f5c84)"
+    }
+  },
+  "license": "Apache-2.0"
+}

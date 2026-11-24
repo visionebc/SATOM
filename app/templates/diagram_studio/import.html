@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% set lim = cfg.get('limits') or {} %}
+{% block title %}{{ _('Import diagrams') }} — {{ _('Diagram Studio') }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('diagram_studio.index') }}">{{ _('Diagram Studio') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Import') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header mb-2">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-upload me-2 text-accent" aria-hidden="true"></i>{{ _('Import diagrams') }}</h1>
+    <p class="text-muted mb-0 small">{{ _('Every file is read in an isolated sandbox. Vector formats are converted exactly; pictures and scanned PDFs go through shape, connector and text recognition.') }}</p>
+  </div>
+</div>
+
+<div class="ds-import" id="dsImport">
+  <ol class="ds-stepper" aria-label="{{ _('Import steps') }}">
+    <li class="ds-step" data-step="1" aria-current="step">{{ _('Import') }}</li>
+    <li class="ds-step" data-step="2">{{ _('Recognition') }}</li>
+    <li class="ds-step" data-step="3">{{ _('Review') }}</li>
+    <li class="ds-step" data-step="4">{{ _('Editor') }}</li>
+    <li class="ds-step" data-step="5">{{ _('Export') }}</li>
+  </ol>
+
+  <section id="dsStep1" aria-labelledby="dsStep1Title">
+    <h2 id="dsStep1Title" class="visually-hidden">{{ _('Choose files') }}</h2>
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="fw-card"><div class="fw-card-body">
+          <label class="ds-drop-zone" id="dsDrop" for="dsFiles" tabindex="0">
+            <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+            <strong>{{ _('Drop files here, or click to browse') }}</strong>
+            <span class="small">{{ _('draw.io, SVG, Visio (.vsdx, .vdx), PDF, PNG, JPEG, GIF, WEBP, BMP, TIFF, Mermaid (.mmd), Graphviz (.dot, .gv)') }}</span>
+          </label>
+          <input type="file" id="dsFiles" multiple class="visually-hidden" aria-describedby="dsLimits">
+          <ul class="ds-files" id="dsFileList" aria-label="{{ _('Files to import') }}"></ul>
+        </div></div>
+      </div>
+      <div class="col-lg-4">
+        <div class="fw-card mb-3"><div class="fw-card-body">
+          <h3 class="h6">{{ _('Options') }}</h3>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="dsOptOcr" checked>
+            <label class="form-check-label" for="dsOptOcr">{{ _('Read text (OCR) in pictures and scans') }}</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="dsOptClassify" checked>
+            <label class="form-check-label" for="dsOptClassify">{{ _('Classify elements (router, firewall, server…)') }}</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="dsOptVision" {% if not cfg.get('visionAvailable') %}disabled{% endif %}>
+            <label class="form-check-label" for="dsOptVision">{{ _('Refine with the local vision model') }}</label>
+            {% if not cfg.get('visionAvailable') %}<div class="form-text">{{ _('Not configured on this console.') }}</div>{% endif %}
+          </div>
+          <label for="dsOptName" class="form-label small mt-2 mb-1">{{ _('Diagram name (optional)') }}</label>
+          <input type="text" id="dsOptName" class="form-control form-control-sm" maxlength="200" placeholder="{{ _('Taken from the file name') }}">
+        </div></div>
+        <div class="fw-card"><div class="fw-card-body">
+          <h3 class="h6">{{ _('Limits') }}</h3>
+          <ul class="ds-limits" id="dsLimits">
+            <li>{{ _('Up to %(n)s files per import', n=lim.get('files', 20)) }}</li>
+            <li>{{ _('%(n)s MiB per file', n=lim.get('file_mb', 50)) }}</li>
+            <li>{{ _('%(n)s PDF pages per import', n=lim.get('pdf_pages', 50)) }}</li>
+            <li>{{ _('%(e)s elements and %(c)s connectors per page', e=lim.get('elements', 5000), c=lim.get('connectors', 10000)) }}</li>
+            <li>{{ _('Legacy binary Visio (.vsd) is not read: save it as .vsdx first.') }}</li>
+          </ul>
+        </div></div>
+      </div>
+    </div>
+    <div class="ds-btnrow mt-3 justify-content-end">
+      <a href="{{ url_for('diagram_studio.index') }}" class="btn btn-sm btn-fw-secondary">{{ _('Cancel') }}</a>
+      <button type="button" id="dsStart" class="btn btn-sm btn-fw-primary" disabled><i class="bi bi-play-fill me-1" aria-hidden="true"></i>{{ _('Start recognition') }}</button>
+    </div>
+  </section>
+
+  <section id="dsStep2" hidden aria-labelledby="dsStep2Title">
+    <div class="d-flex align-items-center mb-2">
+      <h2 id="dsStep2Title" class="h5 me-auto mb-0">{{ _('Recognition') }}</h2>
+      <span id="dsJobsSummary" class="small ds-muted" role="status" aria-live="polite"></span>
+    </div>
+    <div class="ds-jobs" id="dsJobs"></div>
+    <div class="ds-btnrow mt-3 justify-content-end">
+      <button type="button" id="dsMore" class="btn btn-sm btn-fw-secondary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>{{ _('Import more files') }}</button>
+      <a href="{{ url_for('diagram_studio.index') }}" class="btn btn-sm btn-fw-secondary">{{ _('Back to the library') }}</a>
+    </div>
+  </section>
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index')}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_import.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

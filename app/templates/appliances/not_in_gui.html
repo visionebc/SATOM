@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_not_in_gui.html" import channel_badge, nig_cli with context %}
+{% from "workspace/_layout_origin.html" import layout_origin %}
+{% block title %}{{ _('Not in GUI, but in CLI') }} — {{ appliance.name }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <span>{{ _('Not in GUI, but in CLI') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Not in GUI, but in CLI') }}</h1>
+    <div class="text-muted small">
+      <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="text-decoration-none">{{ appliance.name }}</a>
+      {% if inv %}· {{ inv.product }} {{ inv.version or _('unknown build') }}{% endif %}
+    </div>
+  </div>
+</div>
+
+<p class="text-muted small fw-nig-intro" data-nig-intro>{% if inv and inv.tree_measured %}{{ _('Every field this device has on its exact build is shown in SATOM, because the CLI tree of that build is measured.') }}{% elif inv %}{{ _('The CLI tree of this device\'s exact build is not measured: SATOM can only name the fields the API library measured on it (%(what)s), so the fields only the CLI has cannot be listed yet.', what=(inv.measured_on|join(', ')) or _('nothing yet')) }}{% else %}{{ _('Every field this device has on its exact build is shown in SATOM once the page can read it.') }}{% endif %} {{ _('The fields the Fortinet GUI does not show are listed here with the channel SATOM writes them by: REST (a normal save) or CLI (the CLI writer, over SSH). The object editors show the same fields in their own "Not in GUI, but in CLI" section; here every CLI field is editable too.') }}</p>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if inv %}
+  {% if inv.note %}<div class="alert alert-info small" data-nig-note>{{ inv.note }}</div>{% endif %}
+
+  {# an object whose every REST field the GUI shows has nothing to list: those are ONE line, not a card each saying "(0)" #}
+  {% set _full = inv.layout_pages|rejectattr('rest_not_in_gui')|list %}
+  {% for lp in inv.layout_pages if lp.rest_not_in_gui %}
+  <div class="fw-card mb-3 p-3" data-nig-layout="{{ lp.endpoint }}">
+    <strong>{{ lp.endpoint }}</strong>
+    <span class="text-muted small">— {{ layout_origin(lp.layout.origin) }}</span>
+    <div class="mt-2 small">{{ _('REST fields the Fortinet GUI does not show') }} ({{ lp.rest_not_in_gui|length }}):
+      {% for k in lp.rest_not_in_gui %}<code class="me-1" data-nig-key="{{ k }}">{{ k }}</code>{{ channel_badge('REST') }} {% endfor %}</div>
+  </div>
+  {% endfor %}
+  {% if _full %}
+  <details class="fw-card mb-3 p-3" data-nig-full="{{ _full|length }}">
+    <summary class="small">{{ _('1 object has every field in the GUI') if _full|length == 1 else _('%(n)s objects have every field in the GUI', n=_full|length) }}</summary>
+    <div class="mt-2 small">{% for lp in _full %}<code class="me-2" data-nig-full-endpoint="{{ lp.endpoint }}" title="{{ lp.layout.origin.head }}">{{ lp.endpoint }}</code> {% endfor %}</div>
+  </details>
+  {% endif %}
+
+  {% if inv.absent %}
+  {% set can_read = may_open('appliances.not_in_gui_rows') %}
+  <div class="fw-card mb-3 p-3" data-nig-absent>
+    <h2 class="h6">{{ _('Objects the device\'s GUI does not draw') }} <span class="text-muted">({{ inv.absent|length }})</span></h2>
+    <p class="small text-muted mb-2">{{ _('The device has these objects and serves them over REST; no page of its own GUI reads them on this build. Their rows are read from the device when this page opens (read only).') }}</p>
+    {% for o in inv.absent %}
+    <div class="mb-3" data-nig-object="{{ o.endpoint }}" data-why="{{ o.why }}">
+      <div class="small mb-1">
+        <strong>{{ o.label }}</strong> <code>{{ o.endpoint }}</code> {{ channel_badge('REST') }}
+        {% if o.group %}<span class="text-muted">— {{ o.group }}</span>{% endif %}
+        {% if o.page and may_open('workspace.fwgui_list') %}
+          <a class="ms-1" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=o.page, v=o.v or None) }}">{{ _('Open its page') }}</a>
+        {% elif o.why == 'no_page' %}
+          <span class="text-muted">— {{ _('no measured page of this build reads it: this list is where SATOM shows it') }}</span>
+        {% endif %}
+        <span class="text-muted ms-1" data-nig-rows-count></span>
+      </div>
+      {% if can_read %}
+      <div data-nig-rows data-src="{{ url_for('appliances.not_in_gui_rows', id=appliance.id, ep=o.endpoint) }}"><span class="small text-muted">{{ _('Reading rows…') }}</span></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="fw-card mb-3 p-3">
+    <h2 class="h6">{{ _('Objects only the CLI serves') }} <span class="text-muted">({{ inv.objects|length }})</span></h2>
+    {% if inv.objects %}
+      {% for o in inv.objects %}
+      <div class="mb-2" data-nig-object="{{ o.endpoint }}">
+        <div class="small mb-1"><code>{{ o.endpoint }}</code>{% if not o.fields %} <span class="text-muted">— {{ _('status object: no field to set') }}</span>{% endif %}</div>
+        {% if o.fields %}{{ nig_cli(o.section, appliance) }}{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}<p class="text-muted small mb-0">{{ _('None on this build.') }}</p>{% endif %}
+  </div>
+
+  <div class="fw-card mb-3 p-3">
+    <h2 class="h6">{{ _('CLI-only fields of objects the REST API serves') }} <span class="text-muted">({{ inv.fields|length }})</span></h2>
+    {% if inv.fields %}
+      {% for o in inv.fields %}
+      <div class="mb-2" data-nig-object="{{ o.endpoint }}">
+        <div class="small mb-1"><code>{{ o.endpoint }}</code></div>
+        {{ nig_cli(o.section, appliance) }}
+      </div>
+      {% endfor %}
+    {% else %}<p class="text-muted small mb-0">{{ _('None on this build.') }}</p>{% endif %}
+  </div>
+{% endif %}
+{% endblock %}

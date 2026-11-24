@@ -1,0 +1,667 @@
+"""**Naming** — standalone admin page, one per device ADOM.
+
+Two tabs over ONE list of object types:
+
+* **Scheme** — the pattern each object type is named by. The catalog of
+  ``services.naming`` (what SATOM builds new names from, FortiWeb's creation
+  flows) plus every other object type the product's configuration sweep reads
+  (``device_sync.sweep_tables``), stored per product. Each entry shows what
+  Discovery found on the devices next to the input.
+* **Discovery** — the convention the devices already follow
+  (``services.naming_discovery``). **Adopt** writes the discovered pattern into
+  the scheme entry of that object type; **Adopt & adapt** opens it for a small
+  edit first, with a live check against the existing names.
+
+Admin-only (USER_MANAGE), mirroring the desktop Settings console.
+"""
+from __future__ import annotations
+
+import logging
+
+from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask_babel import gettext as _
+from flask_login import login_required
+
+from ..auth.decorators import require_permission
+from ..models import Permission
+from ..services import naming as naming_svc
+from ..services import settings_store as store
+from ..services.audit import log_action
+
+bp = Blueprint('naming', __name__, url_prefix='/naming')
+log = logging.getLogger(__name__)
+
+#: Discovered table -> catalog element of ``services.naming``, where the
+#: catalog has one: that element IS the table's scheme entry. Any other table
+#: is stored as ``naming.table_key(table)``. ``tests/test_naming_discovery.py``
+#: pins every target to an element of the right product.
+SCHEME_ELEMENT_OF = {
+    "fortiweb": {
+        "server_policy": "server_policy", "vserver": "virtual_server", "vip": "vip",
+        "server_pool": "server_pool", "server_pool_health_check": "health_check",
+        "server_pool_persistence": "persistence",
+        "http_content_routing": "content_routing",
+        "certificate": "certificate",
+        "webprotection_profile_inline": "web_protection_profile",
+        "http_protocol": "http_constraint", "x_forwarded_for": "x_forward",
+        "allow_method_policy": "allow_method", "ip_list": "ip_list", "geo_block": "geo",
+        "cookie_security": "cookie_security", "csrf_protection": "csrf",
+        "padding_oracle": "padding_oracle", "http_header_security": "http_header_security",
+        "parameter_validation_policy": "parameter_validation",
+        "hidden_field_protection_policy": "hidden_fields",
+        "file_security_policy": "file_upload", "url_access_policy": "url_access",
+        "bot_mitigation_policy_2": "bot_mitigation",
+    },
+    "fortiadc": {
+        "load_balance_virtual_server": "adc_virtual_server",
+        "load_balance_real_server": "adc_real_server",
+        "load_balance_pool": "adc_real_server_pool",
+        "system_health_check": "adc_health_check",
+        "load_balance_persistence": "adc_persistence",
+        "load_balance_method": "adc_lb_method",
+        "load_balance_content_routing": "adc_content_routing",
+        "load_balance_content_rewriting": "adc_content_rewriting",
+        "load_balance_schedule_pool": "adc_schedule_pool",
+        "load_balance_error_page": "adc_error_page",
+        "load_balance_client_ssl_profile": "adc_client_ssl_profile",
+        "load_balance_real_server_ssl_profile": "adc_server_ssl_profile",
+        "system_certificate_local": "adc_certificate",
+    },
+}
+
+#: Names sent to the page per object type for the live check (a type with
+#: thousands of objects still checks against a representative sample).
+NAMES_FOR_LIVE_CHECK = 400
+
+
+# ── product / devices ────────────────────────────────────────────────────────
+
+def _device_products() -> list[tuple[str, str]]:
+    """(key, name) of every active device ADOM — each has a Naming page."""
+    from ..branding import PRODUCTS
+    return [(k, PRODUCTS[k].get("name", k)) for k in PRODUCTS if k != "global"]
+
+
+def _naming_product(raw: str | None) -> str:
+    keys = [k for k, _ in _device_products()]
+    if raw in keys:
+        return raw
+    from ..services.product_scope import session_product
+    cur = session_product()
+    if cur in keys:
+        return cur
+    return keys[0] if keys else naming_svc.DEFAULT_PRODUCT
+
+
+def _catalog(product: str) -> list:
+    """The ``services.naming`` elements of *product* (none for most products;
+    never the FortiWeb fallback ``naming.valid_product`` applies)."""
+    return [e for e in naming_svc.NAMING_ELEMENTS if e.product == product]
+
+
+def _fleet(product: str) -> list:
+    from ..models import Appliance, visible_appliances
+    return visible_appliances().filter_by(kind=product).order_by(Appliance.name).all()
+
+
+def _tree_path(appliance):
+    from ..services import device_sync
+    return device_sync._reports_dir() / device_sync.slugify(appliance.name) / "_config.json"
+
+
+def _table_labels(product: str) -> dict[str, str]:
+    """Registry name -> the tab label the ADOM's own menu uses."""
+    out: dict[str, str] = {}
+    try:
+        if product == "fortigate":
+            from ..registry import loader
+            from ..services import fgt_menu
+            for g in fgt_menu.menu():
+                for it in g.items:
+                    for path, label in it.tabs:
+                        out.setdefault(loader.fgt_logical(path), label)
+        elif product in ("fortianalyzer", "fortiauthenticator"):
+            from ..services import faz_menu, fac_menu
+            groups = faz_menu.menu() if product == "fortianalyzer" else fac_menu.visible_menu()
+            for g in groups:
+                for it in g.items:
+                    for logical, label in it.logicals:
+                        out.setdefault(logical, label)
+    except Exception:  # noqa: BLE001 — labels are cosmetic; the key still shows
+        pass
+    return out
+
+
+# Analyses keyed by (tree file, mtime): the Scheme tab reads every device of
+# the product on each render and a tree only changes when a sync rewrites it.
+_ANALYSIS_CACHE: dict[tuple, tuple] = {}
+
+
+def _load(appliance, product: str, labels: dict):
+    """(tree, analysis) of one device, or (None, None) when SATOM holds no
+    tree for it. The analysis is a copy the caller may annotate."""
+    from ..services import naming_discovery as nd
+    path = _tree_path(appliance)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return None, None
+    ck = (str(path), mtime, product, appliance.name)
+    hit = _ANALYSIS_CACHE.get(ck)
+    if hit is None:
+        tree = nd.load_tree(path)
+        if tree is None:
+            return None, None
+        if len(_ANALYSIS_CACHE) > 256:
+            _ANALYSIS_CACHE.clear()
+        hit = _ANALYSIS_CACHE[ck] = (tree, nd.analyse_device(product, appliance.name, tree, labels))
+    tree, a = hit
+    a = dict(a, tables=[dict(t) for t in a["tables"]], appliance_id=appliance.id)
+    return tree, a
+
+
+# ── the scheme: one entry per object type ───────────────────────────────────
+
+#: The sample site the page previews with until the operator types another.
+SAMPLE_ADDRESS = "shop.example.com"
+SAMPLE_PORT = "443"
+
+
+def _step_samples(tokens: dict) -> dict:
+    """Sample values of what a Plugin Studio ``render_names`` step passes
+    (Server Policy (plugins)): the DNS name, the service (the DNS name with
+    . as _, as spo-fortiweb passes it) and an empty extra text."""
+    host = tokens.get("host") or ""
+    return {"dns": host, "service": host.replace(".", "_"), "extra": ""}
+
+
+def _free_tokens(variables) -> tuple[str, ...]:
+    """Tokens that match free text when an existing name is checked against a
+    catalog pattern: ``{host}`` and every variable (a rewritten host is
+    several parts, not one)."""
+    return ("host",) + tuple(v["name"] for v in naming_svc.normalize_variables(variables))
+
+
+def _posted_variables(form) -> list[dict]:
+    """The variable rows of the Scheme form. Every column posts one value per
+    row (no multi-selects), so matching by index is safe."""
+    cols = {f: form.getlist(f"var_{f}[]") for f in ("name", "source", "regex", "replace")}
+    rows = []
+    for i, name in enumerate(cols["name"]):
+        def col(f):
+            vals = cols[f]
+            return vals[i] if i < len(vals) else ""
+        if not (name or "").strip() and not col("regex").strip():
+            continue          # a blank row the operator added and left
+        rows.append({"name": name, "source": col("source"), "regex": col("regex"),
+                     "replace": col("replace")})
+    return rows
+
+
+def _scheme_key(product: str, table: str) -> str:
+    return SCHEME_ELEMENT_OF.get(product, {}).get(table) or naming_svc.table_key(table)
+
+
+def _migrate_adopted(product: str) -> None:
+    """Fold the retired per-product "adopted convention" store into the scheme.
+
+    Discovery's first version kept adopted patterns apart from the scheme
+    (``naming.discovered.<product>``) — two lists of conventions that could
+    disagree. Each entry moves to its scheme entry unless that entry already
+    has a pattern of its own or cannot carry it; the old key is then emptied."""
+    legacy_key = f"naming.discovered.{product}"
+    legacy = store.get_json(legacy_key, {}) or {}
+    if not legacy:
+        return
+    overrides = dict(store.naming_overrides(product))
+    variables = store.naming_variables(product)
+    moved, dropped = [], []
+    for table, entry in legacy.items():
+        pattern = ((entry or {}).get("pattern") or "").strip()
+        key = _scheme_key(product, table)
+        if not pattern or overrides.get(key):
+            continue
+        if naming_svc.pattern_problem(key, pattern, variables):
+            dropped.append(f"{table}={pattern}")
+            continue
+        overrides[key] = pattern
+        moved.append(f"{table}={pattern}")
+    store.save_naming(overrides, product)
+    store.set_json(legacy_key, {})
+    log_action('naming.save', detail=f'{product}: adopted conventions moved into the scheme '
+               f'({", ".join(moved) or "none"}; not movable: {", ".join(dropped) or "none"})')
+
+
+def _scheme_model(product: str) -> dict:
+    """Everything both tabs draw from: the entries (catalog + every object
+    type of the sweep), what each device holds, and the per-table fleet view."""
+    from ..services import device_sync
+    from ..services import naming_discovery as nd
+    _migrate_adopted(product)
+    fleet = _fleet(product)
+    labels = _table_labels(product)
+    trees, analyses = [], []
+    for a in fleet:
+        tree, an = _load(a, product, labels)
+        if tree is not None:
+            trees.append(tree)
+            analyses.append(an)
+    try:
+        sweep = device_sync.sweep_tables(product, fleet)
+    except Exception:  # noqa: BLE001 — the trees still list what devices hold
+        sweep = {}
+    try:
+        kinds = device_sync.table_kinds(product, fleet, sweep, trees)
+    except Exception:  # noqa: BLE001 — unmeasured shapes stay listed
+        log.exception("naming: table_kinds(%s) failed", product)
+        kinds = {}
+    types = nd.object_types(sweep, trees, kinds)
+    by_table: dict[str, dict] = {}
+    for an in analyses:
+        for t in an["tables"]:
+            b = by_table.setdefault(t["table"], {"names": [], "factory": 0})
+            b["names"].extend(t.get("names") or ())
+            b["factory"] += t.get("factory") or 0
+    found = {r["table"]: r for r in nd.fleet_view(analyses)}
+    overrides = store.naming_overrides(product)
+    variables = store.naming_variables(product)
+    mapping = SCHEME_ELEMENT_OF.get(product, {})
+    table_of = {v: k for k, v in mapping.items()}
+
+    def entry(key, label, section, table, default="", derives=False, note="", curated=False):
+        info = by_table.get(table or "", {})
+        names = sorted(set(info.get("names") or ()))
+        value = (overrides.get(key) or "").strip()
+        pattern = value or default
+        allowed = naming_svc.allowed_tokens(key, variables)
+        # A catalog element is filled in from a SITE: {host} and the
+        # variables are free text there, not Discovery's one-part field.
+        free = _free_tokens(variables) if curated else ()
+        return {
+            "key": key, "label": label, "section": section, "table": table,
+            "default": default, "value": value, "pattern": pattern,
+            "derives": derives, "note": note, "curated": curated,
+            "allowed": sorted(allowed) if allowed is not None else None,
+            "free": list(free),
+            "seen": bool(table and (types.get(table) or {}).get("seen")),
+            "numeric": bool(table and (types.get(table) or {}).get("numeric")),
+            "shape": (types.get(table or "") or {}).get("shape") or "",
+            "found": found.get(table or ""), "names": names[:NAMES_FOR_LIVE_CHECK],
+            "user": len(names), "factory": info.get("factory", 0),
+            "check": nd.conformance(pattern, names, free=free) if pattern and names else None,
+        }
+
+    entries = []
+    for e in _catalog(product):
+        entries.append(entry(e.key, e.label, e.section, table_of.get(e.key), e.default,
+                             e.derives, e.note, curated=True))
+    curated_tables = set(mapping)        # the TABLE names (table_of is keyed by element)
+    rest = []
+    for table, meta in types.items():
+        if table in curated_tables:
+            continue
+        rest.append(entry(naming_svc.table_key(table),
+                          labels.get(table) or nd.humanize(table), meta["section"], table))
+    rest.sort(key=lambda x: (x["section"].lower(), x["label"].lower()))
+    entries += rest
+    sections: dict[str, list] = {}
+    for x in entries:
+        sections.setdefault(x["section"], []).append(x)
+    return {"entries": entries, "sections": sections, "fleet": fleet,
+            "analyses": analyses, "overrides": overrides, "variables": variables,
+            "by_key": {x["key"]: x for x in entries}, "by_table":
+            {x["table"]: x for x in entries if x["table"]}}
+
+
+def _proto_words() -> list[str]:
+    from ..services import naming_discovery as nd
+    return sorted(nd.PROTO_WORDS, key=len, reverse=True)
+
+
+@bp.route('/')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def index():
+    product = _naming_product(request.args.get('product'))
+    model = _scheme_model(product)
+    entries = model["entries"]
+    return render_template(
+        'naming/index.html',
+        naming_sections=model["sections"],
+        naming_products=_device_products(),  # not `products`: base.html reads that global (the ADOM registry)
+        current_product=product,
+        product_label=dict(_device_products()).get(product, product),
+        catalog_sections={e.section for e in _catalog(product)},
+        n_entries=len(entries),
+        n_seen=sum(1 for x in entries if x["seen"]),
+        n_set=sum(1 for x in entries if x["value"]),
+        has_devices=bool(model["fleet"]),
+        proto_words=_proto_words(),
+        naming_variables=model["variables"],
+        site_tokens=naming_svc.SITE_TOKENS,
+        sample_address=SAMPLE_ADDRESS, sample_port=SAMPLE_PORT,
+        sample_tokens=naming_svc.site_tokens(SAMPLE_ADDRESS, SAMPLE_PORT, model["variables"]),
+        step_samples=_step_samples({"host": naming_svc.split_address(SAMPLE_ADDRESS)[0]}),
+        scope_examples=_scope_choices(),
+        name_scope_on=store.name_scope()["enabled"],
+        plugin_section=naming_svc.SECTION_PLUGIN,
+    )
+
+
+def _scope_choices() -> list[dict]:
+    """The scopes the preview offers: the values Administrator >
+    Classification > Name scope holds (per zone, then "More than one zone"),
+    each value once. Off: none -- ``{scope}`` is then always empty."""
+    cfg = store.name_scope()
+    if not cfg["enabled"]:
+        return []
+    out, seen = [], set()
+    zones = [(z, cfg["zones"].get(z, "")) for z in store.classification("zones")]
+    for label, val in zones + [(_("More than one zone"), cfg["multi"])]:
+        if val and val.lower() not in seen:
+            seen.add(val.lower())
+            out.append({"value": val, "label": "%s (%s)" % (val, label)})
+    return out
+
+
+@bp.route('/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save():
+    product = _naming_product(request.form.get('product'))
+    label = dict(_device_products()).get(product, product)
+    if request.form.get('action') == 'reset':
+        store.reset_naming(product)
+        log_action('naming.save', detail=f'Reset {label} naming to defaults')
+        flash(f'{label} naming patterns restored to defaults (variables kept).', 'success')
+        return redirect(url_for('naming.index', product=product))
+    model = _scheme_model(product)
+    # The variables come first: every pattern below is checked against the
+    # list being SAVED, not the stored one, so a pattern can use a variable
+    # added in the same press.
+    variables = (naming_svc.normalize_variables(_posted_variables(request.form))
+                 if request.form.get('variables_posted') == '1' else model["variables"])
+    problems = naming_svc.variable_problems(variables)
+    if problems:
+        flash('Nothing saved — the variables are not valid: ' + ' · '.join(problems), 'danger')
+        return redirect(url_for('naming.index', product=product))
+    # Start from what is stored: an entry whose object type left the sweep
+    # (another build, a device removed) keeps its pattern.
+    scheme = dict(model["overrides"])
+    refused = []
+    for key in model["by_key"]:
+        if ('nm_' + key) not in request.form:
+            continue
+        value = (request.form.get('nm_' + key) or '').strip()
+        problem = naming_svc.pattern_problem(key, value, variables)
+        if problem:
+            refused.append(f'{model["by_key"][key]["label"]}: {problem}')
+            continue
+        if value:
+            scheme[key] = value
+        else:
+            scheme.pop(key, None)
+    # A variable removed (or renamed) while a pattern that stays still uses
+    # it: that pattern would reach the device with the token as literal text.
+    # Refuse the whole save, naming the pattern — never drop the pattern.
+    orphaned = [f'{model["by_key"][k]["label"] if k in model["by_key"] else k}: {p}'
+                for k, p in naming_svc.effective_scheme(scheme, product).items()
+                if naming_svc.pattern_problem(k, p, variables)]
+    if orphaned:
+        flash('Nothing saved — these patterns use a variable that would no longer '
+              'exist: ' + ' · '.join(orphaned), 'danger')
+        return redirect(url_for('naming.index', product=product))
+    store.save_naming(scheme, product)
+    if variables != model["variables"]:
+        store.save_naming_variables(variables, product)
+    log_action('naming.save',
+               detail=f'{label}: {len([v for v in scheme.values() if v.strip()])} patterns, '
+               f'{len(variables)} variable(s)'
+               + (f' ({", ".join(v["name"] for v in variables)})' if variables else '')
+               + (f'; refused {len(refused)}' if refused else ''))
+    if refused:
+        flash('Not saved (kept the previous pattern): ' + ' · '.join(refused), 'warning')
+    flash(f'{label} naming patterns saved.', 'success')
+    return redirect(url_for('naming.index', product=product))
+
+
+@bp.route('/preview', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def preview():
+    """The token values of a sample site under the variables ON THE PAGE
+    (saved or not). The browser substitutes them into each pattern, exactly
+    what :func:`naming.render_pattern` does, so the preview is computed by
+    the server's regex engine and not a JavaScript approximation of it."""
+    from flask import jsonify
+    body = request.get_json(silent=True) or {}
+    variables = naming_svc.normalize_variables(body.get('variables') or [])[:naming_svc.MAX_VARIABLES]
+    address = str(body.get('address') or '')[:255]
+    port = str(body.get('port') or '')[:5]
+    scope = str(body.get('scope') or '')[:32]
+    tokens = naming_svc.site_tokens(address, port, variables, scope)
+    return jsonify({
+        'tokens': tokens,
+        'step': _step_samples(tokens),
+        'problems': naming_svc.variable_problems(variables),
+        'variables': [v['name'] for v in variables],
+    })
+
+
+# ── Discovery: the convention the devices already follow ─────────────────────
+
+def _annotate(analysis: dict, product: str, model: dict) -> None:
+    """Add each table's scheme entry and the Adopt checks."""
+    from ..services import naming_discovery as nd
+    for t in analysis["tables"]:
+        names = t.get("names") or []
+        key = _scheme_key(product, t["table"])
+        e = model["by_key"].get(key)
+        pattern = e["pattern"] if e else (model["overrides"].get(key) or "")
+        t["scheme_key"] = key
+        t["scheme_set"] = bool(model["overrides"].get(key))
+        t["scheme"] = (nd.conformance(pattern, names, free=(e or {}).get("free") or ())
+                       if pattern else None)
+        t["derives"] = bool(e and e["derives"])
+        t["allowed"] = (e or {}).get("allowed")
+        t["free"] = (e or {}).get("free") or []
+        problem = (naming_svc.pattern_problem(key, t["main"], model["variables"])
+                   if t.get("main") else "")
+        t["can_adopt"] = bool(t.get("main")) and not problem and t["main"] != pattern
+        t["adopt_why"] = problem
+        t["adapt_seed"] = t.get("main") or pattern or ""
+
+
+def _discovery_context(model: dict):
+    fleet = model["fleet"]
+    raw = request.args.get("appliance") or request.form.get("appliance") or ""
+    selected = None
+    if raw != "all":
+        selected = next((a for a in fleet if str(a.id) == raw), None)
+        if selected is None and fleet:
+            from ..services import device_context
+            cur = device_context.current_appliance()
+            selected = cur if cur is not None and cur in fleet else fleet[0]
+    return fleet, selected
+
+
+def _analysis_of(model: dict, appliance) -> dict:
+    a = next((x for x in model["analyses"] if x["appliance_id"] == appliance.id), None)
+    if a is None:
+        return {"device": appliance.name, "appliance_id": appliance.id, "missing": True,
+                "tables": [], "user_objects": 0, "factory_objects": 0}
+    return a
+
+
+@bp.route('/discovery')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def discovery():
+    from ..services import naming_discovery as nd
+    product = _naming_product(request.args.get("product"))
+    model = _scheme_model(product)
+    fleet, selected = _discovery_context(model)
+    analysis, fleet_rows, missing = None, None, []
+    show_factory = request.args.get("factory") == "1"
+    cache = None
+    if selected is not None:
+        analysis = _analysis_of(model, selected)
+        _annotate(analysis, product, model)
+        cache = _cache_state(selected, product)
+    elif fleet:
+        have = {a["appliance_id"] for a in model["analyses"]}
+        missing = [a.name for a in fleet if a.id not in have]
+        fleet_rows = nd.fleet_view(model["analyses"])
+        for r in fleet_rows:
+            e = model["by_table"].get(r["table"])
+            r["scheme"] = e["pattern"] if e else ""
+    return render_template(
+        'naming/discovery.html',
+        current_product=product,
+        product_label=dict(_device_products()).get(product, product),
+        fleet=fleet, selected=selected,
+        analysis=analysis, fleet_rows=fleet_rows, missing=missing, cache=cache,
+        show_factory=show_factory, proto_words=_proto_words(),
+        factory_source=(nd.factory_catalog().get(product) or {}).get("measured_on", ""),
+    )
+
+
+@bp.route('/discovery.csv')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def discovery_csv():
+    import csv
+    import io
+    from flask import Response
+    from ..services import naming_discovery as nd
+    from ..services.csv_safe import spreadsheet_safe
+    product = _naming_product(request.args.get("product"))
+    model = _scheme_model(product)
+    fleet, selected = _discovery_context(model)
+    targets = [selected] if selected is not None else fleet
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    header_done = False
+    for appl in targets:
+        a = _analysis_of(model, appl)
+        if a.get("missing"):
+            continue
+        rows = nd.to_csv_rows(a)
+        for row in (rows if not header_done else rows[1:]):
+            w.writerow([spreadsheet_safe(c) for c in row])
+        header_done = True
+    name = f"naming-{product}-{selected.name if selected else 'fleet'}.csv"
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+@bp.route('/discovery/adopt', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def discovery_adopt():
+    """Write a pattern into the scheme entry of one object type.
+
+    **Adopt** posts the discovered pattern as it is; **Adopt & adapt** posts
+    the operator's edit of it. ``action=forget`` clears the entry (a catalog
+    element falls back to its default). Refused when the entry is one SATOM
+    builds names from and the pattern carries a token it cannot fill in."""
+    from ..services import naming_discovery as nd
+    product = _naming_product(request.form.get("product"))
+    table = (request.form.get("table") or "").strip()
+    pattern = (request.form.get("pattern") or "").strip()[:200]
+    back = url_for('naming.discovery', product=product,
+                   appliance=request.form.get("appliance") or None)
+    if not table:
+        flash('No object type given.', 'warning')
+        return redirect(back)
+    key = _scheme_key(product, table)
+    overrides = dict(store.naming_overrides(product))
+    if request.form.get("action") == "forget":
+        if overrides.pop(key, None) is not None:
+            store.save_naming(overrides, product)
+            log_action('naming.save', detail=f'{product}: cleared the scheme pattern of {table}')
+            flash(f'{table}: scheme pattern cleared.', 'success')
+        return redirect(back)
+    if not pattern or nd.pattern_regex(pattern) is None:
+        flash('Nothing to adopt: the pattern is empty.', 'warning')
+        return redirect(back)
+    problem = naming_svc.pattern_problem(key, pattern, store.naming_variables(product))
+    if problem:
+        flash(f'{table}: {pattern} not adopted — {problem}. Use “Adopt & adapt” to change it.',
+              'warning')
+        return redirect(back)
+    adapted = request.form.get("adapted") == "1"
+    overrides[key] = pattern
+    store.save_naming(overrides, product)
+    msg = f'{table}: {pattern} is now the naming scheme’s pattern'
+    if key != naming_svc.table_key(table):
+        msg += f' (element “{key}”)'
+    log_action('naming.save', detail=f'{product}: {msg}' + (' (adapted)' if adapted else ''))
+    flash(msg + '.', 'success')
+    return redirect(back)
+
+
+def _cache_state(appliance, product: str) -> dict:
+    """What SATOM's cache holds for *appliance*: the last good sweep
+    (``as_of``, ``trigger``) and whether it is still fresh by the product's
+    Monitoring staleness rule (``cache_reads.freshness``: the newest sync
+    failed, or the sweep is older than ``stale_hours``). Discovery reads that
+    cache; the device is swept only when it is stale or on an explicit
+    "Read the device now"."""
+    from ..extensions import db
+    from ..models_cache import SyncRun
+    from ..services import cache_reads
+    try:
+        last_ok = (SyncRun.query.filter_by(appliance_id=appliance.id, status="ok")
+                   .order_by(SyncRun.started_at.desc()).first())
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        last_ok = None
+    as_of = (last_ok.finished_at or last_ok.started_at) if last_ok is not None else None
+    if as_of is None:
+        return {"as_of": None, "trigger": "", "stale": True,
+                "reason": "SATOM has no successful sweep of this device yet"}
+    fresh = cache_reads.freshness(appliance.id, as_of, product=product)
+    return {"as_of": as_of, "trigger": last_ok.trigger or "",
+            "stale": bool(fresh.get("stale")), "reason": fresh.get("reason") or ""}
+
+
+@bp.route('/discovery/sync', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def discovery_sync():
+    """Bring Discovery up to date for one device, cache first (SA-0007).
+
+    Runs as a background job (``device_jobs`` wraps this blueprint), never in
+    the browser's request. When SATOM's cache of the device is still fresh
+    (:func:`_cache_state`) nothing is read from the device: Discovery already
+    reads that cache, and the answer says how old it is. The device is swept
+    (read-only) only when the cache is stale or ``force=1`` ("Read the device
+    now")."""
+    from flask_login import current_user
+    from ..errors import ServiceError, service_call
+    from ..services import device_sync
+    product = _naming_product(request.form.get("product"))
+    fleet = _fleet(product)
+    selected = next((a for a in fleet if str(a.id) == (request.form.get("appliance") or "")), None)
+    if selected is None:
+        flash('Pick one device to sync.', 'warning')
+        return redirect(url_for('naming.discovery', product=product))
+    state = _cache_state(selected, product)
+    if request.form.get("force") != "1" and not state["stale"] and _tree_path(selected).exists():
+        flash(f'{selected.name}: SATOM’s cache is current (last sweep '
+              f'{state["as_of"]:%Y-%m-%d %H:%M} UTC, {state["trigger"] or "sync"}) and '
+              'Discovery already reads it — nothing was read from the device. Use '
+              '“Read the device now” for changes made on the device since then.', 'info')
+        return redirect(url_for('naming.discovery', product=product, appliance=selected.id))
+    try:
+        run = service_call(device_sync.sync_device, selected,
+                           user_label=getattr(current_user, "username", None),
+                           trigger="manual", context="naming.discovery.sync",
+                           user_message="Sync failed")
+    except ServiceError as exc:
+        flash(f'{exc.user_message} (error {exc.error_id}).', 'danger')
+    else:
+        level = 'success' if getattr(run, 'status', '') == 'ok' else 'danger'
+        flash(f'{selected.name}: {getattr(run, "detail", "")}', level)
+    return redirect(url_for('naming.discovery', product=product, appliance=selected.id))

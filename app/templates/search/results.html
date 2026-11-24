@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import 'search/_adom.html' as adom with context %}
+{% block title %}{{ _('ADOM Search') }} — "{{ term }}"{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('search.index') }}">{{ _('Search') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Results') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('ADOM Search') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ adom.subtitle }}</p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <form method="get" action="{{ url_for('search.results') }}" class="d-flex gap-2 flex-wrap">
+      <input name="q" value="{{ term }}" class="form-control fw-form-control" style="max-width:420px;"
+             placeholder="{{ adom.placeholder }}">
+      {% for aid in appliance_ids or [] %}<input type="hidden" name="appliance_id" value="{{ aid }}">{% endfor %}
+      <select name="section" class="form-select fw-form-control" style="max-width:240px;">
+        <option value="">{{ _('All sections') }}</option>
+        {% for s in sections %}<option value="{{ s }}" {{ 'selected' if s == section }}>{{ s }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-fw-primary">{{ _('Search') }}</button>
+    </form>
+  </div>
+</div>
+
+{% if result.not_synced %}
+<div class="alert alert-secondary py-2" id="searchNotSynced" style="font-size:13px;">
+  {{ _('No synced configuration yet, so not searched:') }}
+  {% for a in result.not_synced %}<strong>{{ a.name }}</strong>{{ ', ' if not loop.last }}{% endfor %}.
+  {{ _('Run the "Sync device to local source of truth" action under Automation to include them.') }}
+</div>
+{% endif %}
+{% if result.truncated %}
+<div class="alert alert-warning py-2" id="searchTruncated" style="font-size:13px;">
+  {{ _('Only the first matches are shown. Pick an appliance or a section, or type more of the name.') }}
+</div>
+{% endif %}
+
+{% if not result.groups %}
+<div class="fw-card"><div class="fw-card-body">
+  <div class="fw-empty-state">
+    <div class="fw-empty-state-icon"><i class="bi bi-search"></i></div>
+    <div class="fw-empty-state-title">{{ _('No results found.') }}</div>
+    <div class="fw-empty-state-text">{{ _('Nothing in the synced configuration of this ADOM contains this text.') }}</div>
+  </div>
+</div></div>
+{% else %}
+<p class="text-muted" style="font-size:13px;" id="searchTotal">
+  {{ _('%(n)s match(es) on %(d)s appliance(s).', n=result.total, d=result.groups|length) }}
+</p>
+{% for g in result.groups %}
+<div class="fw-card mb-3" data-appliance="{{ g.appliance.name }}">
+  <div class="fw-card-header">
+    <span class="fw-card-title">{{ g.appliance.name }}</span>
+    <span class="fw-badge fw-badge-secondary ms-2">{{ g.appliance.kind or 'fortiweb' }}</span>
+    <span class="text-muted ms-2" style="font-size:12px;">{{ g.hits|length }} {{ _('match(es)') }}
+      {% if g.as_of %}· {{ _('configuration synced %(at)s UTC', at=g.as_of.strftime('%Y-%m-%d %H:%M')) }}{% endif %}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper">
+      <table class="fw-table mb-0">
+        <thead><tr>
+          <th>{{ _('Section') }}</th><th>{{ _('Type') }}</th><th>{{ _('Object') }}</th>
+          <th>{{ _('Field') }}</th><th>{{ _('Value') }}</th>
+        </tr></thead>
+        <tbody>
+          {% for h in g.hits %}
+          <tr>
+            <td>{{ h.section }}</td>
+            <td><code style="font-size:11.5px;">{{ h.logical }}</code></td>
+            <td><strong>{{ h.obj or '—' }}</strong></td>
+            <td><code style="font-size:11.5px;">{{ h.field }}</code></td>
+            <td style="font-size:12.5px;">{{ h.value[:h.at] }}<mark>{{ h.value[h.at:h.at + term|length] }}</mark>{{ h.value[h.at + term|length:] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

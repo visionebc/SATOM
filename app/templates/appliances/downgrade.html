@@ -1,0 +1,248 @@
+{% extends 'base.html' %}
+{% block title %}Downgrade - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-cloud-arrow-down me-2"></i>Firmware Downgrade / Rollback — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
+  <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+  <div>
+    {{ _('A live downgrade') }} <b>{{ _('reboots the appliance') }}</b> {{ _('and interrupts every service it fronts, and a downgrade') }} <b>{{ _('can reset the configuration') }}</b> — especially across a major branch
+    (e.g. 8.0&rarr;7.6). <b>{{ _('Take a config backup first') }}</b> {{ _('via') }}
+    <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">{{ _('Upgrade Preparation') }}</a>,
+    and keep the current (running) <code>.out</code> in the repository so you can roll forward again.
+    Leave <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything.') }}
+  </div>
+</div>
+<div class="fw-alert fw-alert-warning d-flex align-items-start gap-2">
+  <i class="bi bi-shield-exclamation mt-1"></i>
+  <div>
+    <b>{{ _('Emergency path — no change request.') }}</b>
+    {{ _('Unlike Upgrade and HA failover, a boot-partition flash does not need an approved change request in its window, so it can be used to roll back when a change has gone wrong. A live flash requires an explicit acknowledgement, and the attempt and its outcome are written to the audit log.') }}
+  </div>
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE PUSH' }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">{{ _('Image') }}</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">{{ _('Firmware before') }}</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">{{ _('Maintenance permission') }}</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">{{ _('Maturity prompt') }}</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">{{ _('Warning') }}</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+{% if appliance.kind == 'fortiadc' %}
+{# FortiADC keeps two partitions and can reboot into the other one without an
+   image: that is the rollback when the previous build is still installed. #}
+<div class="card shadow-sm mb-3" id="adc-partitions">
+  <div class="card-header fw-card-header"><i class="bi bi-hdd-stack me-1"></i>{{ _('Firmware partitions') }}</div>
+  <div class="card-body">
+    {% if partitions %}
+    <table class="table table-sm fw-table mb-3">
+      <thead><tr><th>{{ _('Partition') }}</th><th>{{ _('Build') }}</th><th>{{ _('State') }}</th></tr></thead>
+      <tbody>
+      {% for p in partitions.partitions %}
+        <tr data-partition="{{ p.partition }}">
+          <td>{{ p.partition }}</td>
+          <td>{% if p.version %}<code>{{ p.version }}</code>{% else %}<span class="text-muted">{{ _('empty') }}</span>{% endif %}</td>
+          <td>{% if p.active %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('inactive') }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if partitions.alternate %}
+    <form method="POST" action="{{ url_for('appliances.boot_alternate', id=appliance.id) }}" id="boot-alt-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p class="small mb-2">{{ _('Reboot into partition') }} <b>{{ partitions.alternate.partition }}</b> (<code>{{ partitions.alternate.version }}</code>). {{ _('No image is sent; the running build stays on the other partition.') }}</p>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="ba_dry_run" checked>
+        <label class="form-check-label" for="ba_dry_run">{{ _('Dry run (check the partition table only — nothing is sent)') }}</label>
+      </div>
+      <div id="ba-live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="ack_no_change_control" id="ba_ack">
+          <label class="form-check-label" for="ba_ack"><b>{{ _('I understand this reboot bypasses change control (no change request) and is audited') }}</b></label>
+        </div>
+        <label class="form-label small">{{ _('Type the appliance name') }} <code>{{ appliance.name }}</code> {{ _('to authorise the reboot:') }}</label>
+        <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+      </div>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Check / Boot alternate partition') }}</button>
+      <div class="small mt-2 d-none" id="ba-result"></div>
+    </form>
+    {% else %}
+    <div class="fw-alert fw-alert-info mb-0" id="adc-no-alternate"><i class="bi bi-info-circle me-1"></i>{{ _('The inactive partition holds no firmware build, so there is nothing to boot into. Flashing an image below installs it into that partition.') }}</div>
+    {% endif %}
+    {% else %}
+    <div class="fw-alert fw-alert-warning mb-0"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('The partition table could not be read:') }} {{ partitions_error or _('unknown error') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if not images %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <p class="small text-muted mb-2">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b></p>
+    <div class="fw-alert fw-alert-warning mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('No firmware image in the repository matches this appliance (') }}<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      Add the rollback <code>.out</code> in the
+      <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a> {{ _('first.') }}
+    </div>
+  </div>
+</div>
+{% else %}
+
+{% if firmware and not older_exists %}
+<div class="fw-alert fw-alert-warning">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ _('No image') }} <b>{{ _('older') }}</b> {{ _('than the running firmware (') }}<b>{{ firmware }}</b>) is in the repository, so there is
+  nothing to roll back to. You can still flash any image below, but selecting a same/newer version is an
+  upgrade, not a downgrade — add the target rollback <code>.out</code> in the
+  <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a>.
+</div>
+{% endif %}
+
+{% macro rel_tag(img) %}
+  {%- set r = relations.get(img.id, 'unknown') -%}
+  {%- if r == 'older' -%}[↓ rollback]{%- elif r == 'newer' -%}[↑ upgrade]{%- elif r == 'same' -%}[= current]{%- else -%}[?]{%- endif -%}
+{% endmacro %}
+
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Roll back now') }}</div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b> {{ _('— the newest image that is') }} <b>{{ _('older') }}</b> {{ _('than the running version is pre-selected as the rollback target.') }}</p>
+    <form method="POST" action="{{ url_for('appliances.downgrade_push', id=appliance.id) }}" id="flash-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">
+        <label class="form-label">{{ _('Firmware image (from repository)') }}</label>
+        <select class="form-select" name="image_id" required>
+          {% for img in images %}
+          <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
+            {{ rel_tag(img) }} {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
+            — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
+        <label class="form-check-label" for="dry_run">{{ _('Dry run (validate the image only — nothing is sent)') }}</label>
+      </div>
+      <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        {% if appliance.kind != 'fortiadc' %}{# FortiADC asks no maturity question #}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
+          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Feature&harr;Mature, e.g. 8.0&rarr;7.6)</label>
+        </div>
+        {% endif %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="ack_no_change_control" id="ack_no_change_control">
+          <label class="form-check-label" for="ack_no_change_control"><b>{{ _('I understand this live flash bypasses change control (no change request) and is audited') }}</b></label>
+        </div>
+        <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
+        <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+      </div>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Validate / Roll back') }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+/* Firmware flash submit handler. Lives in the scripts block (AFTER jobs.js) so
+   window.JobsUI is always defined here. The listener ALWAYS attaches: a live
+   flash must never fall through to a synchronous submit (that hung the worker). */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;                     // no matching image -> no form on the page
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    var dry = form.querySelector('#dry_run');
+    var isDry = dry ? dry.checked : true;
+    if (btn) { btn.disabled = true; btn.classList.add('disabled'); }
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': (meta && meta.content) || '' },
+      body: fd
+    }).then(function (r) {
+        return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) { /* HTML error page */ }
+          return { ok: r.ok, status: r.status, d: d };
+        });
+      })
+      .then(function (o) {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        if (o.ok && o.d.job_id && window.JobsUI && window.JobsUI.trackJob) {
+          JobsUI.trackJob(o.d.job_id,
+            isDry ? 'Validating firmware…' : 'Firmware flash…');
+        } else if (o.ok && o.d.job_id) {
+          window.location.reload();       // JobsUI absent (shouldn't happen) — still proceed
+        } else {
+          alert((o.d && o.d.error) || ('Could not start the task (HTTP ' + o.status + ').'));
+        }
+      }).catch(function () {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        alert('Network error starting the task.');
+      });
+  });
+})();
+// CSP: former inline onchange on #dry_run, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var dry = document.getElementById('dry_run');
+  if (dry) dry.addEventListener('change', function () {
+    document.getElementById('live-fields').classList.toggle('d-none', this.checked);
+  });
+})();
+/* FortiADC: boot the alternate partition. A dry run answers inline; a live
+   boot is a job, tracked like a flash. */
+(function () {
+  var form = document.getElementById('boot-alt-form');
+  if (!form) return;
+  var dry = document.getElementById('ba_dry_run'), out = document.getElementById('ba-result');
+  dry.addEventListener('change', function () {
+    document.getElementById('ba-live-fields').classList.toggle('d-none', this.checked);
+  });
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch(form.action, { method: 'POST', body: fd,
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': (meta && meta.content) || '' } })
+      .then(function (r) { return r.text().then(function (t) {
+        var d = {}; try { d = JSON.parse(t); } catch (x) { /* HTML error page */ }
+        return { ok: r.ok, status: r.status, d: d }; }); })
+      .then(function (o) {
+        btn.disabled = false;
+        if (o.ok && o.d.job_id && window.JobsUI && window.JobsUI.trackJob) {
+          JobsUI.trackJob(o.d.job_id, 'Booting the alternate partition…');
+          return;
+        }
+        out.classList.remove('d-none');
+        out.className = 'small mt-2 ' + (o.ok ? 'text-success' : 'text-danger');
+        out.textContent = (o.d && (o.d.message || o.d.error)) || ('HTTP ' + o.status);
+      }).catch(function () { btn.disabled = false; alert('Network error starting the task.'); });
+  });
+})();
+</script>
+{% endblock %}

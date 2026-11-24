@@ -1,0 +1,18 @@
+{# Settings → AI → Sentinel → Settings: the configuration, and nothing else.
+
+   Rendered by TWO surfaces from this one file: inline in the Admin Console
+   pane and on its own URL (/settings/sentinel), which the manual's deep links
+   and the redirect after a save still use.
+
+   Until 2026-11-01 this section also drew the health line, the pipeline, the
+   score bands and the demo lab.  None of that is configuration, so it moved to
+   Operations › Sentinel › Overview (operator: "what is configured stays in
+   Settings, the rest goes to Operations").  Do not draw it back here.
+#}
+<div class="alert alert-secondary small py-2 mb-3">
+  {{ _('Health, the pipeline explained, the score bands, the demo lab, the CVE mirror and the decision log are in') }}
+  <a href="{{ url_for('sentinel.overview') }}">Operations › Sentinel › Overview</a>;
+  {{ _('incidents, the border blocklist and the architecture are next to it.') }}
+</div>
+<div id="config"></div>
+{% include "settings/_sentinel.html" %}

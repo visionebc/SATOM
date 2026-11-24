@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ e.name }} · {{ _('Factory catalog') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-box-seam me-2"></i>{{ e.name }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    <a href="{{ url_for('factory_catalog.index', surface=e.firmware ~ '|' ~ e.build_no ~ '|' ~ e.api_version) }}">{{ _('Factory catalog') }}</a>
+    · {{ e.kind_label }} · <strong>{{ e.surface }}</strong>
+  </p>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="fw-card h-100" style="padding:12px 14px;">
+      <table class="table table-sm mb-0" style="font-size:13px;">
+        <tr><th style="width:38%">{{ _('Firmware') }}</th><td>{{ e.firmware }}{% if e.build_no %} build {{ e.build_no }}{% endif %}</td></tr>
+        <tr><th>{{ _('REST API') }}</th><td>{{ e.api_version or '—' }}</td></tr>
+        <tr><th>{{ _('Status') }}</th><td>
+          {% if e.status != 'ok' %}<span class="fw-badge fw-badge-warning">{{ _('ambiguous') }}</span> <span class="text-muted">{{ e.status_reason }}</span>
+          {% elif e.stale %}<span class="fw-badge fw-badge-secondary">{{ _('due for a full read') }}</span>
+          {% else %}<span class="fw-badge fw-badge-success">{{ _('verified') }}</span>{% endif %}</td></tr>
+        <tr><th>{{ _('Read from') }}</th><td>{{ e.captured_from or '—' }} · {{ e.captured_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+        <tr><th>{{ _('Last full read') }}</th><td>{{ e.last_verified_from or '—' }} · {{ e.last_verified_at.strftime('%Y-%m-%d %H:%M') }} ({{ e.verify_count }}×)</td></tr>
+        <tr><th>{{ _('Rebuilt from here') }}</th><td>{{ e.reuse_count }}×{% if e.last_reused_at %} · {{ _('last') }} {{ e.last_reused_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</td></tr>
+        <tr><th>{{ _('Objects / recorded reads') }}</th><td>{{ e.node_count }} / {{ e.read_count }}</td></tr>
+        <tr><th>{{ _('Content hash') }}</th><td><code style="font-size:11px;">{{ e.content_sha[:16] }}…</code></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="fw-card h-100" style="padding:12px 14px;">
+      {% if current_user.can('operations.template_save') %}
+      <form method="post" action="{{ url_for('factory_catalog.save_as_template', entry_id=e.id) }}" id="fcSaveTpl">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="fw-fld-label" for="fcTplName">{{ _('Save as template') }}</label>
+        <div class="input-group input-group-sm">
+          <input class="form-control" id="fcTplName" name="name" value="{{ e.name }}" maxlength="120">
+          <button class="btn fw-btn-primary" type="submit"><i class="bi bi-journal-plus me-1"></i>{{ _('Save') }}</button>
+        </div>
+        <div class="text-muted mt-1" style="font-size:12px;">{{ _('Stamped with FortiWeb %(fw)s and API %(api)s, provenance "factory". Lands pending in the Template Library.', fw=e.firmware, api=e.api_version or '—') }}</div>
+      </form>
+      {% endif %}
+      {% if variants|length > 1 %}
+      <div class="mt-3" style="font-size:13px;"><strong>{{ _('Variants on this build') }}</strong>
+        {% for v in variants %}{% if v.id != e.id %}<div><a href="{{ url_for('factory_catalog.compare', a=v.id, b=e.id) }}">{{ v.captured_from or '—' }} · <code>{{ v.content_sha[:10] }}</code></a></div>{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if elsewhere %}
+      <div class="mt-3" style="font-size:13px;"><strong>{{ _('Compare with') }}</strong>
+        {% for o in elsewhere %}<div><a href="{{ url_for('factory_catalog.compare', a=o.id, b=e.id) }}">{{ o.surface }}</a></div>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <details>
+    <summary style="padding:10px 14px;cursor:pointer;"><strong>{{ _('Full tree') }}</strong> <span class="text-muted" style="font-size:12px;">{{ _('as the deep pass built it; nested objects and sub-table rows under "_deep"') }}</span></summary>
+    <pre class="mb-0" style="max-height:70vh;overflow:auto;font-size:12px;padding:10px 14px;background:#F4F5F7;">{{ tree_json }}</pre>
+  </details>
+</div>
+{% endblock %}

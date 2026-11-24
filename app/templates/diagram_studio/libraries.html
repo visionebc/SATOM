@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set cfg = ds_config or {} %}
+{% block title %}{{ _('Symbol libraries') }} — {{ _('Diagram Studio') }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/diagram_studio.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('diagram_studio.index') }}">{{ _('Diagram Studio') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Symbol libraries') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header mb-3">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-boxes me-2 text-accent" aria-hidden="true"></i>{{ _('Symbol libraries') }}</h1>
+    <p class="text-muted mb-0 small">{{ _('Icons the editor offers and the recogniser maps shapes to. Built-in libraries are read-only; operator libraries are imported here.') }}</p>
+  </div>
+</div>
+
+<div class="ds-libs row g-3" id="dsLibs">
+  <div class="{% if cfg.get('mayLibraries') %}col-xl-8{% else %}col-12{% endif %}">
+    <div class="ds-filters mb-2">
+      <div class="ds-search-input">
+        <label for="dlQ" class="form-label small mb-1">{{ _('Search symbols') }}</label>
+        <input type="search" id="dlQ" class="form-control form-control-sm" placeholder="{{ _('Name, category, keyword…') }}">
+      </div>
+    </div>
+    <div id="dlList" aria-live="polite"><p class="small ds-muted">{{ _('Loading…') }}</p></div>
+  </div>
+  {% if cfg.get('mayLibraries') %}
+  <div class="col-xl-4">
+    <form class="fw-card" id="dlForm" novalidate>
+      <div class="fw-card-body">
+        <h2 class="h6">{{ _('Import a library') }}</h2>
+        <div class="fw-alert-info small p-2 mb-3 ds-licence" role="note"><i class="bi bi-shield-check me-1" aria-hidden="true"></i>{{ _('Import only icon sets you are licensed to redistribute internally.') }}</div>
+        <label for="dlFile" class="form-label small mb-1">{{ _('ZIP file') }}</label>
+        <input type="file" id="dlFile" name="file" class="form-control form-control-sm" accept=".zip,application/zip" required aria-describedby="dlFileHelp">
+        <div id="dlFileHelp" class="form-text">{{ _('A ZIP of SVG files (a vendor icon set as downloaded), or a library.json with its SVG files. Every SVG is sanitised: scripts, links and external references are removed; colours set by a stylesheet are kept, and icons that draw only in white are skipped.') }}</div>
+        <label for="dlId" class="form-label small mb-1 mt-2">{{ _('Library id') }}</label>
+        <input type="text" id="dlId" name="id" class="form-control form-control-sm" required pattern="[a-z0-9][a-z0-9_\-]{0,47}" maxlength="48" placeholder="{{ _('e.g. acme-network') }}" aria-describedby="dlIdHelp">
+        <div id="dlIdHelp" class="form-text">{{ _('Lower-case letters, digits, - and _.') }}</div>
+        <label for="dlLabel" class="form-label small mb-1 mt-2">{{ _('Label') }}</label>
+        <input type="text" id="dlLabel" name="label" class="form-control form-control-sm" required maxlength="80" placeholder="{{ _('ACME network icons') }}">
+        <label for="dlFamily" class="form-label small mb-1 mt-2">{{ _('Family') }}</label>
+        <select id="dlFamily" name="family" class="form-select form-select-sm"><option value="generic">{{ _('Generic') }}</option></select>
+        <div class="form-text">{{ _('Used for loose SVG files; a library.json sets its own categories.') }}</div>
+        <div id="dlErr" class="fw-alert-danger small p-2 mt-2" role="alert" hidden></div>
+        <div class="ds-btnrow mt-3 justify-content-end">
+          <button type="submit" class="btn btn-sm btn-fw-primary" id="dlSubmit"><i class="bi bi-upload me-1" aria-hidden="true"></i>{{ _('Import library') }}</button>
+        </div>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<script type="application/json" id="dsUrls">{{ {'base': url_for('diagram_studio.index')}|tojson }}</script>
+<script type="application/json" id="dsConfig">{{ cfg|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/diagram_studio_core.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/diagram_studio_libraries.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

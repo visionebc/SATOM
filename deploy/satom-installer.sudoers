@@ -1,0 +1,36 @@
+# /etc/sudoers.d/satom-installer — permission to RUN THE INSTALLER.
+#
+# Installing SATOM means creating accounts, installing packages, writing
+# systemd units and touching Postgres and nginx. That IS root: there is no
+# honest subset of those operations. What this rule avoids is having to HAND
+# OVER THE ROOT PASSWORD to whoever installs: they get a named, audited
+# account that can only launch one specific binary at one specific path.
+#
+# Do NOT confuse with /etc/sudoers.d/satom, which is the service account's
+# TWO-command allowlist at runtime. They are two different accounts with two
+# different purposes (docs/privilege-model.md).
+#
+# INSTALLATION:
+#   useradd -m -s /bin/bash satominstall          # the operator's named account
+#   install -d -m 0755 /opt/staging
+#   install -m 0755 install-satom.sh /opt/staging/install-satom.sh
+#   chown root:root /opt/staging/install-satom.sh # the operator can NOT edit it
+#   install -m 0440 satom-installer.sudoers /etc/sudoers.d/satom-installer
+#   visudo -c                                     # validate before logging out
+#
+# IMPORTANT: the path is fixed and the file is owned by root. If the operator
+# could write to /opt/staging/install-satom.sh, the rule would be equivalent to
+# NOPASSWD: ALL — they could replace the script with anything.
+#
+# Withdraw the rule when the installation window closes:
+#   rm /etc/sudoers.d/satom-installer
+
+Cmnd_Alias SATOM_INSTALL = /usr/bin/bash /opt/staging/install-satom.sh, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --preflight, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --check, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --authorize-peer *
+
+satominstall ALL=(root) NOPASSWD: SATOM_INSTALL
+
+# Auditing: every invocation lands in the journal (`journalctl _COMM=sudo`) and
+# the installer always writes /var/log/satom-install.log.

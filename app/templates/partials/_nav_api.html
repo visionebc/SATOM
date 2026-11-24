@@ -1,0 +1,70 @@
+{# ============================================================================
+   API — registry catalog + live console of the CURRENT device ADOM.
+
+   Gated on ``registry.view``, the permission the console pages themselves
+   require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
+
+   Since 2026-10-14 (operator) it is a subgroup of Automation
+   (partials/nav_automation.html calls ``api_menu`` in its nested form), itself a
+   subgroup of Operations in the device ADOMs since later the same day.
+   Automation is drawn for config_write only, so a profile holding registry.view without
+   config_write keeps the standalone "API" group instead
+   (partials/nav_product_api.html) — a reorder must not take a page away from
+   a profile that may open it, nor draw it twice.
+
+   Schema builds and Build compatibility (partials/nav_api_library.html) are
+   API pages too — field catalogs per firmware build — and joined this
+   subgroup on 2026-10-14 (operator), from Automation. So the subgroup now
+   exists in the Global ADOM as well, with those two entries only (Global has
+   no device console). Each entry keeps its own gate: may_open() asks the
+   permission its page requires, and the subgroup is drawn only when at least
+   one entry is.
+
+   ``_adom=product.key`` pins the ADOM on a HARD navigation, like every other
+   Automation entry (tests/test_automation_adom_nav.py); the link lacked it
+   from the move into Automation until 2026-10-14.
+
+   2026-11-09 (operator: "put the API menu in Administrator"): for user_manage
+   holders it is the API section of Administrator (partials/nav_admin.html
+   calls ``api_menu(true, bare=true)`` — the entries only; nav_sections draws
+   the toggle). Automation, the standalone group and the Global block keep it
+   only for profiles WITHOUT user_manage, so it is never drawn twice.
+   ========================================================================= #}
+{% macro api_menu(nested, bare=false) %}
+{% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
+                  'fortianalyzer': 'faz_api.index',
+                  'fortiauthenticator': 'fac_api.index',
+                  'fortigate': 'fgt_api.index'}.get(product.key) %}
+{% set _reg_bps = ['registry', 'api_explorer', 'structure'] if product.key == 'fortiweb'
+                  else [(_api_ep or '').split('.')[0]] %}
+{% set _api_bps = _reg_bps + ['schema_builds', 'build_compat'] %}
+{% set _show_reg = _api_ep and current_user and current_user.can('registry.view') and may_open(_api_ep) %}
+{% set _show_sb = may_open('schema_builds.index') %}
+{% set _show_bc = may_open('build_compat.index') %}
+{% if _show_reg or _show_sb or _show_bc %}
+{% if bare %}
+    {% if _show_reg %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _reg_bps else '' }}" href="{{ url_for(_api_ep, _adom=product.key) }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+    {% endif %}
+    {% include 'partials/nav_api_library.html' %}
+{% else %}
+{% if nested %}
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in _api_bps }}" data-nav-subgroup="API">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-braces fw-nav-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+{% else %}
+<div class="fw-nav-group" data-nav-group="API">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+{% endif %}
+    {% if _show_reg %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _reg_bps else '' }}" href="{{ url_for(_api_ep, _adom=product.key) }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+    {% endif %}
+    {% include 'partials/nav_api_library.html' %}
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endmacro %}

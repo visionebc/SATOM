@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% import 'search/_adom.html' as adom with context %}
+
+{% block title %}{{ _('ADOM Search') }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Search') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('ADOM Search') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;" id="searchSubtitle">{{ adom.subtitle }}
+      {% if sections %}{{ _('Sections: %(sections)s.', sections=sections|join(', ')) }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="fw-card mb-4">
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('search.results') }}" id="searchForm">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <label class="fw-form-label">{{ _('Search Query') }}</label>
+          <div class="fw-input-group">
+            <i class="bi bi-search fw-input-icon"></i>
+            <input type="text" name="q" class="form-control fw-form-control"
+                   id="queryInput" placeholder="{{ adom.placeholder }}"
+                   value="{{ request.args.get('q','') if request else '' }}"
+                   autofocus autocomplete="off">
+          </div>
+        </div>
+        <div class="col-lg-3">
+          <label class="fw-form-label">{{ _('Appliance') }}</label>
+          <select name="appliance_id" class="form-select fw-form-control">
+            <option value="">{{ _('All appliances in this ADOM') }}</option>
+            {% for a in appliances %}
+              <option value="{{ a.id }}">{{ a.name }} ({{ a.host }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-2">
+          <label class="fw-form-label">{{ _('Section') }}</label>
+          <select name="section" class="form-select fw-form-control">
+            <option value="">{{ _('All sections') }}</option>
+            {% for s in sections %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-1 d-flex align-items-end">
+          <button type="submit" class="btn btn-fw-primary w-100" title="{{ _('Search') }}">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-lightbulb me-2 text-accent"></i>{{ _('Search Tips') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <ul style="font-size:13px; padding-left:20px; margin:0; line-height:2;" id="searchTips">
+          {% for text, example in adom.tips %}<li>{{ text }}: <code>{{ example }}</code></li>{% endfor %}
+          <li>{{ _('Part of a name matches every object that contains it.') }}</li>
+          <li>{{ _('Results come from the last configuration sync, not a live query. Passwords and keys are never searched.') }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-server me-2 text-accent"></i>{{ _('Appliances in this ADOM') }}</span>
+      </div>
+      <div class="fw-card-body">
+        {% if appliances %}
+          {% for a in appliances %}
+            <div class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid #F0F2F5;">
+              <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}" style="font-size:12px;">
+                <span class="fw-status-dot"></span>
+              </span>
+              <span style="font-size:13px;"><strong>{{ a.name }}</strong></span>
+              <span class="mono text-muted" style="font-size:11.5px;">{{ a.host }}</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="fw-empty-state py-3">
+            <div class="fw-empty-state-icon" style="font-size:28px;"><i class="bi bi-server"></i></div>
+            <div class="fw-empty-state-title" style="font-size:14px;">{{ _('No appliances') }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Keyboard shortcut: press '/' to focus search box
+document.addEventListener('keydown', function (e) {
+  if (e.key === '/' && !['INPUT','TEXTAREA'].includes(e.target.tagName)) {
+    e.preventDefault();
+    document.getElementById('queryInput')?.focus();
+  }
+});
+</script>
+{% endblock %}

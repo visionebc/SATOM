@@ -1,0 +1,241 @@
+# app/services/observatory.py
+"""HTTP Observatory — run, store and read scans of published sites.
+
+The pieces: :mod:`header_observatory` grades, :mod:`observatory_scan` fetches,
+:mod:`observatory_fix` attributes and fixes. This module is what the page,
+the ``observatory_scan`` scheduled action and the re-scan after a fix share:
+one place that turns a scan into a stored row, so the three can never disagree
+about what was kept.
+"""
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime
+
+from ..models import db
+from ..models_observatory import ObservatoryScan
+from . import observatory_scan as osc
+
+#: Rows kept per site (appliance + policy). Older ones are pruned on insert.
+KEEP_PER_SITE = 60
+
+
+def _store(appliance, result: dict, trigger: str, username: str) -> ObservatoryScan:
+    analysis = result.get("analysis") or {}
+    row = ObservatoryScan(
+        appliance_id=appliance.id, product=appliance.kind,
+        policy=(result.get("target") or {}).get("policy") or "",
+        host=result.get("host") or "",
+        started_at=datetime.utcfromtimestamp(result.get("started") or 0) if result.get("started")
+        else datetime.utcnow(),
+        finished_at=datetime.utcfromtimestamp(result["finished"]) if result.get("finished") else None,
+        grade=result.get("grade"), score=result.get("score"),
+        tests_passed=analysis.get("tests_passed"), tests_failed=analysis.get("tests_failed"),
+        error=result.get("error") or "",
+        result=json.dumps({"target": result.get("target"),
+                           "analysis": analysis or None,
+                           "retrieval": result.get("retrieval")}),
+        trigger=trigger if trigger in ObservatoryScan.TRIGGERS else "manual",
+        username=(username or "")[:64])
+    db.session.add(row)
+    db.session.commit()
+    _prune(appliance.id, row.policy)
+    return row
+
+
+def _prune(appliance_id: int, policy: str) -> None:
+    old = (ObservatoryScan.query
+           .filter_by(appliance_id=appliance_id, policy=policy)
+           .order_by(ObservatoryScan.started_at.desc(), ObservatoryScan.id.desc())
+           .offset(KEEP_PER_SITE).all())
+    if old:
+        for r in old:
+            db.session.delete(r)
+        db.session.commit()
+
+
+def run(appliance, target: osc.Target, host: str | None = None, *,
+        trigger: str = "manual", username: str = "") -> ObservatoryScan:
+    """Scan one site and store the row (graded or not)."""
+    return _store(appliance, osc.scan(target, host), trigger, username)
+
+
+def previous(row: ObservatoryScan) -> ObservatoryScan | None:
+    """The graded scan of the same site before *row*."""
+    return (ObservatoryScan.query
+            .filter(ObservatoryScan.appliance_id == row.appliance_id,
+                    ObservatoryScan.policy == row.policy,
+                    ObservatoryScan.id != row.id,
+                    ObservatoryScan.started_at <= row.started_at,
+                    ObservatoryScan.grade.isnot(None))
+            .order_by(ObservatoryScan.started_at.desc(), ObservatoryScan.id.desc())
+            .first())
+
+
+def latest_by_policy(appliance_id: int) -> dict[str, ObservatoryScan]:
+    """Newest row per policy of one appliance."""
+    out: dict[str, ObservatoryScan] = {}
+    rows = (ObservatoryScan.query.filter_by(appliance_id=appliance_id)
+            .order_by(ObservatoryScan.started_at.desc(), ObservatoryScan.id.desc())
+            .limit(2000).all())
+    for r in rows:
+        out.setdefault(r.policy, r)
+    return out
+
+
+def history(appliance_id: int, policy: str, limit: int = KEEP_PER_SITE) -> list[ObservatoryScan]:
+    return (ObservatoryScan.query.filter_by(appliance_id=appliance_id, policy=policy)
+            .order_by(ObservatoryScan.started_at.desc(), ObservatoryScan.id.desc())
+            .limit(limit).all())
+
+
+def record_fix(appliance, policy: str, the_plan: dict, out: dict, *,
+               scan_id: int | None, username: str):
+    """Keep an applied plan so it can be reverted (nothing is kept when no
+    write was accepted: there is nothing to undo)."""
+    from ..models_observatory import ObservatoryFix
+    from . import observatory_fix as ofx
+    steps = ofx.steps_of(the_plan, out)
+    if not any(s["ok"] for s in steps):
+        return None
+    row = ObservatoryFix(appliance_id=appliance.id, policy=policy, scan_id=scan_id,
+                         username=(username or "")[:64],
+                         fixes=json.dumps(the_plan.get("fixes") or []),
+                         steps=json.dumps(steps), others=json.dumps(the_plan.get("others") or []),
+                         ok=bool(out.get("ok")))
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def fixes(appliance_id: int, policy: str, limit: int = 50):
+    from ..models_observatory import ObservatoryFix
+    return (ObservatoryFix.query.filter_by(appliance_id=appliance_id, policy=policy)
+            .order_by(ObservatoryFix.applied_at.desc(), ObservatoryFix.id.desc())
+            .limit(limit).all())
+
+
+def _rank(grade: str | None) -> int:
+    from .header_observatory import GRADES
+    return GRADES.index(grade) if grade in GRADES else len(GRADES)
+
+
+#: Sites of one appliance graded at the same time. The network half of a scan
+#: (:func:`observatory_scan.scan`) touches no database; the rows are written
+#: afterwards on the calling thread, in target order.
+SCAN_WORKERS = 4
+#: Wall-clock budget of one scheduled run, in seconds. Measured on
+#: satom-node-1 on 2026-10-21: four sites, every one behind a host that was
+#: down, took 464 s one after another -- inside the scheduler tick, where that
+#: time is taken from every other action and from the flushes the tick does
+#: last. Setting ``observatory.run_budget_s`` overrides the default.
+RUN_BUDGET_S = 240
+K_RUN_BUDGET = "observatory.run_budget_s"
+
+
+def run_budget_s() -> float:
+    """The configured run budget, or the default when unset or unreadable."""
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get(K_RUN_BUDGET)
+    except Exception:  # noqa: BLE001 - no settings table, no app context
+        raw = None
+    try:
+        v = float(str(raw).strip()) if raw not in (None, "") else float(RUN_BUDGET_S)
+    except (TypeError, ValueError):
+        return float(RUN_BUDGET_S)
+    return v if v > 0 else float(RUN_BUDGET_S)
+
+
+def _budget_result(target: osc.Target, started: float, budget: float) -> dict:
+    """What a site that the budget did not reach is recorded as: an error that
+    names the budget -- never a missing row, which would leave the previous
+    grade standing as if it had been re-checked."""
+    return {"target": target.as_dict(),
+            "host": (target.default_host or target.vip or "").strip().lower(),
+            "started": started, "finished": time.time(), "grade": None, "score": None,
+            "error": "not graded: the run's %d s budget ran out (setting %s)"
+                     % (budget, K_RUN_BUDGET)}
+
+
+def scan_sites(targets: list, *, budget_s: float | None = None,
+               workers: int = SCAN_WORKERS) -> dict:
+    """``{policy: scan result}`` for every scannable target, graded concurrently
+    within one wall-clock budget. Pure network: no row is written here."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    from flask import current_app, has_app_context
+
+    budget = float(budget_s) if budget_s else run_budget_s()
+    started = time.time()
+    out: dict[str, dict] = {}
+    if not targets:
+        return out
+    app = current_app._get_current_object() if has_app_context() else None
+
+    def _one(t):
+        if app is None:
+            return osc.scan(t, None)
+        with app.app_context():
+            return osc.scan(t, None)
+
+    pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), len(targets))))
+    futs = {pool.submit(_one, t): t for t in targets}
+    done, pending = wait(futs, timeout=budget)
+    # A scan still running when the budget is spent keeps its own thread until
+    # its site budget (observatory_scan.SCAN_BUDGET) ends; nobody waits for it.
+    pool.shutdown(wait=False, cancel_futures=True)
+    for f in done:
+        t = futs[f]
+        try:
+            out[t.policy] = f.result()
+        except Exception as exc:  # noqa: BLE001 - one site must not sink the run
+            out[t.policy] = dict(_budget_result(t, started, budget),
+                                 error="not graded: scan crashed: %s" % exc)
+    for f in pending:
+        out[futs[f].policy] = _budget_result(futs[f], started, budget)
+    return out
+
+
+def scan_appliance(appliance, *, trigger: str = "scheduled", username: str = "system",
+                   dry_run: bool = False) -> dict:
+    """Every scannable site of one appliance — the scheduled action's body.
+
+    Returns ``{ok, summary, log}`` like every scheduled executor. A site that
+    cannot be graded is a named line in the log, not a failure of the run; a
+    device whose sites cannot be listed IS a failure (unknown is not "no
+    sites"). A grade lower than the previous run is called out first.
+    """
+    try:
+        targets = osc.targets_for(appliance)
+    except Exception as exc:  # noqa: BLE001 — unreadable box = failed run
+        return {"ok": False, "summary": "%s: could not list published sites: %s"
+                % (appliance.name, exc), "log": ""}
+    scannable = [t for t in targets if t.scannable]
+    if dry_run:
+        return {"ok": True, "summary": "%s: would grade %d of %d sites."
+                % (appliance.name, len(scannable), len(targets)),
+                "log": "\n".join("%s %s" % (t.policy, "" if t.scannable else "(skipped: %s)" % t.note)
+                                 for t in targets)}
+    scans = scan_sites(scannable)
+    lines, dropped, graded = [], [], 0
+    for t in targets:
+        if not t.scannable:
+            lines.append("%s: skipped — %s" % (t.policy, t.note or "not scannable"))
+            continue
+        row = _store(appliance, scans[t.policy], trigger, username)
+        if row.grade:
+            graded += 1
+            prev = previous(row)
+            drop = prev is not None and _rank(row.grade) > _rank(prev.grade)
+            if drop:
+                dropped.append("%s %s→%s" % (t.policy, prev.grade, row.grade))
+            lines.append("%s: %s (%d)%s" % (t.policy, row.grade, row.score or 0,
+                                            "  DROPPED from %s" % prev.grade if drop else ""))
+        else:
+            lines.append("%s: not graded — %s" % (t.policy, row.error))
+    summary = "%s: %d of %d sites graded." % (appliance.name, graded, len(scannable))
+    if dropped:
+        summary = "Grade dropped: %s. " % ", ".join(dropped) + summary
+    return {"ok": True, "summary": summary, "log": "\n".join(lines)}
